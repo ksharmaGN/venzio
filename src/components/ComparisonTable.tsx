@@ -20,7 +20,7 @@ export default function ComparisonTable() {
     {
       category: 'Verification and Accuracy',
       items: [
-        { feature: 'GPS + WiFi + IP cross-validation', venzio: 'yes', keka: 'partial', whatsapp: 'no' },
+        { feature: 'GPS + IP cross-validation', venzio: 'yes', keka: 'partial', whatsapp: 'no' },
         { feature: 'Tamper-proof check-ins', venzio: 'yes', keka: 'partial', whatsapp: 'no' },
         { feature: 'Works in coworking spaces', venzio: 'yes', keka: 'no', whatsapp: 'yes' },
       ],

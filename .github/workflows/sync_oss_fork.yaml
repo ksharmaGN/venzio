@@ -1,0 +1,40 @@
+name: Sync Your Fork from OSS
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout company repo
+        uses: actions/checkout@v3
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+
+      - name: Set upstream
+        run: |
+          git remote remove upstream || true
+          git remote add upstream https://github.com/ksharma20/venzio.git
+          git fetch upstream
+
+      - name: Sync develop
+        run: |
+          git checkout develop || git checkout -b develop
+          git reset --hard upstream/develop
+          git push origin develop --force
+
+      - name: Sync main
+        run: |
+          git checkout main
+          git reset --hard upstream/main
+          git push origin main --force
