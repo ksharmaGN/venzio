@@ -3,8 +3,16 @@ import MarketingFooter from '@/components/marketing/MarketingFooter'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: "Privacy Policy - venzio",
-  description: "How venzio collects, uses, and protects your presence data.",
+  title: "Privacy Policy",
+  description: "How Venzio collects, uses, and protects your presence data.",
+  alternates: {
+    canonical: "/privacy",
+  },
+  openGraph: {
+    title: "Venzio Privacy Policy",
+    description: "How Venzio collects, uses, and protects your presence data.",
+    url: "/privacy",
+  },
 };
 
 const S = {

@@ -4,9 +4,18 @@ import MarketingFooter from '@/components/marketing/MarketingFooter'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: "venzio for Teams - Attendance without the hardware",
+  title: "Venzio for Teams - Attendance without the hardware",
   description:
-    "Manage hybrid office attendance and field force visit logs. No hardware, no app installs. Set up in under 10 minutes.",
+    "Venzio helps teams manage hybrid office attendance and field force visit logs with GPS and IP verification. No hardware, no app installs.",
+  alternates: {
+    canonical: "/for-teams",
+  },
+  openGraph: {
+    title: "Venzio for Teams - Attendance without the hardware",
+    description:
+      "Manage hybrid office attendance and field force visit logs with Venzio. No hardware, no app installs.",
+    url: "/for-teams",
+  },
 };
 
 const S = {

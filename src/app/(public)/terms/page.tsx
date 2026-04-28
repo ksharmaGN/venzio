@@ -3,9 +3,18 @@ import MarketingFooter from '@/components/marketing/MarketingFooter'
 import type { Metadata } from 'next'
 
 export const metadata: Metadata = {
-  title: "Terms of Service - venzio",
+  title: "Terms of Service",
   description:
-    "Terms governing your use of venzio, the presence intelligence platform.",
+    "Terms governing your use of Venzio, the presence intelligence platform.",
+  alternates: {
+    canonical: "/terms",
+  },
+  openGraph: {
+    title: "Venzio Terms of Service",
+    description:
+      "Terms governing your use of Venzio, the presence intelligence platform.",
+    url: "/terms",
+  },
 };
 
 const S = {
