@@ -236,6 +236,21 @@ const ADDITIVE_MIGRATIONS = [
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)`,
+
+  // workspace_holidays - company holiday calendar
+  `CREATE TABLE IF NOT EXISTS workspace_holidays (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  date         TEXT NOT NULL,
+  description  TEXT,
+  created_by   TEXT NOT NULL REFERENCES users(id),
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at   TEXT
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_holidays_ws_date ON workspace_holidays(workspace_id, date)`,
+
 ]
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
