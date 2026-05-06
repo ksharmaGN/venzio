@@ -1,18 +1,97 @@
 import { NextRequest, NextResponse } from 'next/server'
 import * as XLSX from 'xlsx'
 import { requireWsAdmin } from '@/lib/ws-admin'
-import { bulkUpsertHolidays } from '@/lib/db/queries/holidays'
+import {
+  listHolidays,
+  createHoliday,
+  findHolidayByNameAndDate,
+  bulkUpsertHolidays,
+} from '@/lib/db/queries/holidays'
 import type { HolidayImportRow } from '@/lib/db/queries/holidays'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 interface Props { params: Promise<{ slug: string }> }
+
+// ─── GET /api/ws/[slug]/holidays ───────────────────────────────────────────────
+
+export async function GET(req: NextRequest, { params }: Props) {
+  console.log("get_holidays")
+  const { slug } = await params
+  const ctx = await requireWsAdmin(req, slug)
+  if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
+
+  const yearParam = req.nextUrl.searchParams.get('year')
+  const year = yearParam ? parseInt(yearParam, 10) : undefined
+
+  const holidays = await listHolidays(ctx.workspace.id, year)
+  return NextResponse.json({ holidays })
+}
+
+// ─── POST /api/ws/[slug]/holidays ─────────────────────────────────────────────
+// JSON body  → create single holiday
+// multipart  → bulk import (CSV / XLSX)
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
   const ctx = await requireWsAdmin(req, slug)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
+  const contentType = req.headers.get('content-type') ?? ''
+
+  if (contentType.includes('application/json')) {
+    return handleCreate(req, ctx.workspace.id, ctx.userId)
+  }
+
+  return handleImport(req, ctx.workspace.id, ctx.userId)
+}
+
+// ─── Single-holiday create ─────────────────────────────────────────────────────
+
+async function handleCreate(req: NextRequest, workspaceId: string, userId: string) {
+  let body: { name?: unknown; date?: unknown; description?: unknown }
+  try { body = await req.json() } catch {
+    return NextResponse.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 })
+  }
+
+  const name = typeof body.name === 'string' ? body.name.trim() : ''
+  const date = typeof body.date === 'string' ? body.date.trim() : ''
+
+  if (!name || !date || !DATE_RE.test(date)) {
+    return NextResponse.json(
+      { error: 'name (string) and date (YYYY-MM-DD) are required', code: 'VALIDATION_ERROR' },
+      { status: 422 },
+    )
+  }
+
+  const description =
+    body.description === null ? null
+    : typeof body.description === 'string' ? body.description.trim() || null
+    : undefined
+
+  const duplicate = await findHolidayByNameAndDate(workspaceId, name, date)
+  if (duplicate) {
+    return NextResponse.json(
+      { error: 'A holiday with this name and date already exists', code: 'DUPLICATE' },
+      { status: 409 },
+    )
+  }
+
+  const holiday = await createHoliday({
+    workspaceId,
+    name,
+    date,
+    description: description ?? undefined,
+    createdBy: userId,
+  })
+
+  return NextResponse.json({ holiday }, { status: 201 })
+}
+
+// ─── Bulk file import ──────────────────────────────────────────────────────────
+
+async function handleImport(req: NextRequest, workspaceId: string, userId: string) {
   let formData: FormData
   try {
     formData = await req.formData()
@@ -75,17 +154,12 @@ export async function POST(req: NextRequest, { params }: Props) {
     }
 
     const description = nullableString(raw.description)
-
     valid.push({ name, date: dateStr, description })
   }
 
-  const result = await bulkUpsertHolidays(ctx.workspace.id, ctx.userId, valid)
+  const result = await bulkUpsertHolidays(workspaceId, userId, valid)
 
-  return NextResponse.json({
-    inserted: result.inserted,
-    updated: result.updated,
-    errors,
-  })
+  return NextResponse.json({ inserted: result.inserted, updated: result.updated, errors })
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -108,13 +182,11 @@ function parseDate(value: unknown): string | null {
   if (typeof value === 'string') {
     const trimmed = value.trim()
     if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) return trimmed
-    // Try parsing common date strings
     const d = new Date(trimmed)
     if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
     return null
   }
   if (typeof value === 'number') {
-    // Excel serial date (fallback when cellDates doesn't convert)
     try {
       const parsed = XLSX.SSF.parse_date_code(value)
       if (!parsed) return null

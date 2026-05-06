@@ -37,6 +37,26 @@ export async function getHoliday(id: string, workspaceId: string): Promise<Holid
   )
 }
 
+export async function findHolidayByNameAndDate(
+  workspaceId: string,
+  name: string,
+  date: string,
+  excludeId?: string,
+): Promise<Holiday | null> {
+  if (excludeId) {
+    return db.queryOne<Holiday>(
+      `SELECT * FROM workspace_holidays
+       WHERE workspace_id = ? AND name = ? AND date = ? AND deleted_at IS NULL AND id != ?`,
+      [workspaceId, name, date, excludeId],
+    )
+  }
+  return db.queryOne<Holiday>(
+    `SELECT * FROM workspace_holidays
+     WHERE workspace_id = ? AND name = ? AND date = ? AND deleted_at IS NULL`,
+    [workspaceId, name, date],
+  )
+}
+
 export async function createHoliday(params: {
   workspaceId: string
   name: string
