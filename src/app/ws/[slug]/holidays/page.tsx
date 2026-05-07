@@ -3,8 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import {
-  ChevronLeft, ChevronRight, Calendar, LayoutList, CalendarDays,
-  ChevronDown, SlidersHorizontal, MoreHorizontal, Plus,
+  ChevronLeft, ChevronRight, Calendar, MoreHorizontal, Plus,
   Pencil, Trash2, Check, Upload,
 } from 'lucide-react'
 
@@ -227,6 +226,78 @@ function DeleteModal({ holiday, onConfirm, onCancel }: {
   )
 }
 
+// ─── Bulk Delete Modal ────────────────────────────────────────────────────────
+
+function BulkDeleteModal({ count, onConfirm, onCancel, deleting }: {
+  count: number
+  onConfirm: () => void
+  onCancel: () => void
+  deleting: boolean
+}) {
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, zIndex: 200,
+      background: 'rgba(0,0,0,0.45)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: '20px',
+    }}>
+      <div style={{
+        background: 'var(--surface-0)',
+        border: '1px solid var(--border)',
+        borderRadius: '12px',
+        padding: '28px',
+        maxWidth: '400px',
+        width: '100%',
+      }}>
+        <h2 style={{
+          fontFamily: 'Syne, sans-serif',
+          fontSize: '18px', fontWeight: 700,
+          color: 'var(--navy)', margin: '0 0 8px',
+        }}>
+          Delete {count} holiday{count !== 1 ? 's' : ''}
+        </h2>
+        <p style={{
+          fontFamily: 'Plus Jakarta Sans, sans-serif',
+          fontSize: '14px', color: 'var(--text-secondary)',
+          lineHeight: 1.6, margin: '0 0 24px',
+        }}>
+          Are you sure you want to delete <strong style={{ color: 'var(--navy)' }}>{count} selected holiday{count !== 1 ? 's' : ''}</strong>? This action cannot be undone.
+        </p>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={deleting}
+            style={{
+              height: '40px', padding: '0 28px',
+              background: 'var(--danger)', color: '#fff',
+              border: 'none', borderRadius: '8px',
+              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
+              cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1,
+            }}
+          >
+            {deleting ? 'Deleting…' : 'Delete'}
+          </button>
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={deleting}
+            style={{
+              height: '40px', padding: '0 20px',
+              background: 'transparent', color: 'var(--text-secondary)',
+              border: '1px solid var(--border)', borderRadius: '8px',
+              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif',
+              cursor: deleting ? 'not-allowed' : 'pointer', flexShrink: 0,
+            }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ─── More Menu ────────────────────────────────────────────────────────────────
 
 function MoreMenu({ onAdd }: { onAdd: () => void }) {
@@ -299,7 +370,14 @@ export default function HolidaysPage() {
   const [importing, setImporting] = useState(false)
   const [importMsg, setImportMsg] = useState<{ text: string; ok: boolean } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
+
+  // multi-select
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
+  const [bulkDeleting, setBulkDeleting] = useState(false)
+
   const fileRef = useRef<HTMLInputElement>(null)
+  const selectAllRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -316,6 +394,17 @@ export default function HolidaysPage() {
     fetchHolidays()
     return () => { cancelled = true }
   }, [slug, year, refreshKey])
+
+  // Clear selection when year changes or data reloads
+  useEffect(() => { setSelectedIds(new Set()) }, [year, refreshKey])
+
+  // Sync indeterminate state on the select-all checkbox
+  useEffect(() => {
+    if (!selectAllRef.current) return
+    const total = holidays.filter(h => editingId !== h.id).length
+    const count = selectedIds.size
+    selectAllRef.current.indeterminate = count > 0 && count < total
+  }, [selectedIds, holidays, editingId])
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -343,7 +432,45 @@ export default function HolidaysPage() {
     const res = await fetch(`/api/ws/${slug}/holidays/${id}`, { method: 'DELETE' })
     if (res.ok) {
       setHolidays(prev => prev.filter(h => h.id !== id))
+      setSelectedIds(prev => { const next = new Set(prev); next.delete(id); return next })
       setConfirmDeleteId(null)
+    }
+  }
+
+  async function bulkDelete() {
+    setBulkDeleting(true)
+    try {
+      await Promise.all(
+        [...selectedIds].map(id =>
+          fetch(`/api/ws/${slug}/holidays/${id}`, { method: 'DELETE' })
+        )
+      )
+      setHolidays(prev => prev.filter(h => !selectedIds.has(h.id)))
+      setSelectedIds(new Set())
+      setConfirmBulkDelete(false)
+    } finally {
+      setBulkDeleting(false)
+    }
+  }
+
+  function toggleId(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleAll() {
+    const selectableIds = holidays
+      .filter(h => editingId !== h.id)
+      .map(h => h.id)
+    const allSelected = selectableIds.every(id => selectedIds.has(id))
+    if (allSelected) {
+      setSelectedIds(new Set())
+    } else {
+      setSelectedIds(new Set(selectableIds))
     }
   }
 
@@ -379,6 +506,15 @@ export default function HolidaysPage() {
     borderRight: '1px solid var(--border)',
   }
 
+  const cbCellStyle: React.CSSProperties = {
+    width: '44px',
+    padding: '0',
+    textAlign: 'center',
+    verticalAlign: 'middle',
+    borderBottom: '1px solid var(--border)',
+    borderRight: '1px solid var(--border)',
+  }
+
   const COLS = [
     { label: 'Name', w: 'auto' },
     { label: 'Date', w: '180px' },
@@ -390,6 +526,9 @@ export default function HolidaysPage() {
     ? holidays.find(h => h.id === confirmDeleteId) ?? null
     : null
 
+  const selectableCount = holidays.filter(h => editingId !== h.id).length
+  const allSelected = selectableCount > 0 && selectedIds.size === selectableCount
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', padding: '0 28px' }}>
       {deleteTarget && (
@@ -399,6 +538,15 @@ export default function HolidaysPage() {
           onCancel={() => setConfirmDeleteId(null)}
         />
       )}
+      {confirmBulkDelete && (
+        <BulkDeleteModal
+          count={selectedIds.size}
+          onConfirm={bulkDelete}
+          onCancel={() => setConfirmBulkDelete(false)}
+          deleting={bulkDeleting}
+        />
+      )}
+
       <div style={{ padding: '20px 0 12px' }}>
         <h1 style={{
           fontFamily: 'Syne, sans-serif',
@@ -471,6 +619,54 @@ export default function HolidaysPage() {
         </div>
       </div>
 
+      {/* ── Bulk action bar ── */}
+      {selectedIds.size > 0 && (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px',
+          background: 'color-mix(in srgb, var(--danger) 8%, var(--surface-0))',
+          border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
+          borderTop: 'none',
+        }}>
+          <span style={{
+            fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
+            color: 'var(--danger)', fontWeight: 500,
+          }}>
+            {selectedIds.size} selected
+          </span>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              style={{
+                height: '30px', padding: '0 12px',
+                background: 'transparent', border: '1px solid var(--border)',
+                borderRadius: '6px', fontSize: '12px',
+                fontFamily: 'Plus Jakarta Sans, sans-serif',
+                color: 'var(--text-secondary)', cursor: 'pointer',
+              }}
+            >
+              Deselect all
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmBulkDelete(true)}
+              style={{
+                height: '30px', padding: '0 12px',
+                display: 'flex', alignItems: 'center', gap: '5px',
+                background: 'var(--danger)', color: '#fff',
+                border: 'none', borderRadius: '6px',
+                fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              <Trash2 size={12} />
+              Delete {selectedIds.size}
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Import status ── */}
       {importMsg && (
         <div style={{
@@ -507,7 +703,24 @@ export default function HolidaysPage() {
       <div style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
-            <tr style={{ background: '#95c7ad'}}>
+            <tr style={{ background: '#95c7ad' }}>
+              {/* Select-all checkbox */}
+              <th style={{
+                ...cbCellStyle,
+                borderBottom: '1px solid var(--border)',
+                borderRight: '1px solid var(--border)',
+                position: 'sticky', top: 0, zIndex: 1,
+                background: '#95c7ad', width: '44px',
+              }}>
+                <input
+                  ref={selectAllRef}
+                  type="checkbox"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  disabled={loading || selectableCount === 0}
+                  style={{ cursor: 'pointer', accentColor: 'var(--brand)', width: '14px', height: '14px' }}
+                />
+              </th>
               {COLS.map(({ label, w }, i) => (
                 <th key={i} style={{
                   padding: '10px 16px', textAlign: 'left',
@@ -530,6 +743,9 @@ export default function HolidaysPage() {
             {loading ? (
               [1,2,3,4,5].map(i => (
                 <tr key={i}>
+                  <td style={{ ...cbCellStyle, padding: '12px' }}>
+                    <div style={{ height: '14px', width: '14px', background: 'var(--surface-2)', borderRadius: '3px', margin: 'auto' }} />
+                  </td>
                   {[140, 130, 200, 60].map((w, j, arr) => (
                     <td key={j} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', borderRight: j < arr.length - 1 ? '1px solid var(--border)' : undefined }}>
                       <div style={{ height: '14px', background: 'var(--surface-2)', borderRadius: '4px', width: `${w}px` }} />
@@ -539,7 +755,7 @@ export default function HolidaysPage() {
               ))
             ) : holidays.length === 0 ? (
               <tr>
-                <td colSpan={4} style={{ padding: '56px 16px', textAlign: 'center' }}>
+                <td colSpan={5} style={{ padding: '56px 16px', textAlign: 'center' }}>
                   <Calendar size={28} color="var(--border)" style={{ display: 'block', margin: '0 auto 10px' }} />
                   <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
                     No holidays for {year}.
@@ -558,7 +774,7 @@ export default function HolidaysPage() {
                 if (editingId === h.id) {
                   return (
                     <tr key={h.id}>
-                      <td colSpan={4} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
+                      <td colSpan={5} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
                         <HolidayForm slug={slug} initial={h} onSave={onSaved} onCancel={() => setEditingId(null)} />
                       </td>
                     </tr>
@@ -566,8 +782,26 @@ export default function HolidaysPage() {
                 }
 
                 const { full, day } = formatDate(h.date)
+                const isSelected = selectedIds.has(h.id)
                 return (
-                  <tr key={h.id} style={{ background: 'var(--surface-0)' }}>
+                  <tr
+                    key={h.id}
+                    style={{
+                      background: isSelected
+                        ? 'color-mix(in srgb, var(--brand) 6%, var(--surface-0))'
+                        : 'var(--surface-0)',
+                    }}
+                  >
+                    {/* Checkbox */}
+                    <td style={cbCellStyle}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleId(h.id)}
+                        style={{ cursor: 'pointer', accentColor: 'var(--brand)', width: '14px', height: '14px' }}
+                      />
+                    </td>
+
                     {/* Name */}
                     <td style={{ ...tdStyle, fontWeight: 500 }}>
                       {h.name}
@@ -627,6 +861,11 @@ export default function HolidaysPage() {
         <div style={{ padding: '8px 0', borderTop: '1px solid var(--border)', background: 'var(--surface-1)' }}>
           <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-muted)', margin: 0 }}>
             {holidays.length} holiday{holidays.length !== 1 ? 's' : ''} in {year}
+            {selectedIds.size > 0 && (
+              <span style={{ marginLeft: '8px', color: 'var(--danger)', fontWeight: 500 }}>
+                · {selectedIds.size} selected
+              </span>
+            )}
           </p>
         </div>
       )}
