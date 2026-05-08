@@ -65,6 +65,28 @@ Attendance stats are day-level, not event-level. Use `src/lib/attendance-summary
 
 ---
 
+## Holiday Calendar
+
+Workspace admins manage a per-workspace holiday list (`workspace_holidays` table). Holidays are soft-deleted (`deleted_at`), always scoped by `workspace_id`.
+
+### Admin API (`/api/ws/[slug]/holidays`)
+- `GET ?year=YYYY` — list holidays for the given year; omit `year` for all
+- `POST` JSON `{ name, date, description? }` — create a single holiday (`date` is `YYYY-MM-DD`)
+- `POST` multipart `file` — bulk import from CSV or XLSX (≤ 2 MB); upserts by date (one holiday per date)
+- `PATCH /[id]` — partial update; at least one of `name`, `date`, `description` required
+- `DELETE /[id]` — soft delete; sets `deleted_at`
+
+Duplicate guard: `(name, date)` must be unique per workspace. Returns `409 DUPLICATE` on collision.
+
+### Member API (`/api/me/ws/[slug]/holidays`)
+- `GET ?year=YYYY` — read-only; authenticated workspace members only; defaults to current year
+
+### Import file format
+Columns (case-insensitive): `name` (required), `date` (required, `YYYY-MM-DD`), `description` (optional).
+Rows with a missing/invalid name or date are skipped and returned in the `errors` array; valid rows are always upserted.
+
+---
+
 ## Database Patterns
 
 ### DB abstraction
@@ -84,6 +106,7 @@ import { db } from '@/lib/db'
 - `stats.ts` - user stats
 - `tokens.ts` - API tokens (separate from users.ts)
 - `push.ts` - push subscriptions
+- `holidays.ts` - workspace holiday calendar
 
 ### Migration
 `scripts/migrate.js` - idempotent. `ALTER TABLE` wrapped in try/catch. Run: `node scripts/migrate.js`.

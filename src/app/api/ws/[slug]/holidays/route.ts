@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
+import { Readable } from 'stream'
 import { requireWsAdmin } from '@/lib/ws-admin'
 import {
   listHolidays,
@@ -17,7 +18,6 @@ interface Props { params: Promise<{ slug: string }> }
 // ─── GET /api/ws/[slug]/holidays ───────────────────────────────────────────────
 
 export async function GET(req: NextRequest, { params }: Props) {
-  console.log("get_holidays")
   const { slug } = await params
   const ctx = await requireWsAdmin(req, slug)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
@@ -116,19 +116,45 @@ async function handleImport(req: NextRequest, workspaceId: string, userId: strin
     return NextResponse.json({ error: 'File exceeds 2 MB limit', code: 'FILE_TOO_LARGE' }, { status: 413 })
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer())
+  const buffer = Buffer.from(new Uint8Array(await file.arrayBuffer()))
+  const workbook = new ExcelJS.Workbook()
 
-  let rawRows: Record<string, unknown>[]
   try {
-    const wb = XLSX.read(buffer, { type: 'buffer', cellDates: true, raw: false })
-    const sheet = wb.Sheets[wb.SheetNames[0]]
-    if (!sheet) {
-      return NextResponse.json({ error: 'File has no sheets', code: 'EMPTY_FILE' }, { status: 422 })
+    const fileStream = new Readable({ read() {} })
+    fileStream.push(buffer)
+    fileStream.push(null)
+    if (ext === 'xlsx') {
+      await workbook.xlsx.read(fileStream)
+    } else {
+      await workbook.csv.read(fileStream)
     }
-    rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: null })
   } catch {
     return NextResponse.json({ error: 'Could not parse file', code: 'PARSE_ERROR' }, { status: 422 })
   }
+
+  const sheet = workbook.worksheets[0]
+  if (!sheet) {
+    return NextResponse.json({ error: 'File has no sheets', code: 'EMPTY_FILE' }, { status: 422 })
+  }
+
+  // Extract lowercased headers from the first row
+  const headerRow = sheet.getRow(1)
+  const headers: string[] = []
+  headerRow.eachCell({ includeEmpty: false }, (cell) => {
+    headers.push(String(cellValue(cell.value) ?? '').toLowerCase().trim())
+  })
+
+  // Convert data rows to objects with normalized keys
+  const rawRows: Record<string, unknown>[] = []
+  sheet.eachRow((_row, rowNumber) => {
+    if (rowNumber === 1) return
+    const row = sheet.getRow(rowNumber)
+    const obj: Record<string, unknown> = {}
+    headers.forEach((header, idx) => {
+      obj[header] = cellValue(row.getCell(idx + 1).value)
+    })
+    rawRows.push(obj)
+  })
 
   if (rawRows.length === 0) {
     return NextResponse.json({ error: 'File contains no data rows', code: 'EMPTY_FILE' }, { status: 422 })
@@ -139,7 +165,7 @@ async function handleImport(req: NextRequest, workspaceId: string, userId: strin
 
   for (let i = 0; i < rawRows.length; i++) {
     const rowNum = i + 2 // row 1 is header
-    const raw = normalizeKeys(rawRows[i])
+    const raw = rawRows[i]
 
     const name = typeof raw.name === 'string' ? raw.name.trim() : null
     if (!name) {
@@ -164,8 +190,18 @@ async function handleImport(req: NextRequest, workspaceId: string, userId: strin
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function normalizeKeys(obj: Record<string, unknown>): Record<string, unknown> {
-  return Object.fromEntries(Object.entries(obj).map(([k, v]) => [k.toLowerCase().trim(), v]))
+// Unwrap exceljs cell value types to plain JS values
+function cellValue(v: ExcelJS.CellValue): unknown {
+  if (v === null || v === undefined) return null
+  if (v instanceof Date || typeof v !== 'object') return v
+  // Formula / shared formula — return the computed result
+  if ('result' in v) return (v as { result: ExcelJS.CellValue }).result ?? null
+  // Rich text — join segments
+  if ('richText' in v) return (v as ExcelJS.CellRichTextValue).richText.map((r) => r.text).join('')
+  // Hyperlink — return display text
+  if ('text' in v) return (v as { text: string }).text
+  // Error cells → null
+  return null
 }
 
 function nullableString(value: unknown): string | null {
@@ -185,17 +221,6 @@ function parseDate(value: unknown): string | null {
     const d = new Date(trimmed)
     if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
     return null
-  }
-  if (typeof value === 'number') {
-    try {
-      const parsed = XLSX.SSF.parse_date_code(value)
-      if (!parsed) return null
-      const m = String(parsed.m).padStart(2, '0')
-      const d = String(parsed.d).padStart(2, '0')
-      return `${parsed.y}-${m}-${d}`
-    } catch {
-      return null
-    }
   }
   return null
 }

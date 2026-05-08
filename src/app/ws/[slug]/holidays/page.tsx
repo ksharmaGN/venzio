@@ -2,360 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useParams } from 'next/navigation'
-import {
-  ChevronLeft, ChevronRight, Calendar, MoreHorizontal, Plus,
-  Pencil, Trash2, Check, Upload,
-} from 'lucide-react'
-
-interface Holiday {
-  id: string
-  name: string
-  date: string
-  description: string | null
-}
-
-const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat']
-
-function formatDateRange(year: number) {
-  return `01-Jan-${year} - 31-Dec-${year}`
-}
-
-function formatDate(iso: string): { full: string; day: string } {
-  const [y, m, d] = iso.split('-')
-  const day = DAYS[new Date(parseInt(y), parseInt(m) - 1, parseInt(d)).getDay()]
-  return { full: `${d}-${MONTHS[parseInt(m) - 1]}-${y}`, day }
-}
-
-// ─── Shared ───────────────────────────────────────────────────────────────────
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  height: '36px',
-  padding: '0 10px',
-  border: '1px solid var(--border)',
-  borderRadius: '6px',
-  fontSize: '13px',
-  fontFamily: 'Plus Jakarta Sans, sans-serif',
-  background: 'var(--surface-2)',
-  color: 'var(--navy)',
-  outline: 'none',
-  boxSizing: 'border-box',
-}
-
-// ─── Add / Edit Form ──────────────────────────────────────────────────────────
-
-function HolidayForm({ slug, initial, onSave, onCancel }: {
-  slug: string
-  initial?: Holiday
-  onSave: (h: Holiday) => void
-  onCancel: () => void
-}) {
-  const [name, setName] = useState(initial?.name ?? '')
-  const [date, setDate] = useState(initial?.date ?? '')
-  const [description, setDescription] = useState(initial?.description ?? '')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  async function save() {
-    if (!name.trim() || !date) { setError('Name and date are required'); return }
-    setSaving(true); setError(null)
-    try {
-      const url = initial
-        ? `/api/ws/${slug}/holidays/${initial.id}`
-        : `/api/ws/${slug}/holidays`
-      const res = await fetch(url, {
-        method: initial ? 'PATCH' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim(), date, description: description.trim() || null }),
-      })
-      const data = await res.json()
-      if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
-      onSave(data.holiday)
-    } finally { setSaving(false) }
-  }
-
-  return (
-    <div style={{
-      background: 'var(--surface-1)',
-      border: '1px solid var(--border)',
-      borderRadius: '8px',
-      padding: '14px',
-      marginBottom: '10px',
-    }}>
-      <p style={{
-        fontSize: '13px', fontWeight: 600,
-        fontFamily: 'Plus Jakarta Sans, sans-serif',
-        color: 'var(--navy)', margin: '0 0 10px',
-      }}>
-        {initial ? 'Edit holiday' : 'Add holiday'}
-      </p>
-
-      <div style={{ display: 'flex', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-        <input
-          type="text"
-          placeholder="Holiday name"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          style={{ ...inputStyle, flex: '2 1 150px', minWidth: 0 }}
-        />
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          style={{ ...inputStyle, flex: '1 1 130px', minWidth: 0 }}
-        />
-        <input
-          type="text"
-          placeholder="Description (optional)"
-          value={description}
-          onChange={e => setDescription(e.target.value)}
-          style={{ ...inputStyle, flex: '2 1 180px', minWidth: 0 }}
-        />
-      </div>
-
-      {error && (
-        <p style={{ fontSize: '12px', color: 'var(--danger)', fontFamily: 'Plus Jakarta Sans, sans-serif', margin: '0 0 8px' }}>
-          {error}
-        </p>
-      )}
-
-      <div style={{ display: 'flex', gap: '6px' }}>
-        <button
-          type="button"
-          onClick={save}
-          disabled={saving}
-          style={{
-            height: '32px', padding: '0 14px',
-            background: 'var(--brand)', color: '#fff',
-            border: 'none', borderRadius: '6px',
-            fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
-            cursor: saving ? 'not-allowed' : 'pointer', opacity: saving ? 0.7 : 1,
-            display: 'flex', alignItems: 'center', gap: '5px',
-          }}
-        >
-          <Check size={13} />
-          {initial ? 'Save' : 'Add'}
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          style={{
-            height: '32px', padding: '0 12px',
-            background: 'transparent', color: 'var(--text-secondary)',
-            border: '1px solid var(--border)', borderRadius: '6px',
-            fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-            cursor: 'pointer',
-          }}
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─── Delete Modal ─────────────────────────────────────────────────────────────
-
-function DeleteModal({ holiday, onConfirm, onCancel }: {
-  holiday: Holiday
-  onConfirm: () => void
-  onCancel: () => void
-}) {
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '20px',
-    }}>
-      <div style={{
-        background: 'var(--surface-0)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-        padding: '28px',
-        maxWidth: '400px',
-        width: '100%',
-      }}>
-        <h2 style={{
-          fontFamily: 'Syne, sans-serif',
-          fontSize: '18px', fontWeight: 700,
-          color: 'var(--navy)', margin: '0 0 8px',
-        }}>
-          Delete holiday
-        </h2>
-        <p style={{
-          fontFamily: 'Plus Jakarta Sans, sans-serif',
-          fontSize: '14px', color: 'var(--text-secondary)',
-          lineHeight: 1.6, margin: '0 0 24px',
-        }}>
-          Are you sure you want to delete{' '}
-          <strong style={{ color: 'var(--navy)' }}>{holiday.name}</strong>?
-          This action cannot be undone.
-        </p>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              height: '40px', padding: '0 28px',
-              background: 'var(--danger)', color: '#fff',
-              border: 'none', borderRadius: '8px',
-              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
-              cursor: 'pointer',
-            }}
-          >
-            Delete
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              height: '40px', padding: '0 20px',
-              background: 'transparent', color: 'var(--text-secondary)',
-              border: '1px solid var(--border)', borderRadius: '8px',
-              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-              cursor: 'pointer', flexShrink: 0,
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── Bulk Delete Modal ────────────────────────────────────────────────────────
-
-function BulkDeleteModal({ count, onConfirm, onCancel, deleting }: {
-  count: number
-  onConfirm: () => void
-  onCancel: () => void
-  deleting: boolean
-}) {
-  return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 200,
-      background: 'rgba(0,0,0,0.45)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      padding: '20px',
-    }}>
-      <div style={{
-        background: 'var(--surface-0)',
-        border: '1px solid var(--border)',
-        borderRadius: '12px',
-        padding: '28px',
-        maxWidth: '400px',
-        width: '100%',
-      }}>
-        <h2 style={{
-          fontFamily: 'Syne, sans-serif',
-          fontSize: '18px', fontWeight: 700,
-          color: 'var(--navy)', margin: '0 0 8px',
-        }}>
-          Delete {count} holiday{count !== 1 ? 's' : ''}
-        </h2>
-        <p style={{
-          fontFamily: 'Plus Jakarta Sans, sans-serif',
-          fontSize: '14px', color: 'var(--text-secondary)',
-          lineHeight: 1.6, margin: '0 0 24px',
-        }}>
-          Are you sure you want to delete <strong style={{ color: 'var(--navy)' }}>{count} selected holiday{count !== 1 ? 's' : ''}</strong>? This action cannot be undone.
-        </p>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={deleting}
-            style={{
-              height: '40px', padding: '0 28px',
-              background: 'var(--danger)', color: '#fff',
-              border: 'none', borderRadius: '8px',
-              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
-              cursor: deleting ? 'not-allowed' : 'pointer', opacity: deleting ? 0.7 : 1,
-            }}
-          >
-            {deleting ? 'Deleting…' : 'Delete'}
-          </button>
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={deleting}
-            style={{
-              height: '40px', padding: '0 20px',
-              background: 'transparent', color: 'var(--text-secondary)',
-              border: '1px solid var(--border)', borderRadius: '8px',
-              fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-              cursor: deleting ? 'not-allowed' : 'pointer', flexShrink: 0,
-            }}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ─── More Menu ────────────────────────────────────────────────────────────────
-
-function MoreMenu({ onAdd }: { onAdd: () => void }) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
-  }, [])
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        type="button"
-        onClick={() => setOpen(o => !o)}
-        style={{
-          height: '32px', width: '32px',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          background: 'transparent', border: '1px solid var(--border)',
-          borderRadius: '6px', cursor: 'pointer', color: 'var(--text-secondary)',
-        }}
-      >
-        <MoreHorizontal size={15} />
-      </button>
-
-      {open && (
-        <div style={{
-          position: 'absolute', top: '36px', right: 0, zIndex: 50,
-          background: 'var(--surface-0)', border: '1px solid var(--border)',
-          borderRadius: '8px', padding: '4px', minWidth: '140px',
-        }}>
-          <button
-            type="button"
-            onClick={() => { onAdd(); setOpen(false) }}
-            onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
-            onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-            style={{
-              width: '100%', height: '34px', padding: '0 10px',
-              display: 'flex', alignItems: 'center', gap: '8px',
-              background: 'transparent', border: 'none', borderRadius: '5px',
-              fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-              color: 'var(--navy)', cursor: 'pointer', textAlign: 'left',
-            }}
-          >
-            <Plus size={13} />
-            Add holiday
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ─── Page ─────────────────────────────────────────────────────────────────────
+import { ChevronLeft, ChevronRight, Calendar, Upload, Trash2 } from 'lucide-react'
+import { HolidayForm } from './HolidayForm'
+import { HolidayTable } from './HolidayTable'
+import { DeleteModal, BulkDeleteModal } from './HolidayModals'
+import { MoreMenu } from './MoreMenu'
+import { formatDateRange } from './types'
+import type { Holiday } from './types'
 
 export default function HolidaysPage() {
   const params = useParams()
@@ -368,16 +21,13 @@ export default function HolidaysPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null)
   const [importing, setImporting] = useState(false)
-  const [importMsg, setImportMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [importMsg, setImportMsg] = useState<{ text: string; ok: boolean; errors?: { row: number; reason: string }[] } | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
-
-  // multi-select
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [confirmBulkDelete, setConfirmBulkDelete] = useState(false)
   const [bulkDeleting, setBulkDeleting] = useState(false)
 
   const fileRef = useRef<HTMLInputElement>(null)
-  const selectAllRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -395,37 +45,28 @@ export default function HolidaysPage() {
     return () => { cancelled = true }
   }, [slug, year, refreshKey])
 
-  // Clear selection when year changes or data reloads
   useEffect(() => { setSelectedIds(new Set()) }, [year, refreshKey])
-
-  // Sync indeterminate state on the select-all checkbox
-  useEffect(() => {
-    if (!selectAllRef.current) return
-    const total = holidays.filter(h => editingId !== h.id).length
-    const count = selectedIds.size
-    selectAllRef.current.indeterminate = count > 0 && count < total
-  }, [selectedIds, holidays, editingId])
 
   async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
-    setImporting(true)
-    setImportMsg(null)
+    setImporting(true); setImportMsg(null)
     try {
       const form = new FormData()
       form.append('file', file)
       const res = await fetch(`/api/ws/${slug}/holidays`, { method: 'POST', body: form })
       const data = await res.json()
-      if (!res.ok) {
-        setImportMsg({ text: data.error ?? 'Import failed', ok: false })
-        return
-      }
-      setImportMsg({ text: `Imported: ${data.inserted} added, ${data.updated} updated`, ok: true })
+      if (!res.ok) { setImportMsg({ text: data.error ?? 'Import failed', ok: false }); return }
+      const rowErrors: { row: number; reason: string }[] = data.errors ?? []
+      const skippedPart = rowErrors.length > 0 ? `, ${rowErrors.length} skipped` : ''
+      setImportMsg({
+        text: `Imported: ${data.inserted} added, ${data.updated} updated${skippedPart}`,
+        ok: data.inserted + data.updated > 0,
+        errors: rowErrors.length > 0 ? rowErrors : undefined,
+      })
       setRefreshKey(k => k + 1)
-    } finally {
-      setImporting(false)
-    }
+    } finally { setImporting(false) }
   }
 
   async function deleteHoliday(id: string) {
@@ -440,38 +81,33 @@ export default function HolidaysPage() {
   async function bulkDelete() {
     setBulkDeleting(true)
     try {
-      await Promise.all(
-        [...selectedIds].map(id =>
-          fetch(`/api/ws/${slug}/holidays/${id}`, { method: 'DELETE' })
-        )
+      const results = await Promise.all(
+        [...selectedIds].map(async id => ({ id, ok: (await fetch(`/api/ws/${slug}/holidays/${id}`, { method: 'DELETE' })).ok }))
       )
-      setHolidays(prev => prev.filter(h => !selectedIds.has(h.id)))
-      setSelectedIds(new Set())
+      const deletedIds = new Set(results.filter(r => r.ok).map(r => r.id))
+      const failedCount = results.length - deletedIds.size
+
+      setHolidays(prev => prev.filter(h => !deletedIds.has(h.id)))
+      setSelectedIds(prev => { const next = new Set(prev); deletedIds.forEach(id => next.delete(id)); return next })
       setConfirmBulkDelete(false)
-    } finally {
-      setBulkDeleting(false)
-    }
+
+      if (failedCount > 0) {
+        setImportMsg({ text: `${failedCount} holiday${failedCount !== 1 ? 's' : ''} could not be deleted`, ok: false })
+      }
+    } finally { setBulkDeleting(false) }
   }
 
   function toggleId(id: string) {
     setSelectedIds(prev => {
       const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+      if (next.has(id)) next.delete(id); else next.add(id)
       return next
     })
   }
 
-  function toggleAll() {
-    const selectableIds = holidays
-      .filter(h => editingId !== h.id)
-      .map(h => h.id)
+  function toggleAll(selectableIds: string[]) {
     const allSelected = selectableIds.every(id => selectedIds.has(id))
-    if (allSelected) {
-      setSelectedIds(new Set())
-    } else {
-      setSelectedIds(new Set(selectableIds))
-    }
+    setSelectedIds(allSelected ? new Set() : new Set(selectableIds))
   }
 
   function onSaved(holiday: Holiday) {
@@ -483,8 +119,7 @@ export default function HolidaysPage() {
       }
       return [...prev, holiday].sort((a, b) => a.date.localeCompare(b.date))
     })
-    setShowAdd(false)
-    setEditingId(null)
+    setShowAdd(false); setEditingId(null)
   }
 
   const iconBtn = (active?: boolean): React.CSSProperties => ({
@@ -496,38 +131,7 @@ export default function HolidaysPage() {
     color: active ? 'var(--brand)' : 'var(--text-secondary)',
   })
 
-  const tdStyle: React.CSSProperties = {
-    padding: '12px 16px',
-    fontSize: '14px',
-    fontFamily: 'Plus Jakarta Sans, sans-serif',
-    color: 'var(--navy)',
-    verticalAlign: 'middle',
-    borderBottom: '1px solid var(--border)',
-    borderRight: '1px solid var(--border)',
-  }
-
-  const cbCellStyle: React.CSSProperties = {
-    width: '44px',
-    padding: '0',
-    textAlign: 'center',
-    verticalAlign: 'middle',
-    borderBottom: '1px solid var(--border)',
-    borderRight: '1px solid var(--border)',
-  }
-
-  const COLS = [
-    { label: 'Name', w: 'auto' },
-    { label: 'Date', w: '180px' },
-    { label: 'Description', w: 'auto' },
-    { label: '', w: '76px' },
-  ]
-
-  const deleteTarget = confirmDeleteId
-    ? holidays.find(h => h.id === confirmDeleteId) ?? null
-    : null
-
-  const selectableCount = holidays.filter(h => editingId !== h.id).length
-  const allSelected = selectableCount > 0 && selectedIds.size === selectableCount
+  const deleteTarget = confirmDeleteId ? holidays.find(h => h.id === confirmDeleteId) ?? null : null
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100dvh', overflow: 'hidden', padding: '0 28px' }}>
@@ -547,70 +151,37 @@ export default function HolidaysPage() {
         />
       )}
 
+      {/* ── Title ── */}
       <div style={{ padding: '20px 0 12px' }}>
-        <h1 style={{
-          fontFamily: 'Syne, sans-serif',
-          fontSize: '22px',
-          fontWeight: 700,
-          color: 'var(--navy)',
-          margin: 0,
-        }}>
+        <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '22px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>
           Holidays Calendar
         </h1>
       </div>
 
       {/* ── Toolbar ── */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '8px 12px', borderBottom: '1px solid var(--border)',
-        background: 'var(--surface-0)', gap: '12px', flexWrap: 'wrap',
-      }}>
-        {/* Left: year nav + date range */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--surface-0)', gap: '12px', flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <button type="button" onClick={() => setYear(y => y - 1)} style={iconBtn()}>
             <ChevronLeft size={15} />
           </button>
-          <span style={{
-            height: '32px', width: '32px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            border: '1px solid var(--border)', borderRadius: '6px',
-            color: 'var(--text-secondary)',
-          }}>
+          <span style={{ height: '32px', width: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', borderRadius: '6px', color: 'var(--text-secondary)' }}>
             <Calendar size={15} />
           </span>
           <button type="button" onClick={() => setYear(y => y + 1)} style={iconBtn()}>
             <ChevronRight size={15} />
           </button>
-          <span style={{
-            marginLeft: '8px', fontSize: '13px',
-            fontFamily: 'Plus Jakarta Sans, sans-serif',
-            fontWeight: 500, color: 'var(--navy)',
-          }}>
+          <span style={{ marginLeft: '8px', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500, color: 'var(--navy)' }}>
             {formatDateRange(year)}
           </span>
         </div>
 
-        {/* Right: import + more */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.csv"
-            style={{ display: 'none' }}
-            onChange={handleImport}
-          />
+          <input ref={fileRef} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} onChange={handleImport} />
           <button
             type="button"
             onClick={() => fileRef.current?.click()}
             disabled={importing}
-            style={{
-              height: '32px', padding: '0 12px',
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: 'transparent', border: '1px solid var(--border)',
-              borderRadius: '6px', cursor: importing ? 'not-allowed' : 'pointer',
-              fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-              color: 'var(--navy)', opacity: importing ? 0.6 : 1,
-            }}
+            style={{ height: '32px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', cursor: importing ? 'not-allowed' : 'pointer', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--navy)', opacity: importing ? 0.6 : 1 }}
           >
             <Upload size={13} />
             {importing ? 'Importing…' : 'Import'}
@@ -621,45 +192,15 @@ export default function HolidaysPage() {
 
       {/* ── Bulk action bar ── */}
       {selectedIds.size > 0 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '8px 12px',
-          background: 'color-mix(in srgb, var(--danger) 8%, var(--surface-0))',
-          border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)',
-          borderTop: 'none',
-        }}>
-          <span style={{
-            fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-            color: 'var(--danger)', fontWeight: 500,
-          }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'color-mix(in srgb, var(--danger) 8%, var(--surface-0))', border: '1px solid color-mix(in srgb, var(--danger) 25%, transparent)', borderTop: 'none' }}>
+          <span style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--danger)', fontWeight: 500 }}>
             {selectedIds.size} selected
           </span>
           <div style={{ display: 'flex', gap: '6px' }}>
-            <button
-              type="button"
-              onClick={() => setSelectedIds(new Set())}
-              style={{
-                height: '30px', padding: '0 12px',
-                background: 'transparent', border: '1px solid var(--border)',
-                borderRadius: '6px', fontSize: '12px',
-                fontFamily: 'Plus Jakarta Sans, sans-serif',
-                color: 'var(--text-secondary)', cursor: 'pointer',
-              }}
-            >
+            <button type="button" onClick={() => setSelectedIds(new Set())} style={{ height: '30px', padding: '0 12px', background: 'transparent', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', cursor: 'pointer' }}>
               Deselect all
             </button>
-            <button
-              type="button"
-              onClick={() => setConfirmBulkDelete(true)}
-              style={{
-                height: '30px', padding: '0 12px',
-                display: 'flex', alignItems: 'center', gap: '5px',
-                background: 'var(--danger)', color: '#fff',
-                border: 'none', borderRadius: '6px',
-                fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
-                cursor: 'pointer',
-              }}
-            >
+            <button type="button" onClick={() => setConfirmBulkDelete(true)} style={{ height: '30px', padding: '0 12px', display: 'flex', alignItems: 'center', gap: '5px', background: 'var(--danger)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500, cursor: 'pointer' }}>
               <Trash2 size={12} />
               Delete {selectedIds.size}
             </button>
@@ -669,26 +210,18 @@ export default function HolidaysPage() {
 
       {/* ── Import status ── */}
       {importMsg && (
-        <div style={{
-          margin: '10px 0 0',
-          padding: '10px 14px',
-          borderRadius: '8px',
-          fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-          color: importMsg.ok ? 'var(--teal)' : 'var(--danger)',
-          background: importMsg.ok
-            ? 'color-mix(in srgb, var(--teal) 10%, transparent)'
-            : 'color-mix(in srgb, var(--danger) 10%, transparent)',
-          border: `1px solid ${importMsg.ok ? 'color-mix(in srgb, var(--teal) 30%, transparent)' : 'color-mix(in srgb, var(--danger) 30%, transparent)'}`,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span>{importMsg.text}</span>
-          <button
-            type="button"
-            onClick={() => setImportMsg(null)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 0 0 12px', fontSize: '16px', lineHeight: 1 }}
-          >
-            ×
-          </button>
+        <div style={{ margin: '10px 0 0', padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: importMsg.ok ? 'var(--teal)' : 'var(--danger)', background: importMsg.ok ? 'color-mix(in srgb, var(--teal) 10%, transparent)' : 'color-mix(in srgb, var(--danger) 10%, transparent)', border: `1px solid ${importMsg.ok ? 'color-mix(in srgb, var(--teal) 30%, transparent)' : 'color-mix(in srgb, var(--danger) 30%, transparent)'}`, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div>
+            <span>{importMsg.text}</span>
+            {importMsg.errors && (
+              <ul style={{ margin: '6px 0 0', padding: '0 0 0 16px', fontSize: '12px', color: 'var(--danger)', lineHeight: 1.7 }}>
+                {importMsg.errors.map(e => (
+                  <li key={e.row}>Row {e.row}: {e.reason}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button type="button" onClick={() => setImportMsg(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', padding: '0 0 0 12px', fontSize: '16px', lineHeight: 1, flexShrink: 0 }}>×</button>
         </div>
       )}
 
@@ -700,161 +233,21 @@ export default function HolidaysPage() {
       )}
 
       {/* ── Table ── */}
-      <div style={{ flex: 1, overflowX: 'auto', overflowY: 'auto' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ background: '#95c7ad' }}>
-              {/* Select-all checkbox */}
-              <th style={{
-                ...cbCellStyle,
-                borderBottom: '1px solid var(--border)',
-                borderRight: '1px solid var(--border)',
-                position: 'sticky', top: 0, zIndex: 1,
-                background: '#95c7ad', width: '44px',
-              }}>
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                  disabled={loading || selectableCount === 0}
-                  style={{ cursor: 'pointer', accentColor: 'var(--brand)', width: '14px', height: '14px' }}
-                />
-              </th>
-              {COLS.map(({ label, w }, i) => (
-                <th key={i} style={{
-                  padding: '10px 16px', textAlign: 'left',
-                  fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-                  fontWeight: 600, color: 'var(--text-secondary)',
-                  verticalAlign: 'middle',
-                  borderBottom: '1px solid var(--border)',
-                  borderRight: i < COLS.length - 1 ? '1px solid var(--border)' : undefined,
-                  whiteSpace: 'nowrap', width: w,
-                  position: 'sticky', top: 0, zIndex: 1,
-                  background: '#95c7ad',
-                }}>
-                  {label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody>
-            {loading ? (
-              [1,2,3,4,5].map(i => (
-                <tr key={i}>
-                  <td style={{ ...cbCellStyle, padding: '12px' }}>
-                    <div style={{ height: '14px', width: '14px', background: 'var(--surface-2)', borderRadius: '3px', margin: 'auto' }} />
-                  </td>
-                  {[140, 130, 200, 60].map((w, j, arr) => (
-                    <td key={j} style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', borderRight: j < arr.length - 1 ? '1px solid var(--border)' : undefined }}>
-                      <div style={{ height: '14px', background: 'var(--surface-2)', borderRadius: '4px', width: `${w}px` }} />
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : holidays.length === 0 ? (
-              <tr>
-                <td colSpan={5} style={{ padding: '56px 16px', textAlign: 'center' }}>
-                  <Calendar size={28} color="var(--border)" style={{ display: 'block', margin: '0 auto 10px' }} />
-                  <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-muted)', margin: '0 0 8px' }}>
-                    No holidays for {year}.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setShowAdd(true)}
-                    style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--brand)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
-                  >
-                    Add the first holiday
-                  </button>
-                </td>
-              </tr>
-            ) : (
-              holidays.map(h => {
-                if (editingId === h.id) {
-                  return (
-                    <tr key={h.id}>
-                      <td colSpan={5} style={{ padding: '10px 16px', borderBottom: '1px solid var(--border)' }}>
-                        <HolidayForm slug={slug} initial={h} onSave={onSaved} onCancel={() => setEditingId(null)} />
-                      </td>
-                    </tr>
-                  )
-                }
-
-                const { full, day } = formatDate(h.date)
-                const isSelected = selectedIds.has(h.id)
-                return (
-                  <tr
-                    key={h.id}
-                    style={{
-                      background: isSelected
-                        ? 'color-mix(in srgb, var(--brand) 6%, var(--surface-0))'
-                        : 'var(--surface-0)',
-                    }}
-                  >
-                    {/* Checkbox */}
-                    <td style={cbCellStyle}>
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleId(h.id)}
-                        style={{ cursor: 'pointer', accentColor: 'var(--brand)', width: '14px', height: '14px' }}
-                      />
-                    </td>
-
-                    {/* Name */}
-                    <td style={{ ...tdStyle, fontWeight: 500 }}>
-                      {h.name}
-                    </td>
-
-                    {/* Date */}
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap' }}>
-                      {full},&nbsp;
-                      <span style={{ color: 'var(--brand)', fontWeight: 500 }}>{day}</span>
-                    </td>
-
-                    {/* Description */}
-                    <td style={tdStyle}>
-                      {h.description ? (
-                        <span style={{
-                          fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif',
-                          color: 'var(--text-secondary)',
-                        }}>
-                          {h.description}
-                        </span>
-                      ) : (
-                        <span style={{ color: 'var(--border)' }}>—</span>
-                      )}
-                    </td>
-
-                    {/* Actions */}
-                    <td style={{ ...tdStyle, whiteSpace: 'nowrap', borderRight: 'none' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <button
-                          type="button"
-                          onClick={() => { setEditingId(h.id); setShowAdd(false) }}
-                          title="Edit"
-                          style={{ height: '28px', width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', cursor: 'pointer', color: 'var(--text-secondary)' }}
-                        >
-                          <Pencil size={12} />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmDeleteId(h.id)}
-                          title="Delete"
-                          style={{ height: '28px', width: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: '1px solid var(--border)', borderRadius: '5px', cursor: 'pointer', color: 'var(--danger)' }}
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                )
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
+      <HolidayTable
+        holidays={holidays}
+        loading={loading}
+        year={year}
+        slug={slug}
+        editingId={editingId}
+        selectedIds={selectedIds}
+        onEdit={id => { setEditingId(id); setShowAdd(false) }}
+        onDeleteRequest={setConfirmDeleteId}
+        onToggleId={toggleId}
+        onToggleAll={toggleAll}
+        onSaved={onSaved}
+        onCancelEdit={() => setEditingId(null)}
+        onAddFirst={() => setShowAdd(true)}
+      />
 
       {/* ── Footer count ── */}
       {!loading && holidays.length > 0 && (

@@ -84,7 +84,9 @@ src/
 │       │       ├── domain/[domainId]/route.ts         # DELETE domain
 │       │       ├── domain/[domainId]/verify/route.ts  # POST - DNS TXT verification
 │       │       ├── members/route.ts                   # GET all members · POST invite
-│       │       └── members/[memberId]/route.ts        # DELETE member
+│       │       ├── members/[memberId]/route.ts        # DELETE member
+│       │       ├── holidays/route.ts                  # GET list (?year=) · POST create · POST import (CSV/XLSX, ≤2 MB)
+│       │       └── holidays/[id]/route.ts             # PATCH update · DELETE (soft)
 │       ├── checkin/
 │       │   ├── route.ts                # POST - create presence event
 │       │   ├── checkout/route.ts       # POST - check out of most recent open event
@@ -99,7 +101,9 @@ src/
 │       │   ├── route.ts                # GET profile · PATCH name · DELETE account
 │       │   ├── password/route.ts       # POST - change password
 │       │   ├── consent/route.ts        # POST - accept/decline workspace invite
-│       │   └── workspaces/[workspaceId]/route.ts  # DELETE - leave workspace
+│       │   ├── workspaces/[workspaceId]/route.ts  # DELETE - leave workspace
+│       │   └── ws/[slug]/
+│       │       └── holidays/route.ts   # GET - member-facing holiday list for workspace (defaults to current year)
 │       └── tokens/
 │           ├── route.ts                # GET list · POST create (returns plain token once)
 │           └── [id]/route.ts           # DELETE - revoke
@@ -116,8 +120,9 @@ src/
 │   │       ├── workspaces.ts
 │   │       ├── signals.ts
 │   │       ├── stats.ts
-│   │       ├── tokens.ts  # API token queries
-│   │       └── push.ts    # Push subscription queries
+│   │       ├── tokens.ts     # API token queries
+│   │       ├── push.ts       # Push subscription queries
+│   │       └── holidays.ts   # Workspace holiday calendar queries
 │   ├── auth.ts            # JWT, cookies, bcrypt, OTP, getServerUser(), OTP cookie
 │   ├── email.ts           # Resend email helpers (OTP + consent)
 │   ├── geo.ts             # Haversine, IP geolocation, extractIp()
@@ -220,7 +225,7 @@ App runs at `http://localhost:3000`.
 
 ## Database
 
-### Schema (13 tables + 5 column additions)
+### Schema (14 tables + 5 column additions)
 
 | Table                     | Purpose                                                                    |
 | ------------------------- | -------------------------------------------------------------------------- |
@@ -232,6 +237,7 @@ App runs at `http://localhost:3000`.
 | `workspace_domains`       | Email domains for auto-enrolment                                           |
 | `workspace_members`       | User ↔ workspace membership, role, consent status                          |
 | `workspace_signal_config` | GPS / IP signal configs for presence matching                              |
+| `workspace_holidays`      | Company holiday calendar - soft-deleted, scoped to workspace               |
 | `admin_overrides`         | Additive admin overrides - audit log, never modifies events                |
 | `user_stats`              | Pre-computed streaks, totals - upserted after every check-in               |
 | `revoked_tokens`          | Invalidated JWT IDs (jti) - checked on every authenticated request         |

@@ -127,8 +127,8 @@ export async function bulkUpsertHolidays(
         await tx.execute(
           `UPDATE workspace_holidays
            SET name = ?, description = ?, updated_at = datetime('now')
-           WHERE id = ?`,
-          [row.name, row.description, existing.id],
+           WHERE id = ? AND workspace_id = ?`,
+          [row.name, row.description, existing.id, workspaceId],
         )
         updated++
       } else {
