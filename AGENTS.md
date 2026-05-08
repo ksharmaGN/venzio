@@ -202,3 +202,43 @@ Never let code and docs diverge. Stale docs cause bugs in future AI-assisted ses
 - Adding DB columns or tables
 - Changing plan limits or feature flags
 - Adding/removing environment variables
+
+---
+
+## Cursor Cloud specific instructions
+
+### Environment
+
+The VM update script runs `npm install` and `node scripts/migrate.js` on startup. After that, the environment is ready.
+
+A `.env.local` with `JWT_SECRET` and `NEXT_PUBLIC_APP_URL=http://localhost:3000` must exist for the app to start. If missing, create it:
+
+```bash
+echo "JWT_SECRET=$(openssl rand -base64 32)\nNEXT_PUBLIC_APP_URL=http://localhost:3000\nCRON_SECRET=local-dev-secret" > .env.local
+```
+
+### Running the app
+
+```bash
+npm run dev   # Next.js dev server on port 3000
+```
+
+No external services (Docker, Redis, Postgres) are required. The app uses embedded SQLite (`venzio.db`) in dev.
+
+### Key dev caveats
+
+- **OTP codes in dev**: Since `RESEND_API_KEY` is not set, OTPs are printed to the dev server console as `[DEV] OTP for <email>: <code>`. Watch the terminal running `npm run dev`.
+- **Registration API field name**: The register endpoint uses `full_name` (snake_case), not `fullName`.
+- **GPS data**: In dev/localhost, GPS coordinates passed to check-in are not stored (the route drops them for `::1` / localhost IPs). IP geolocation also returns null for private IPs. This is expected behavior.
+- **Lint**: `npm run lint` reports pre-existing warnings/errors (unused vars, `require()` in scripts, React hooks setState-in-effect). These are known and do not block the build.
+- **Build**: `npm run build` compiles cleanly and is the best TypeScript type-check for the project (no separate `tsc --noEmit` script exists).
+
+### Commands reference
+
+| Task | Command |
+|------|---------|
+| Install deps | `npm install` |
+| Migrate DB | `node scripts/migrate.js` |
+| Dev server | `npm run dev` |
+| Lint | `npm run lint` |
+| Build (type check) | `npm run build` |
