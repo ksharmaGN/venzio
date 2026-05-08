@@ -146,6 +146,20 @@ export async function bulkUpsertHolidays(
   return { inserted, updated }
 }
 
+export async function listHolidayDatesInRange(
+  workspaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<Set<string>> {
+  const rows = await db.query<{ date: string }>(
+    `SELECT date FROM workspace_holidays
+     WHERE workspace_id = ? AND deleted_at IS NULL
+       AND date >= ? AND date <= ?`,
+    [workspaceId, startDate, endDate],
+  )
+  return new Set(rows.map((r) => r.date))
+}
+
 export async function deleteHoliday(id: string, workspaceId: string): Promise<void> {
   await db.execute(
     `UPDATE workspace_holidays
