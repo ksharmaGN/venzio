@@ -70,10 +70,9 @@ export async function createHoliday(params: {
      VALUES (?, ?, ?, ?, ?, ?)`,
     [id, params.workspaceId, params.name, params.date, params.description ?? null, params.createdBy],
   )
-  return db.queryOne<Holiday>(
-    `SELECT * FROM workspace_holidays WHERE id = ?`,
-    [id],
-  ) as Promise<Holiday>
+  const row = await getHoliday(id, params.workspaceId);
+  if (!row) throw new Error("Holiday insert succeeded but row not found");
+  return row;
 }
 
 export async function updateHoliday(

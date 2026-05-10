@@ -8,6 +8,8 @@ Venzio is a **presence intelligence platform**. Two PWA surfaces:
 
 **Core USP:** Multi-signal presence verification (AND, not OR). When a workspace has GPS + WiFi + IP signals configured, ALL must match for a check-in to count as verified. This makes faking presence extremely difficult.
 
+**Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On **`/me/timeline`**, the default **All workspaces** view uses `GET /api/events` (global history, no per-workspace `matched_by`). Selecting a workspace uses `GET /api/me/ws/[slug]/events`, which calls `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics.
+
 ---
 
 ## Non-Negotiable Principles
@@ -67,7 +69,7 @@ Attendance stats are day-level, not event-level. Use `src/lib/attendance-summary
 
 ## Holiday Calendar
 
-Workspace admins manage a per-workspace holiday list (`workspace_holidays` table). Holidays are soft-deleted (`deleted_at`), always scoped by `workspace_id`.
+Workspace admins manage a per-workspace holiday list (`workspace_holidays` table). Holidays are soft-deleted (`deleted_at`), always scoped by `workspace_id`. At the database layer, active rows have a partial unique index on `(workspace_id, name, date)` where `deleted_at IS NULL`, so concurrent inserts cannot duplicate the same holiday.
 
 ### Admin API (`/api/ws/[slug]/holidays`)
 - `GET ?year=YYYY` — list holidays for the given year; omit `year` for all
@@ -109,7 +111,10 @@ import { db } from '@/lib/db'
 - `holidays.ts` - workspace holiday calendar
 
 ### Migration
-`scripts/migrate.js` - idempotent. `ALTER TABLE` wrapped in try/catch. Run: `node scripts/migrate.js`.
+`scripts/migrate.js` - **single migration script** and must always be **fully up-to-date**.
+- Fresh DB: creates every table/column.
+- Existing DB: additive `ALTER TABLE` statements add missing columns (wrapped to skip duplicates).
+Run: `npm run migrate`.
 
 ---
 
@@ -144,6 +149,9 @@ WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 - Default: Server Components
 - Client only when: interactive state, browser APIs (GPS, Notification), usePathname/useParams
 - Never put business logic in Client Components - fetch from API routes instead
+
+### Copy (strings)
+- English UI and marketing copy lives in `src/locales/en.ts` — import `en` and use nested keys. Prefer adding keys there instead of hardcoding user-visible strings in components or routes.
 
 ### Layouts
 - `src/app/(public)/layout.tsx` - passthrough, public pages

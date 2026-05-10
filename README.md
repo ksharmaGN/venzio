@@ -98,18 +98,22 @@ src/
 │       │   ├── route.ts                # GET - user's events (paginated, date-filtered)
 │       │   └── [id]/route.ts           # PATCH note · DELETE returns 405 (data never deleted)
 │       ├── me/
-│       │   ├── route.ts                # GET profile · PATCH name · DELETE account
+│       │   ├── route.ts                # GET profile + active workspaces · PATCH name · DELETE account
 │       │   ├── password/route.ts       # POST - change password
 │       │   ├── consent/route.ts        # POST - accept/decline workspace invite
 │       │   ├── workspaces/[workspaceId]/route.ts  # DELETE - leave workspace
 │       │   └── ws/[slug]/
-│       │       └── holidays/route.ts   # GET - member-facing holiday list for workspace (defaults to current year)
+│       │       ├── holidays/route.ts   # GET - member-facing holiday list for workspace (defaults to current year)
+│       │       ├── today/route.ts      # GET - today member roster; workspace `{ id, name, slug }`, `viewerRole`
+│       │       └── events/route.ts     # GET - member’s events in range + workspace signal transparency
 │       └── tokens/
 │           ├── route.ts                # GET list · POST create (returns plain token once)
 │           └── [id]/route.ts           # DELETE - revoke
 ├── app/manifest.ts             # PWA manifest
 ├── app/robots.ts               # Search crawler rules
 ├── app/sitemap.ts              # Public marketing sitemap
+├── locales/
+│   └── en.ts                   # English UI copy, brand strings, `en.constants` (cookies, DNS, etc.)
 ├── lib/
 │   ├── db/
 │   │   ├── index.ts       # DB abstraction (SQLite ↔ Postgres)
@@ -237,17 +241,22 @@ App runs at `http://localhost:3000`.
 | `workspace_domains`       | Email domains for auto-enrolment                                           |
 | `workspace_members`       | User ↔ workspace membership, role, consent status                          |
 | `workspace_signal_config` | GPS / IP signal configs for presence matching                              |
-| `workspace_holidays`      | Company holiday calendar - soft-deleted, scoped to workspace               |
+| `workspace_holidays`      | Company holiday calendar - soft-deleted, scoped to workspace; partial unique index on `(workspace_id, name, date)` for active rows |
 | `admin_overrides`         | Additive admin overrides - audit log, never modifies events                |
 | `user_stats`              | Pre-computed streaks, totals - upserted after every check-in               |
 | `revoked_tokens`          | Invalidated JWT IDs (jti) - checked on every authenticated request         |
 | `push_subscriptions`      | Web Push endpoint + VAPID keys per user/device                             |
 | `rate_limit_log`          | Sliding-window rate limit log (IP-keyed for login, user-keyed for checkin) |
 
-The migration runner is idempotent. `ALTER TABLE` column additions are wrapped in try/catch so re-running is always safe:
+The migration runner is **the only migration file** and must always produce the **latest schema** on both fresh and existing databases.
+
+- **Fresh DB**: `CREATE TABLE IF NOT EXISTS` creates all tables/columns.
+- **Existing DB**: additive `ALTER TABLE` statements add any missing columns; re-running is safe (duplicate-column errors are skipped).
+
+When you add a new column/table, update `scripts/migrate.js` in the same change so `node scripts/migrate.js` always upgrades older DBs.
 
 ```bash
-node scripts/migrate.js
+npm run migrate
 ```
 
 ### Inspect the database (dev)
@@ -330,6 +339,8 @@ Plan limits are enforced server-side in `lib/plans.ts`.
 
 All routes require a valid session cookie. The proxy redirects to `/login` if missing.
 
+A single user account can be an active member of **multiple workspaces** at once (each membership is independent). Some surfaces are global across workspaces (your raw presence timeline), while others attach **workspace-specific** interpretation—especially signal verification, which always depends on that workspace’s configured signals.
+
 ### `/me` - Home
 
 Server-rendered shell + client-rendered state. Shows:
@@ -347,8 +358,11 @@ Server-rendered shell + client-rendered state. Shows:
 
 ### `/me/timeline`
 
-Client component. Fetches from `GET /api/events`. Features:
+Client component. **Default (All workspaces):** fetches from `GET /api/events`—your presence history without tying each row to a single workspace’s signal rules (presence rows are not workspace-scoped in the database). **Workspace selected:** fetches from `GET /api/me/ws/[slug]/events` with the same date range; the server runs `queryWorkspaceEvents()` for that workspace and your user only, so each event includes workspace-specific verification (`matched_by`, `matched_signals`) using the same AND semantics as admin dashboards.
 
+Features:
+
+- Workspace dropdown (from `GET /api/me`, which returns active `{ slug, name }[]` memberships)
 - Date range pickers (default: current month, resets on page load)
 - Events grouped by date, newest first
 - Inline note editing on any event
@@ -672,7 +686,7 @@ Your presence dashboard. Everything here belongs to you:
 
 **Timeline - `/me/timeline`**
 
-Fetches `GET /api/events?start=&end=` with date pickers (default: current month). Events grouped by date, newest first. Inline note editing on any event. Presence data is never deleted.
+With **All workspaces** selected, fetches `GET /api/events?start=&end=` (global view). When you pick a workspace, fetches `GET /api/me/ws/[slug]/events?start=&end=` so verification badges reflect that workspace’s signal configuration. Date pickers default to the current month. Events grouped by date, newest first. Inline note editing on any event. Presence data is never deleted.
 
 **Orgs - `/me/orgs`**
 
@@ -901,9 +915,10 @@ All routes require session cookie + admin membership of the workspace.
 | POST   | `/api/ws/:slug/domain`            | Add a domain                                   |
 | DELETE | `/api/ws/:slug/domain/:id`        | Remove a domain                                |
 | POST   | `/api/ws/:slug/domain/:id/verify` | Trigger DNS TXT verification                   |
-| GET    | `/api/ws/:slug/members`           | List all members (all statuses)                |
+| GET    | `/api/ws/:slug/members`           | List all members (all statuses); `limit`/`offset`, `nextOffset` for pagination |
 | POST   | `/api/ws/:slug/members`           | Invite member (sends consent email)            |
 | DELETE | `/api/ws/:slug/members/:id`       | Remove member (blocked for admins)             |
+| GET    | `/api/ws/:slug/members/:userId/timeline` | Member event timeline; `offset` (default 0), page size 20, `pagination.nextOffset` |
 
 #### `POST /api/ws/:slug/members`
 
