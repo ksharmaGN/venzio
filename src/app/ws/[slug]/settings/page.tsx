@@ -153,9 +153,11 @@ interface SignalRow {
 // ─── Workspace details section ────────────────────────────────────────────────
 
 function WorkspaceSection({ slug }: { slug: string }) {
+  const router = useRouter()
   const [name, setName] = useState('')
   const [tz, setTz] = useState('UTC')
   const [allowRemote, setAllowRemote] = useState(false)
+  const [leavesEnabled, setLeavesEnabled] = useState(true)
   const [fetching, setFetching] = useState(true)
   const [loading, setLoading] = useState(false)
   const [status, setStatus] = useState<{ text: string; ok: boolean } | null>(null)
@@ -172,6 +174,7 @@ function WorkspaceSection({ slug }: { slug: string }) {
           setTz(data.display_timezone)
         }
         setAllowRemote(!!data.allow_remote)
+        setLeavesEnabled(data.leaves_enabled !== false)
       })
       .finally(() => setFetching(false))
   }, [slug])
@@ -183,9 +186,14 @@ function WorkspaceSection({ slug }: { slug: string }) {
       const res = await fetch(`/api/ws/${slug}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name.trim() || undefined, displayTimezone: tz, allowRemote }),
+        body: JSON.stringify({ name: name.trim() || undefined, displayTimezone: tz, allowRemote, leavesEnabled }),
       })
-      setStatus(res.ok ? { text: 'Settings saved', ok: true } : { text: 'Save failed', ok: false })
+      if (res.ok) {
+        setStatus({ text: 'Settings saved', ok: true })
+        router.refresh()
+      } else {
+        setStatus({ text: 'Save failed', ok: false })
+      }
     } finally {
       setLoading(false)
     }
@@ -272,6 +280,57 @@ function WorkspaceSection({ slug }: { slug: string }) {
               position: 'absolute',
               top: '3px',
               left: allowRemote ? '23px' : '3px',
+              width: '18px',
+              height: '18px',
+              borderRadius: '50%',
+              background: '#fff',
+              transition: 'left 0.15s',
+            }}
+          />
+        </button>
+      </div>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '12px 14px',
+          border: '1px solid var(--border)',
+          borderRadius: 'var(--radius-md)',
+          background: 'var(--surface-1)',
+          marginBottom: '14px',
+        }}
+      >
+        <div>
+          <p style={{ fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-primary)', fontWeight: 500, margin: 0 }}>
+            Enable leaves &amp; holidays
+          </p>
+          <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-muted)', margin: '2px 0 0' }}>
+            Show Leaves and Holiday Calendar in the sidebar
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={leavesEnabled}
+          onClick={() => setLeavesEnabled((v) => !v)}
+          style={{
+            width: '44px',
+            height: '24px',
+            borderRadius: '12px',
+            border: 'none',
+            background: leavesEnabled ? 'var(--brand)' : 'var(--border)',
+            cursor: 'pointer',
+            position: 'relative',
+            flexShrink: 0,
+            transition: 'background 0.15s',
+          }}
+        >
+          <span
+            style={{
+              position: 'absolute',
+              top: '3px',
+              left: leavesEnabled ? '23px' : '3px',
               width: '18px',
               height: '18px',
               borderRadius: '50%',

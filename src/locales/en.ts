@@ -85,6 +85,26 @@ export const en = {
       "You are the only workspace admin. Transfer ownership before leaving.",
   },
 
+  /** Workspace admin leave types settings (/ws/[slug]/settings) */
+  wsLeaveTypes: {
+    sectionTitle: "Leave Types",
+    sectionDescription: "Define leave types and how credits are accrued for team members. Credits accrue from each member's join date.",
+    addType: "Add type",
+    labelName: "Type name",
+    labelFrequency: "Accrual",
+    labelCredits: "Credits",
+    labelCreditTiming: "Apply",
+    optionTimingStart: "Start of period",
+    optionTimingEnd: "End of period",
+    optionMonthly: "Monthly",
+    optionQuarterly: "Quarterly",
+    optionHalfYearly: "Half Yearly",
+    optionYearly: "Yearly",
+    placeholderName: "e.g. Sick Leave",
+    emptyNoTypes: "No leave types yet. Add one below.",
+    deleteConfirm: "Remove this leave type? Existing leave requests are not affected.",
+  },
+
   /** /me/timeline workspace filter + per-workspace verification context */
   meTimeline: {
     workspaceLabel: "Workspace",
