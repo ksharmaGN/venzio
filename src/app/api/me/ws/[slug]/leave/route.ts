@@ -3,6 +3,7 @@ import { getWorkspaceBySlug, getWorkspaceMember } from '@/lib/db/queries/workspa
 import {
   getLeaveTypeById,
   getLeaveTypesWithBalance,
+  hasOverlappingLeaveRequest,
   createLeaveRequest,
 } from '@/lib/db/queries/leaves'
 
@@ -59,6 +60,14 @@ export async function POST(req: NextRequest, { params }: Props) {
     return NextResponse.json(
       { error: 'end_date must be on or after start_date', code: 'VALIDATION_ERROR' },
       { status: 422 },
+    )
+  }
+
+  const overlaps = await hasOverlappingLeaveRequest(workspace.id, userId, startDate, endDate)
+  if (overlaps) {
+    return NextResponse.json(
+      { error: 'You already have a leave request covering these dates.', code: 'OVERLAPPING_LEAVE' },
+      { status: 409 },
     )
   }
 

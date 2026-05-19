@@ -214,6 +214,21 @@ export async function getUserLeaveRequests(
   )
 }
 
+export async function hasOverlappingLeaveRequest(
+  workspaceId: string,
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<boolean> {
+  const row = await db.queryOne<{ cnt: number }>(
+    `SELECT COUNT(*) AS cnt FROM leave_requests
+     WHERE workspace_id = ? AND user_id = ? AND status = 'approved'
+       AND start_date <= ? AND end_date >= ?`,
+    [workspaceId, userId, endDate, startDate],
+  )
+  return (row?.cnt ?? 0) > 0
+}
+
 export async function createLeaveRequest(params: {
   workspaceId: string
   userId: string

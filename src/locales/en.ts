@@ -97,6 +97,7 @@ export const en = {
     applyLeaveSuccess: "Leave applied successfully",
     applyLeaveCancel: "Cancel",
     applyLeaveErrorGeneric: "Could not submit leave. Try again.",
+    applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
     myLeavesEmpty: "No leave requests yet.",
     myLeavesUpcoming: "Upcoming",
     myLeavesPast: "Past",
