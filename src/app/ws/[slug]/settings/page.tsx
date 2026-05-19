@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { en } from '@/locales/en'
 
+const t = en.wsSettings
 const DNS_VERIFY_SUBDOMAIN    = en.constants.dnsVerifySubdomain
 const DNS_VERIFY_VALUE_PREFIX = en.constants.dnsVerifyValuePrefix
 
@@ -189,10 +190,10 @@ function WorkspaceSection({ slug }: { slug: string }) {
         body: JSON.stringify({ name: name.trim() || undefined, displayTimezone: tz, allowRemote, leavesEnabled }),
       })
       if (res.ok) {
-        setStatus({ text: 'Settings saved', ok: true })
+        setStatus({ text: t.saveSuccess, ok: true })
         router.refresh()
       } else {
-        setStatus({ text: 'Save failed', ok: false })
+        setStatus({ text: t.saveError, ok: false })
       }
     } finally {
       setLoading(false)
@@ -202,28 +203,28 @@ function WorkspaceSection({ slug }: { slug: string }) {
   const tzOptions = TIMEZONES.includes(tz) ? TIMEZONES : [tz, ...TIMEZONES]
 
   return (
-    <SectionCard title="Workspace details">
+    <SectionCard title={t.workspaceDetailsTitle}>
       {fetching ? (
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '14px' }}>Loading…</p>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '14px' }}>{t.loading}</p>
       ) : (
         <>
-      <FieldGroup label="Workspace name">
+      <FieldGroup label={t.workspaceNameLabel}>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="My Organisation"
+          placeholder={t.workspaceNamePlaceholder}
           style={inputStyle}
         />
       </FieldGroup>
-      <FieldGroup label="Timezone">
+      <FieldGroup label={t.timezoneLabel}>
         <select
           value={tz}
           onChange={(e) => setTz(e.target.value)}
           style={{ ...inputStyle, cursor: 'pointer' }}
         >
-          {tzOptions.map((t) => (
-            <option key={t} value={t}>{t}</option>
+          {tzOptions.map((tzOpt) => (
+            <option key={tzOpt} value={tzOpt}>{tzOpt}</option>
           ))}
         </select>
       </FieldGroup>
@@ -236,7 +237,7 @@ function WorkspaceSection({ slug }: { slug: string }) {
           marginTop: '-8px',
         }}
       >
-        The Today dashboard uses this timezone to determine the current day.
+        {t.timezoneHint}
       </p>
       <div
         style={{
@@ -252,10 +253,10 @@ function WorkspaceSection({ slug }: { slug: string }) {
       >
         <div>
           <p style={{ fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-primary)', fontWeight: 500, margin: 0 }}>
-            Allow remote check-ins
+            {t.allowRemoteLabel}
           </p>
           <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-            Count WFH days in attendance reports
+            {t.allowRemoteHint}
           </p>
         </div>
         <button
@@ -303,10 +304,10 @@ function WorkspaceSection({ slug }: { slug: string }) {
       >
         <div>
           <p style={{ fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-primary)', fontWeight: 500, margin: 0 }}>
-            Enable leaves &amp; holidays
+            {t.leavesEnabledLabel}
           </p>
           <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-muted)', margin: '2px 0 0' }}>
-            Show Leaves and Holiday Calendar in the sidebar
+            {t.leavesEnabledHint}
           </p>
         </div>
         <button
@@ -340,7 +341,7 @@ function WorkspaceSection({ slug }: { slug: string }) {
           />
         </button>
       </div>
-      <PrimaryBtn onClick={save} loading={loading}>Save settings</PrimaryBtn>
+      <PrimaryBtn onClick={save} loading={loading}>{t.saveButton}</PrimaryBtn>
       <StatusLine msg={status} />
         </>
       )}
@@ -388,7 +389,7 @@ function SignalsSection({ slug }: { slug: string }) {
 
   async function captureGps() {
     if (!navigator.geolocation) {
-      setGpsStatus({ text: 'Geolocation not supported by this browser', ok: false })
+      setGpsStatus({ text: t.gpsErrorNoSupport, ok: false })
       return
     }
     setGettingGps(true)
@@ -399,7 +400,6 @@ function SignalsSection({ slug }: { slug: string }) {
         setGpsLat(lat.toFixed(6))
         setGpsLng(lng.toFixed(6))
         setGettingGps(false)
-        // Detect timezone from coords (server will do it on save, but preview here)
         try {
           const res = await fetch(`/api/ws/${slug}/signals`, {
             method: 'POST',
@@ -414,7 +414,6 @@ function SignalsSection({ slug }: { slug: string }) {
           })
           const data = await res.json()
           if (res.ok) {
-            // Server auto-detects timezone; fetch what it set
             const wsRes = await fetch(`/api/ws/${slug}/signals`)
             const wsData = await wsRes.json()
             setSignals(wsData.signals ?? [])
@@ -423,19 +422,18 @@ function SignalsSection({ slug }: { slug: string }) {
             setGpsLat('')
             setGpsLng('')
             setGpsStatus(null)
-            // The server will return the detected tz in a future PATCH - show toast
-            showToast('Location registered. Workspace timezone auto-updated.')
+            showToast(t.gpsToastAuto)
             setTzDetected(null)
           } else {
-            setGpsStatus({ text: data.error || 'Failed to register GPS location', ok: false })
+            setGpsStatus({ text: data.error || t.gpsErrorFailed, ok: false })
           }
         } catch {
-          setGpsStatus({ text: 'Failed to register GPS location', ok: false })
+          setGpsStatus({ text: t.gpsErrorFailed, ok: false })
         }
       },
       (err) => {
         setGettingGps(false)
-        setGpsStatus({ text: `GPS denied: ${err.message}`, ok: false })
+        setGpsStatus({ text: t.gpsErrorDenied(err.message), ok: false })
       },
       { timeout: 10000, maximumAge: 60000 }
     )
@@ -445,7 +443,7 @@ function SignalsSection({ slug }: { slug: string }) {
     const lat = parseFloat(gpsLat)
     const lng = parseFloat(gpsLng)
     if (isNaN(lat) || isNaN(lng)) {
-      setGpsStatus({ text: 'Enter valid latitude and longitude', ok: false })
+      setGpsStatus({ text: t.gpsErrorInvalidCoords, ok: false })
       return
     }
     setSavingGps(true)
@@ -470,9 +468,9 @@ function SignalsSection({ slug }: { slug: string }) {
         setGpsLat('')
         setGpsLng('')
         setTzDetected(null)
-        showToast('GPS location registered. Workspace timezone auto-updated.')
+        showToast(t.gpsManualToast)
       } else {
-        setGpsStatus({ text: data.error || 'Failed to register location', ok: false })
+        setGpsStatus({ text: data.error || t.gpsErrorManualFailed, ok: false })
       }
     } finally {
       setSavingGps(false)
@@ -491,9 +489,9 @@ function SignalsSection({ slug }: { slug: string }) {
       const data = await res.json()
       if (res.ok) {
         await loadSignals()
-        showToast('IP context registered.')
+        showToast(t.ipToast)
       } else {
-        setIpStatus({ text: data.error || 'Failed to register IP context', ok: false })
+        setIpStatus({ text: data.error || t.ipErrorFailed, ok: false })
       }
     } finally {
       setRegisteringIp(false)
@@ -501,7 +499,7 @@ function SignalsSection({ slug }: { slug: string }) {
   }
 
   async function deleteSignal(id: string) {
-    if (!confirm('Remove this signal?')) return
+    if (!confirm(t.signalRemoveConfirm)) return
     const res = await fetch(`/api/ws/${slug}/signals/${id}`, { method: 'DELETE' })
     if (res.ok) setSignals((prev) => prev.filter((s) => s.id !== id))
   }
@@ -532,7 +530,7 @@ function SignalsSection({ slug }: { slug: string }) {
   }
 
   return (
-    <SectionCard title="Signal configuration">
+    <SectionCard title={t.signalsTitle}>
       {toast && (
         <div style={{
           background: 'color-mix(in srgb, var(--teal) 12%, transparent)',
@@ -549,14 +547,14 @@ function SignalsSection({ slug }: { slug: string }) {
       )}
 
       <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-        Signals define what counts as &ldquo;in office&rdquo; for your workspace. If no signals are registered, all check-in events from your members are shown.
+        {t.signalsDescription}
       </p>
 
       {loading ? (
-        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>Loading…</p>
+        <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{t.loading}</p>
       ) : signals.length === 0 ? (
         <p style={{ fontSize: '13px', color: 'var(--text-muted)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '14px' }}>
-          No signals registered yet. Add a GPS location or IP context below.
+          {t.signalsEmpty}
         </p>
       ) : (
         <div style={{ marginBottom: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -567,7 +565,7 @@ function SignalsSection({ slug }: { slug: string }) {
                 {signalLabel(s)}
               </span>
               <button onClick={() => deleteSignal(s.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer' }}>
-                Remove
+                {t.signalRemove}
               </button>
             </div>
           ))}
@@ -577,26 +575,26 @@ function SignalsSection({ slug }: { slug: string }) {
       {/* GPS form */}
       {showGpsForm ? (
         <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '16px', marginBottom: '10px' }}>
-          <p style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'Playfair Display, serif', color: 'var(--navy)', marginBottom: '12px' }}>Register GPS location</p>
-          <FieldGroup label="Location name">
-            <input type="text" value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder="Head Office" style={{ ...inputStyle, height: '36px' }} />
+          <p style={{ fontSize: '13px', fontWeight: 600, fontFamily: 'Playfair Display, serif', color: 'var(--navy)', marginBottom: '12px' }}>{t.gpsFormTitle}</p>
+          <FieldGroup label={t.gpsLocationNameLabel}>
+            <input type="text" value={locationName} onChange={(e) => setLocationName(e.target.value)} placeholder={t.gpsLocationNamePlaceholder} style={{ ...inputStyle, height: '36px' }} />
           </FieldGroup>
           <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '4px' }}>Latitude</label>
+              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '4px' }}>{t.gpsLatLabel}</label>
               <input type="text" value={gpsLat} onChange={(e) => setGpsLat(e.target.value)} placeholder="28.6139" style={{ ...inputStyle, height: '36px' }} />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '4px' }}>Longitude</label>
+              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', fontFamily: 'Plus Jakarta Sans, sans-serif', marginBottom: '4px' }}>{t.gpsLngLabel}</label>
               <input type="text" value={gpsLng} onChange={(e) => setGpsLng(e.target.value)} placeholder="77.2090" style={{ ...inputStyle, height: '36px' }} />
             </div>
           </div>
-          <FieldGroup label={`Geofence radius: ${gpsRadius}m`}>
+          <FieldGroup label={t.gpsRadiusLabel(gpsRadius)}>
             <input type="range" min={100} max={500} step={50} value={gpsRadius} onChange={(e) => setGpsRadius(parseInt(e.target.value))} style={{ width: '100%' }} />
           </FieldGroup>
           {tzDetected && (
             <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--teal)', marginBottom: '10px' }}>
-              Timezone will auto-update to {tzDetected}
+              {t.gpsTzHint(tzDetected)}
             </p>
           )}
           <StatusLine msg={gpsStatus} />
@@ -614,13 +612,13 @@ function SignalsSection({ slug }: { slug: string }) {
                 opacity: gettingGps ? 0.7 : 1,
               }}
             >
-              {gettingGps ? 'Getting GPS…' : 'Use my current GPS'}
+              {gettingGps ? t.gpsGettingBtn : t.gpsGetBtn}
             </button>
             <PrimaryBtn small onClick={saveGpsManual} loading={savingGps} disabled={!gpsLat || !gpsLng}>
-              Save location
+              {t.gpsSaveBtn}
             </PrimaryBtn>
             <button type="button" onClick={() => { setShowGpsForm(false); setGpsStatus(null) }} style={{ background: 'none', border: 'none', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', cursor: 'pointer' }}>
-              Cancel
+              {t.cancelBtn}
             </button>
           </div>
         </div>
@@ -634,7 +632,7 @@ function SignalsSection({ slug }: { slug: string }) {
             onClick={() => setShowGpsForm(true)}
             style={{ height: '36px', padding: '0 14px', background: 'var(--surface-2)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer' }}
           >
-            + GPS location
+            {t.addGpsBtn}
           </button>
           <button
             type="button"
@@ -642,7 +640,7 @@ function SignalsSection({ slug }: { slug: string }) {
             disabled={registeringIp}
             style={{ height: '36px', padding: '0 14px', background: 'var(--surface-2)', color: 'var(--text-primary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: registeringIp ? 'not-allowed' : 'pointer', opacity: registeringIp ? 0.7 : 1 }}
           >
-            {registeringIp ? '…' : '+ IP context'}
+            {registeringIp ? '…' : t.addIpBtn}
           </button>
         </div>
       )}
@@ -686,9 +684,9 @@ function DomainsSection({ slug }: { slug: string }) {
       if (res.ok) {
         setNewDomain('')
         await loadDomains()
-        setAddStatus({ text: `${d} added`, ok: true })
+        setAddStatus({ text: t.domainAddSuccess(d), ok: true })
       } else {
-        setAddStatus({ text: data.error || 'Failed to add domain', ok: false })
+        setAddStatus({ text: data.error || t.domainAddError, ok: false })
       }
     } finally {
       setAdding(false)
@@ -696,20 +694,20 @@ function DomainsSection({ slug }: { slug: string }) {
   }
 
   async function removeDomain(id: string) {
-    if (!confirm('Remove this domain?')) return
+    if (!confirm(t.domainRemoveConfirm)) return
     const res = await fetch(`/api/ws/${slug}/domain/${id}`, { method: 'DELETE' })
     if (res.ok) setDomains((prev) => prev.filter((d) => d.id !== id))
   }
 
   async function checkVerification(domain: DomainRow) {
-    setVerifyStatus((p) => ({ ...p, [domain.id]: { text: 'Checking DNS…', ok: true } }))
+    setVerifyStatus((p) => ({ ...p, [domain.id]: { text: t.domainChecking, ok: true } }))
     const res = await fetch(`/api/ws/${slug}/domain/${domain.id}/verify`, { method: 'POST' })
     const data = await res.json()
     if (data.verified) {
-      setVerifyStatus((p) => ({ ...p, [domain.id]: { text: '✓ Domain verified', ok: true } }))
+      setVerifyStatus((p) => ({ ...p, [domain.id]: { text: t.domainVerifiedMsg, ok: true } }))
       await loadDomains()
     } else {
-      setVerifyStatus((p) => ({ ...p, [domain.id]: { text: data.message || 'Not found yet', ok: false } }))
+      setVerifyStatus((p) => ({ ...p, [domain.id]: { text: data.message || t.domainNotFoundMsg, ok: false } }))
     }
   }
 
@@ -721,9 +719,9 @@ function DomainsSection({ slug }: { slug: string }) {
   }
 
   return (
-    <SectionCard title="Email domain verification">
+    <SectionCard title={t.domainsTitle}>
       <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '16px' }}>
-        Verified domains enable auto-enrolment: employees who sign up with a matching email are automatically added as members.
+        {t.domainsDescription}
       </p>
 
       {domains.map((d) => (
@@ -734,26 +732,26 @@ function DomainsSection({ slug }: { slug: string }) {
             </span>
             {d.verified_at ? (
               <span style={{ fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 600, color: 'var(--teal)', background: 'color-mix(in srgb, var(--teal) 12%, transparent)', border: '1px solid var(--teal)', borderRadius: '4px', padding: '2px 7px' }}>
-                Verified
+                {t.domainVerified}
               </span>
             ) : (
               <span style={{ fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 600, color: 'var(--amber)', background: 'color-mix(in srgb, var(--amber) 12%, transparent)', border: '1px solid var(--amber)', borderRadius: '4px', padding: '2px 7px' }}>
-                Unverified
+                {t.domainUnverified}
               </span>
             )}
             <button onClick={() => removeDomain(d.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer', padding: '0 4px' }}>
-              Remove
+              {t.domainRemove}
             </button>
           </div>
 
           {!d.verified_at && d.verifyToken && (
             <div style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '12px', marginBottom: '10px' }}>
               <p style={{ fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                Add this DNS TXT record, then click &ldquo;Check verification&rdquo;:
+                {t.domainDnsInstructions}
               </p>
               {[
-                { label: 'Name', value: `${DNS_VERIFY_SUBDOMAIN}.${d.domain}` },
-                { label: 'Value', value: `${DNS_VERIFY_VALUE_PREFIX}=${d.verifyToken}` },
+                { label: t.domainDnsNameLabel, value: `${DNS_VERIFY_SUBDOMAIN}.${d.domain}` },
+                { label: t.domainDnsValueLabel, value: `${DNS_VERIFY_VALUE_PREFIX}=${d.verifyToken}` },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
                   <span style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '11px', color: 'var(--text-muted)', width: '40px', flexShrink: 0 }}>{label}</span>
@@ -761,7 +759,7 @@ function DomainsSection({ slug }: { slug: string }) {
                     {value}
                   </code>
                   <button onClick={() => copyToClipboard(value, `${d.id}-${label}`)} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: '4px', padding: '3px 8px', fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', cursor: 'pointer', flexShrink: 0 }}>
-                    {copied === `${d.id}-${label}` ? 'Copied!' : 'Copy'}
+                    {copied === `${d.id}-${label}` ? t.domainCopied : t.domainCopy}
                   </button>
                 </div>
               ))}
@@ -770,7 +768,7 @@ function DomainsSection({ slug }: { slug: string }) {
 
           {!d.verified_at && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <PrimaryBtn small onClick={() => checkVerification(d)}>Check verification</PrimaryBtn>
+              <PrimaryBtn small onClick={() => checkVerification(d)}>{t.domainCheckBtn}</PrimaryBtn>
               {verifyStatus[d.id] && (
                 <span style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: verifyStatus[d.id].ok ? 'var(--teal)' : 'var(--text-secondary)' }}>
                   {verifyStatus[d.id].text}
@@ -786,11 +784,11 @@ function DomainsSection({ slug }: { slug: string }) {
           type="text"
           value={newDomain}
           onChange={(e) => setNewDomain(e.target.value)}
-          placeholder="acme.com"
+          placeholder={t.domainPlaceholder}
           onKeyDown={(e) => e.key === 'Enter' && addDomain()}
           style={{ ...inputStyle, height: '40px', flex: 1 }}
         />
-        <PrimaryBtn small onClick={addDomain} loading={adding}>Add</PrimaryBtn>
+        <PrimaryBtn small onClick={addDomain} loading={adding}>{t.domainAddBtn}</PrimaryBtn>
       </div>
       <StatusLine msg={addStatus} />
     </SectionCard>
@@ -823,7 +821,7 @@ function ArchiveSection({ slug }: { slug: string }) {
       if (res.ok) {
         router.push('/ws')
       } else {
-        setError(data.error || 'Archive failed')
+        setError(data.error || t.archiveError)
         setConfirming(false)
       }
     } finally {
@@ -842,7 +840,7 @@ function ArchiveSection({ slug }: { slug: string }) {
         setConfirming(false)
         router.refresh()
       } else {
-        setError(data.error || 'Restore failed')
+        setError(data.error || t.restoreError)
         setConfirming(false)
       }
     } finally {
@@ -853,11 +851,11 @@ function ArchiveSection({ slug }: { slug: string }) {
   if (isArchived === null) return null
 
   return (
-    <SectionCard title={isArchived ? 'Restore workspace' : 'Archive workspace'}>
+    <SectionCard title={isArchived ? t.restoreTitle : t.archiveTitle}>
       {isArchived ? (
         <>
           <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
-            This workspace is currently archived. Restoring it will make it active again (subject to the 1 active workspace limit).
+            {t.restoreDescription}
           </p>
           {error && (
             <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--danger)', marginBottom: '12px' }}>{error}</p>
@@ -874,12 +872,12 @@ function ArchiveSection({ slug }: { slug: string }) {
                 cursor: 'pointer',
               }}
             >
-              Restore workspace
+              {t.restoreBtn}
             </button>
           ) : (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-primary)', margin: 0 }}>
-                Restore this workspace?
+                {t.restoreConfirmText}
               </p>
               <button
                 type="button"
@@ -892,14 +890,14 @@ function ArchiveSection({ slug }: { slug: string }) {
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
                 }}
               >
-                {loading ? '…' : 'Confirm restore'}
+                {loading ? '…' : t.restoreConfirmBtn}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirming(false)}
                 style={{ background: 'none', border: 'none', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', cursor: 'pointer' }}
               >
-                Cancel
+                {t.cancelBtn}
               </button>
             </div>
           )}
@@ -907,7 +905,7 @@ function ArchiveSection({ slug }: { slug: string }) {
       ) : (
         <>
           <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
-            Archiving hides this workspace from your active list. Members and all presence data are preserved. The workspace can be restored at any time from /ws.
+            {t.archiveDescription}
           </p>
           {error && (
             <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--danger)', marginBottom: '12px' }}>{error}</p>
@@ -924,12 +922,12 @@ function ArchiveSection({ slug }: { slug: string }) {
                 cursor: 'pointer',
               }}
             >
-              Archive workspace
+              {t.archiveBtn}
             </button>
           ) : (
             <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
               <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-primary)', margin: 0 }}>
-                Archive this workspace?
+                {t.archiveConfirmText}
               </p>
               <button
                 type="button"
@@ -942,14 +940,14 @@ function ArchiveSection({ slug }: { slug: string }) {
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
                 }}
               >
-                {loading ? '…' : 'Confirm archive'}
+                {loading ? '…' : t.archiveConfirmBtn}
               </button>
               <button
                 type="button"
                 onClick={() => setConfirming(false)}
                 style={{ background: 'none', border: 'none', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', cursor: 'pointer' }}
               >
-                Cancel
+                {t.cancelBtn}
               </button>
             </div>
           )}
@@ -971,9 +969,9 @@ function LogoutSection() {
   }
 
   return (
-    <SectionCard title="Session">
+    <SectionCard title={t.sessionTitle}>
       <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
-        Sign out of your Venzio account on this device.
+        {en.auth.sessionLogoutText}
       </p>
       <button
         type="button"
@@ -987,7 +985,7 @@ function LogoutSection() {
           cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
         }}
       >
-        {loading ? 'Signing out…' : 'Sign out'}
+        {loading ? t.signingOutBtn : t.signOutBtn}
       </button>
     </SectionCard>
   )
@@ -1002,7 +1000,7 @@ export default function SettingsPage() {
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto', padding: '24px 20px' }}>
       <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '22px', fontWeight: 700, color: 'var(--navy)', marginBottom: '20px' }}>
-        Settings
+        {t.pageTitle}
       </h1>
       <WorkspaceSection slug={slug} />
       <SignalsSection slug={slug} />

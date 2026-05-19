@@ -23,6 +23,27 @@ interface Holiday {
 
 type MemberDisplayStatus = "in_office" | "remote" | "not_in";
 
+interface LeaveTypeWithBalance {
+  id: string
+  name: string
+  accrual_frequency: 'monthly' | 'quarterly'
+  accrual_credits: number
+  available_days: number
+  total_accrued: number
+  used_days: number
+}
+
+interface LeaveRequestWithType {
+  id: string
+  leave_type_id: string
+  leave_type_name: string
+  start_date: string
+  end_date: string
+  reason: string | null
+  status: string
+  created_at: string
+}
+
 function resolveMemberDisplayStatus(m: MemberTodaySummary): MemberDisplayStatus {
   if (m.presence_status === "notIn") return "not_in";
   if (m.presence_status === "visited") return "remote";
@@ -121,7 +142,7 @@ function formatDate(dateStr: string): { display: string; dayName: string } {
   };
 }
 
-type AccordionTab = "office" | "remote" | "leave" | "holidays";
+type AccordionTab = "office" | "remote" | "leave" | "holidays" | "myLeaves";
 
 const TABS: { key: AccordionTab; label: string; accentColor: string }[] = [
   {
@@ -143,6 +164,11 @@ const TABS: { key: AccordionTab; label: string; accentColor: string }[] = [
     key: "holidays",
     label: en.meWsToday.tabHolidayCalendar,
     accentColor: "var(--text-secondary)",
+  },
+  {
+    key: "myLeaves",
+    label: en.meWsToday.tabMyLeaves,
+    accentColor: "var(--brand)",
   },
 ];
 
@@ -168,6 +194,187 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+function leaveDays(start: string, end: string): number {
+  return (
+    Math.floor(
+      (new Date(end + "T00:00:00Z").getTime() -
+        new Date(start + "T00:00:00Z").getTime()) /
+        86400000,
+    ) + 1
+  );
+}
+
+function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }) {
+  const isPast = r.end_date < todayKey;
+  const isUpcoming = r.start_date > todayKey;
+  const isActive = !isPast && !isUpcoming;
+  const days = leaveDays(r.start_date, r.end_date);
+  const [sy, sm, sd] = r.start_date.split("-").map(Number);
+  const [ey, em, ed] = r.end_date.split("-").map(Number);
+  const startLabel = new Date(sy, sm - 1, sd).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+  });
+  const endLabel = new Date(ey, em - 1, ed).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+  const dateLabel = r.start_date === r.end_date ? endLabel : `${startLabel} – ${endLabel}`;
+
+  return (
+    <div
+      style={{
+        padding: "11px 16px",
+        borderBottom: "1px solid var(--border)",
+        background: isActive ? "rgba(0,212,170,0.04)" : "transparent",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
+        <span
+          style={{
+            fontFamily: "DM Sans, sans-serif",
+            fontSize: "13px",
+            fontWeight: 600,
+            color: isPast ? "var(--text-muted)" : "var(--text-primary)",
+          }}
+        >
+          {r.leave_type_name}
+        </span>
+        <span
+          style={{
+            fontSize: "11px",
+            fontFamily: "DM Sans, sans-serif",
+            fontWeight: 600,
+            color: isPast ? "var(--text-muted)" : isActive ? "var(--teal)" : "var(--brand)",
+            background: isPast
+              ? "var(--surface-2)"
+              : isActive
+                ? "rgba(0,212,170,0.12)"
+                : "rgba(27,77,255,0.1)",
+            padding: "2px 8px",
+            borderRadius: "20px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {en.meWsToday.leaveDaysLabel(days)}
+        </span>
+      </div>
+      <div
+        style={{
+          fontFamily: "DM Sans, sans-serif",
+          fontSize: "12px",
+          color: isPast ? "var(--text-muted)" : "var(--text-secondary)",
+          marginTop: "2px",
+        }}
+      >
+        {dateLabel}
+      </div>
+      {r.reason && (
+        <div
+          style={{
+            fontFamily: "DM Sans, sans-serif",
+            fontSize: "12px",
+            color: "var(--text-muted)",
+            marginTop: "2px",
+            fontStyle: "italic",
+          }}
+        >
+          {r.reason}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SectionLabel({ label }: { label: string }) {
+  return (
+    <div
+      style={{
+        padding: "6px 16px",
+        fontFamily: "DM Sans, sans-serif",
+        fontSize: "11px",
+        fontWeight: 700,
+        color: "var(--text-muted)",
+        letterSpacing: "0.05em",
+        textTransform: "uppercase",
+        background: "var(--surface-1)",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
+function MyLeavesBody({
+  leaves,
+  loading,
+  todayKey,
+}: {
+  leaves: LeaveRequestWithType[];
+  loading: boolean;
+  todayKey: string;
+}) {
+  if (loading) {
+    return (
+      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+        {[1, 2].map((i) => (
+          <div
+            key={i}
+            style={{
+              height: "52px",
+              borderRadius: "var(--radius-md)",
+              background: "var(--surface-2)",
+              animation: "vnz-pulse 1.5s ease-in-out infinite",
+            }}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (leaves.length === 0) {
+    return (
+      <p
+        style={{
+          padding: "16px",
+          fontFamily: "DM Sans, sans-serif",
+          fontSize: "13px",
+          color: "var(--text-muted)",
+          textAlign: "center",
+        }}
+      >
+        {en.meWsToday.myLeavesEmpty}
+      </p>
+    );
+  }
+
+  const upcoming = leaves.filter((r) => r.start_date >= todayKey);
+  const past = leaves.filter((r) => r.end_date < todayKey);
+
+  return (
+    <div>
+      {upcoming.length > 0 && (
+        <>
+          <SectionLabel label={en.meWsToday.myLeavesUpcoming} />
+          {[...upcoming].reverse().map((r) => (
+            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+          ))}
+        </>
+      )}
+      {past.length > 0 && (
+        <>
+          <SectionLabel label={en.meWsToday.myLeavesPast} />
+          {past.map((r) => (
+            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+          ))}
+        </>
+      )}
+    </div>
+  );
+}
+
 export default function WorkspaceTodayPage() {
   const { slug } = useParams<{ slug: string }>();
   const router = useRouter();
@@ -185,6 +392,21 @@ export default function WorkspaceTodayPage() {
   const [leaveLoading, setLeaveLoading] = useState(false);
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [modalPortalReady, setModalPortalReady] = useState(false);
+
+  // Apply Leave modal state
+  const [applyLeaveOpen, setApplyLeaveOpen] = useState(false);
+  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeWithBalance[]>([]);
+  const [leaveTypesLoading, setLeaveTypesLoading] = useState(false);
+  const [selectedTypeId, setSelectedTypeId] = useState("");
+  const [leaveStartDate, setLeaveStartDate] = useState("");
+  const [leaveEndDate, setLeaveEndDate] = useState("");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
+  const [leaveSubmitError, setLeaveSubmitError] = useState<string | null>(null);
+  const [leaveSuccess, setLeaveSuccess] = useState(false);
+
+  const [myLeaves, setMyLeaves] = useState<LeaveRequestWithType[]>([]);
+  const [myLeavesLoading, setMyLeavesLoading] = useState(true);
 
   useEffect(() => {
     setModalPortalReady(true);
@@ -207,10 +429,72 @@ export default function WorkspaceTodayPage() {
       .then((r) => r.json())
       .then((d: { holidays: Holiday[] }) => { setHolidays(d.holidays); setHolidaysLoading(false); })
       .catch(() => setHolidaysLoading(false));
+
+    fetch(`/api/me/ws/${slug}/leave-requests`)
+      .then((r) => r.json())
+      .then((d: { leaveRequests: LeaveRequestWithType[] }) => { setMyLeaves(d.leaveRequests ?? []); setMyLeavesLoading(false); })
+      .catch(() => setMyLeavesLoading(false));
   }, [slug]);
 
   function toggleTab(tab: AccordionTab) {
     setOpenTab((prev) => (prev === tab ? null : tab));
+  }
+
+  async function openApplyLeave() {
+    setApplyLeaveOpen(true);
+    setLeaveTypesLoading(true);
+    setLeaveSubmitError(null);
+    setLeaveSuccess(false);
+    setSelectedTypeId("");
+    setLeaveStartDate("");
+    setLeaveEndDate("");
+    setLeaveReason("");
+    try {
+      const res = await fetch(`/api/me/ws/${slug}/leave-types`);
+      if (res.ok) {
+        const d = (await res.json()) as { leaveTypes: LeaveTypeWithBalance[] };
+        setLeaveTypes(d.leaveTypes ?? []);
+      }
+    } finally {
+      setLeaveTypesLoading(false);
+    }
+  }
+
+  async function submitLeave() {
+    if (!selectedTypeId || !leaveStartDate || !leaveEndDate) return;
+    setLeaveSubmitting(true);
+    setLeaveSubmitError(null);
+    try {
+      const res = await fetch(`/api/me/ws/${slug}/leave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          leave_type_id: selectedTypeId,
+          start_date: leaveStartDate,
+          end_date: leaveEndDate,
+          reason: leaveReason || null,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (res.ok) {
+        setLeaveSuccess(true);
+        fetch(`/api/me/ws/${slug}/leave-requests`)
+          .then((r) => r.json())
+          .then((d: { leaveRequests: LeaveRequestWithType[] }) => setMyLeaves(d.leaveRequests ?? []))
+          .catch(() => undefined);
+        setTimeout(() => {
+          setApplyLeaveOpen(false);
+          setLeaveSuccess(false);
+          setLeaveSubmitting(false);
+        }, 2000);
+      } else {
+        setLeaveSubmitError(body.error ?? en.meWsToday.applyLeaveErrorGeneric);
+        setLeaveSubmitting(false);
+      }
+    } catch {
+      setLeaveSubmitError(en.meWsToday.applyLeaveErrorGeneric);
+      setLeaveSubmitting(false);
+    }
   }
 
   async function confirmLeaveWorkspace() {
@@ -293,6 +577,7 @@ export default function WorkspaceTodayPage() {
     remote:   remote,
     leave:    notIn,
     holidays: [],
+    myLeaves: [],
   };
 
   const todayKey = todayStr();
@@ -314,7 +599,7 @@ export default function WorkspaceTodayPage() {
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "space-between",
-          gap: "12px",
+          gap: "8px",
           marginBottom: "24px",
         }}
       >
@@ -331,6 +616,48 @@ export default function WorkspaceTodayPage() {
         >
           {data.workspace.name}
         </h1>
+        <button
+          type="button"
+          aria-label={en.meWsToday.applyLeaveButtonAria}
+          title={en.meWsToday.applyLeaveButtonAria}
+          onClick={() => void openApplyLeave()}
+          style={{
+            flexShrink: 0,
+            height: "44px",
+            padding: "0 14px",
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            border: "1px solid var(--brand)",
+            borderRadius: "var(--radius-md)",
+            background: "var(--surface-0)",
+            color: "var(--brand)",
+            cursor: "pointer",
+            fontFamily: "DM Sans, sans-serif",
+            fontSize: "13px",
+            fontWeight: 600,
+          }}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+            <line x1="16" y1="2" x2="16" y2="6" />
+            <line x1="8" y1="2" x2="8" y2="6" />
+            <line x1="3" y1="10" x2="21" y2="10" />
+            <line x1="8" y1="14" x2="8" y2="14" />
+            <line x1="8" y1="18" x2="8" y2="18" />
+          </svg>
+          {en.meWsToday.applyLeaveButtonText}
+        </button>
         {data.viewerRole !== "admin" && (
           <button
             type="button"
@@ -365,7 +692,9 @@ export default function WorkspaceTodayPage() {
           const count =
             tab.key === "holidays"
               ? holidays.length
-              : tabMembers[tab.key].length;
+              : tab.key === "myLeaves"
+                ? myLeaves.length
+                : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].length;
 
           return (
             <div
@@ -602,7 +931,9 @@ export default function WorkspaceTodayPage() {
                         );
                       })
                     )
-                  ) : tabMembers[tab.key].length === 0 ? (
+                  ) : tab.key === "myLeaves" ? (
+                    <MyLeavesBody leaves={myLeaves} loading={myLeavesLoading} todayKey={todayKey} />
+                  ) : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].length === 0 ? (
                     <p
                       style={{
                         padding: "16px",
@@ -616,7 +947,7 @@ export default function WorkspaceTodayPage() {
                     </p>
                   ) : (
                     <div>
-                      {tabMembers[tab.key].map((m) => (
+                      {tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].map((m) => (
                         <MemberRow key={m.user_id} m={m} />
                       ))}
                     </div>
@@ -752,6 +1083,306 @@ export default function WorkspaceTodayPage() {
                     : en.meWsToday.leaveWorkspaceConfirm}
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body,
+        )}
+
+      {modalPortalReady &&
+        applyLeaveOpen &&
+        createPortal(
+          <div
+            role="presentation"
+            style={{
+              position: "fixed",
+              top: 0,
+              left: 0,
+              width: "100vw",
+              height: "100vh",
+              minHeight: "100dvh",
+              zIndex: 1100,
+              background: "rgba(13, 27, 42, 0.45)",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+              boxSizing: "border-box",
+              overflow: "auto",
+            }}
+            onClick={() => {
+              if (!leaveSubmitting) setApplyLeaveOpen(false);
+            }}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="apply-leave-title"
+              onClick={(e) => e.stopPropagation()}
+              style={{
+                width: "100%",
+                maxWidth: "420px",
+                background: "var(--surface-0)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius-lg)",
+                padding: "20px",
+                margin: "auto",
+              }}
+            >
+              <h2
+                id="apply-leave-title"
+                style={{
+                  fontFamily: "Syne, sans-serif",
+                  fontSize: "18px",
+                  fontWeight: 700,
+                  color: "var(--navy)",
+                  margin: "0 0 20px",
+                }}
+              >
+                {en.meWsToday.applyLeaveTitle}
+              </h2>
+
+              {leaveSuccess ? (
+                <p
+                  style={{
+                    fontFamily: "DM Sans, sans-serif",
+                    fontSize: "14px",
+                    color: "var(--teal)",
+                    textAlign: "center",
+                    padding: "20px 0",
+                  }}
+                >
+                  {en.meWsToday.applyLeaveSuccess}
+                </p>
+              ) : leaveTypesLoading ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
+                  {[1, 2, 3].map((i) => (
+                    <div
+                      key={i}
+                      style={{
+                        height: "44px",
+                        background: "var(--surface-2)",
+                        borderRadius: "var(--radius-md)",
+                        animation: "vnz-pulse 1.5s ease-in-out infinite",
+                      }}
+                    />
+                  ))}
+                </div>
+              ) : leaveTypes.length === 0 ? (
+                <p
+                  style={{
+                    fontFamily: "DM Sans, sans-serif",
+                    fontSize: "14px",
+                    color: "var(--text-muted)",
+                    textAlign: "center",
+                    padding: "20px 0",
+                  }}
+                >
+                  {en.meWsToday.applyLeaveNoTypes}
+                </p>
+              ) : (
+                <>
+                  <div style={{ marginBottom: "14px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontFamily: "DM Sans, sans-serif",
+                        color: "var(--text-secondary)",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      {en.meWsToday.applyLeaveFieldLeaveType}
+                    </label>
+                    <select
+                      value={selectedTypeId}
+                      onChange={(e) => setSelectedTypeId(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: "44px",
+                        padding: "0 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-md)",
+                        fontSize: "14px",
+                        fontFamily: "DM Sans, sans-serif",
+                        background: "var(--surface-2)",
+                        color: "var(--text-primary)",
+                        outline: "none",
+                        boxSizing: "border-box",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <option value="">{en.meWsToday.applyLeaveSelectPlaceholder}</option>
+                      {leaveTypes.map((t) => (
+                        <option key={t.id} value={t.id} disabled={t.available_days === 0}>
+                          {en.meWsToday.applyLeaveTypeOption(t.name, t.available_days)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: "14px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontFamily: "DM Sans, sans-serif",
+                        color: "var(--text-secondary)",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      {en.meWsToday.applyLeaveFieldStartDate}
+                    </label>
+                    <input
+                      type="date"
+                      value={leaveStartDate}
+                      onChange={(e) => {
+                        setLeaveStartDate(e.target.value);
+                        if (leaveEndDate && e.target.value > leaveEndDate) {
+                          setLeaveEndDate(e.target.value);
+                        }
+                      }}
+                      style={{
+                        width: "100%",
+                        height: "44px",
+                        padding: "0 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-md)",
+                        fontSize: "14px",
+                        fontFamily: "DM Sans, sans-serif",
+                        background: "var(--surface-2)",
+                        color: "var(--text-primary)",
+                        outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "14px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontFamily: "DM Sans, sans-serif",
+                        color: "var(--text-secondary)",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      {en.meWsToday.applyLeaveFieldEndDate}
+                    </label>
+                    <input
+                      type="date"
+                      value={leaveEndDate}
+                      min={leaveStartDate || undefined}
+                      onChange={(e) => setLeaveEndDate(e.target.value)}
+                      style={{
+                        width: "100%",
+                        height: "44px",
+                        padding: "0 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-md)",
+                        fontSize: "14px",
+                        fontFamily: "DM Sans, sans-serif",
+                        background: "var(--surface-2)",
+                        color: "var(--text-primary)",
+                        outline: "none",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+
+                  <div style={{ marginBottom: "20px" }}>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: "12px",
+                        fontFamily: "DM Sans, sans-serif",
+                        color: "var(--text-secondary)",
+                        marginBottom: "5px",
+                      }}
+                    >
+                      {en.meWsToday.applyLeaveFieldReason}
+                    </label>
+                    <textarea
+                      value={leaveReason}
+                      onChange={(e) => setLeaveReason(e.target.value)}
+                      placeholder={en.meWsToday.applyLeaveFieldReasonPlaceholder}
+                      rows={3}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-md)",
+                        fontSize: "14px",
+                        fontFamily: "DM Sans, sans-serif",
+                        background: "var(--surface-2)",
+                        color: "var(--text-primary)",
+                        outline: "none",
+                        resize: "vertical",
+                        boxSizing: "border-box",
+                      }}
+                    />
+                  </div>
+
+                  {leaveSubmitError && (
+                    <p
+                      style={{
+                        fontFamily: "DM Sans, sans-serif",
+                        fontSize: "13px",
+                        color: "var(--danger)",
+                        margin: "0 0 12px",
+                      }}
+                    >
+                      {leaveSubmitError}
+                    </p>
+                  )}
+
+                  <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+                    <button
+                      type="button"
+                      disabled={leaveSubmitting}
+                      onClick={() => setApplyLeaveOpen(false)}
+                      style={{
+                        height: "44px",
+                        padding: "0 16px",
+                        border: "1px solid var(--border)",
+                        borderRadius: "var(--radius-md)",
+                        background: "transparent",
+                        fontFamily: "DM Sans, sans-serif",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        color: "var(--text-secondary)",
+                        cursor: leaveSubmitting ? "default" : "pointer",
+                      }}
+                    >
+                      {en.meWsToday.applyLeaveCancel}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate}
+                      onClick={() => void submitLeave()}
+                      style={{
+                        height: "44px",
+                        padding: "0 16px",
+                        border: "none",
+                        borderRadius: "var(--radius-md)",
+                        background: "var(--brand)",
+                        fontFamily: "DM Sans, sans-serif",
+                        fontSize: "14px",
+                        fontWeight: 600,
+                        color: "#fff",
+                        cursor: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate
+                          ? "not-allowed"
+                          : "pointer",
+                        opacity: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate
+                          ? 0.65
+                          : 1,
+                      }}
+                    >
+                      {leaveSubmitting ? en.meWsToday.applyLeaveSubmitting : en.meWsToday.applyLeaveSubmit}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>,
           document.body,
