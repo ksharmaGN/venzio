@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getWorkspaceBySlug, getWorkspaceMember } from '@/lib/db/queries/workspaces'
+import { getHolidaysInRange } from '@/lib/db/queries/holidays'
 import {
   getLeaveTypeById,
   getLeaveTypesWithBalance,
@@ -68,6 +69,18 @@ export async function POST(req: NextRequest, { params }: Props) {
     return NextResponse.json(
       { error: 'You already have a leave request covering these dates.', code: 'OVERLAPPING_LEAVE' },
       { status: 409 },
+    )
+  }
+
+  const conflictingHolidays = await getHolidaysInRange(workspace.id, startDate, endDate)
+  if (conflictingHolidays.length > 0) {
+    const names = conflictingHolidays.map((h) => h.name).join(', ')
+    return NextResponse.json(
+      {
+        error: `Leave cannot be applied on company holidays: ${names}.`,
+        code: 'ON_HOLIDAY',
+      },
+      { status: 400 },
     )
   }
 

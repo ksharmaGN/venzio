@@ -582,6 +582,10 @@ export default function WorkspaceTodayPage() {
 
   const todayKey = todayStr();
 
+  const holidayWarning = leaveStartDate && leaveEndDate
+    ? holidays.filter((h) => h.date >= leaveStartDate && h.date <= leaveEndDate)
+    : [];
+
   return (
     <div style={{ maxWidth: "480px", margin: "0 auto", padding: "20px 16px" }}>
       <p
@@ -1290,6 +1294,24 @@ export default function WorkspaceTodayPage() {
                     />
                   </div>
 
+                  {holidayWarning.length > 0 && (
+                    <div
+                      style={{
+                        marginBottom: "14px",
+                        padding: "10px 12px",
+                        border: "1px solid var(--amber)",
+                        borderRadius: "var(--radius-md)",
+                        background: "color-mix(in srgb, var(--amber) 10%, transparent)",
+                        fontFamily: "DM Sans, sans-serif",
+                        fontSize: "13px",
+                        color: "var(--amber)",
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {`⚠ Your dates include company holidays: ${holidayWarning.map((h) => h.name).join(", ")}. Please adjust your dates.`}
+                    </div>
+                  )}
+
                   <div style={{ marginBottom: "20px" }}>
                     <label
                       style={{
@@ -1358,7 +1380,7 @@ export default function WorkspaceTodayPage() {
                     </button>
                     <button
                       type="button"
-                      disabled={leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate}
+                      disabled={leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0}
                       onClick={() => void submitLeave()}
                       style={{
                         height: "44px",
@@ -1370,10 +1392,10 @@ export default function WorkspaceTodayPage() {
                         fontSize: "14px",
                         fontWeight: 600,
                         color: "#fff",
-                        cursor: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate
+                        cursor: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0
                           ? "not-allowed"
                           : "pointer",
-                        opacity: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate
+                        opacity: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0
                           ? 0.65
                           : 1,
                       }}

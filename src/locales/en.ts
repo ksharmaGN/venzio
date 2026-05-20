@@ -98,6 +98,8 @@ export const en = {
     applyLeaveCancel: "Cancel",
     applyLeaveErrorGeneric: "Could not submit leave. Try again.",
     applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
+    applyLeaveErrorHoliday: (names: string) =>
+      `Leave cannot be applied on company holidays: ${names}.`,
     myLeavesEmpty: "No leave requests yet.",
     myLeavesUpcoming: "Upcoming",
     myLeavesPast: "Past",
