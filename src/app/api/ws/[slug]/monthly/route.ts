@@ -11,13 +11,14 @@ import {
   summarizeAttendanceDays,
 } from "@/lib/attendance-summary";
 import { listHolidayDatesInRange } from "@/lib/db/queries/holidays";
+import { getLeaveRequestsInRange } from "@/lib/db/queries/leaves";
 import { localMidnightToUtc, todayInTz } from "@/lib/timezone";
 
 interface Props {
   params: Promise<{ slug: string }>;
 }
 
-export type DayStatus = "office" | "remote" | "absent" | "holiday" | "future";
+export type DayStatus = "office" | "remote" | "absent" | "leave" | "holiday" | "future";
 
 export interface MemberMonthRow {
   user_id: string;
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest, { params }: Props) {
   const startUtc = localMidnightToUtc(startDate, tz);
   const endUtc = localMidnightToUtc(nextDateKey(endDate), tz);
 
-  const [allEvents, memberDetails, workspaceSignals, holidayDates] = await Promise.all([
+  const [allEvents, memberDetails, workspaceSignals, holidayDates, leaveRequests] = await Promise.all([
     queryWorkspaceEvents(workspace.id, workspace.plan, {
       startDate: startUtc,
       endDate: endUtc,
@@ -100,6 +101,7 @@ export async function GET(request: NextRequest, { params }: Props) {
     getActiveMembersWithDetails(workspace.id),
     getWorkspaceSignals(workspace.id),
     listHolidayDatesInRange(workspace.id, startDate, endDate),
+    getLeaveRequestsInRange(workspace.id, startDate, endDate),
   ]);
 
   const signals_configured = workspaceSignals.length > 0;
@@ -110,6 +112,20 @@ export async function GET(request: NextRequest, { params }: Props) {
     const userEvents = byUser.get(ev.user_id) ?? [];
     userEvents.push(ev);
     byUser.set(ev.user_id, userEvents);
+  }
+
+  // Build per-user leave day sets for the month
+  const leaveByUser = new Map<string, Set<string>>();
+  for (const lr of leaveRequests) {
+    const days = leaveByUser.get(lr.user_id) ?? new Set<string>();
+    const cur = new Date(lr.start_date + "T00:00:00Z");
+    const end = new Date(lr.end_date + "T00:00:00Z");
+    while (cur <= end) {
+      const key = cur.toISOString().slice(0, 10);
+      if (key >= startDate && key <= endDate) days.add(key);
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    leaveByUser.set(lr.user_id, days);
   }
 
   const members: MemberMonthRow[] = memberDetails.map((member) => {
@@ -124,12 +140,20 @@ export async function GET(request: NextRequest, { params }: Props) {
       holidayDates,
     });
 
+    const leaveDays = leaveByUser.get(member.user_id);
+    const days: Record<string, DayStatus> = { ...summary.days };
+    if (leaveDays) {
+      for (const dateKey of leaveDays) {
+        if (days[dateKey] === "absent") days[dateKey] = "leave";
+      }
+    }
+
     return {
       user_id: member.user_id,
       name: member.full_name ?? member.email,
       email: member.email,
       joined_date: memberStartDate,
-      days: summary.days,
+      days,
       office_days: summary.officeDays,
       remote_days: summary.remoteDays,
       absent_days: summary.absentDays,

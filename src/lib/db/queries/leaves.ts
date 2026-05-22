@@ -133,15 +133,17 @@ function computeTotalAccrued(
   const proRata = Math.min(1, Math.max(0, workedMsFirst / totalMsFirst))
   const firstCredits = accrualCredits * proRata
 
+  const round1 = (n: number) => Math.round(n * 10) / 10
+
   if (creditTiming === 'start') {
     // First period: available immediately on DOJ
-    if (now < p2Start) return Math.floor(firstCredits)
+    if (now < p2Start) return round1(firstCredits)
 
     // Full periods started since p2Start (current in-progress counts too → +1)
     const monthsFromP2 = (now.getFullYear() - p2Start.getFullYear()) * 12 +
       (now.getMonth() - p2Start.getMonth())
     const periodsStarted = Math.floor(monthsFromP2 / pm) + 1
-    return Math.floor(firstCredits + periodsStarted * accrualCredits)
+    return round1(firstCredits + periodsStarted * accrualCredits)
   } else {
     // 'end': credits available after completing each period
     if (now < p2Start) return 0 // first period not yet done
@@ -149,7 +151,7 @@ function computeTotalAccrued(
     const monthsFromP2 = (now.getFullYear() - p2Start.getFullYear()) * 12 +
       (now.getMonth() - p2Start.getMonth())
     const periodsCompleted = Math.floor(monthsFromP2 / pm)
-    return Math.floor(firstCredits + periodsCompleted * accrualCredits)
+    return round1(firstCredits + periodsCompleted * accrualCredits)
   }
 }
 
@@ -227,6 +229,44 @@ export async function hasOverlappingLeaveRequest(
     [workspaceId, userId, endDate, startDate],
   )
   return (row?.cnt ?? 0) > 0
+}
+
+export async function getLeaveRequestsInRange(
+  workspaceId: string,
+  startDate: string,
+  endDate: string,
+): Promise<{ user_id: string; start_date: string; end_date: string }[]> {
+  return db.query(
+    `SELECT user_id, start_date, end_date FROM leave_requests
+     WHERE workspace_id = ?
+       AND status = 'approved'
+       AND start_date <= ?
+       AND end_date >= ?`,
+    [workspaceId, endDate, startDate],
+  )
+}
+
+export interface MemberOnLeaveToday {
+  user_id: string
+  full_name: string | null
+  email: string
+  leave_type_name: string
+}
+
+export async function getMembersOnLeaveToday(workspaceId: string, date: string): Promise<MemberOnLeaveToday[]> {
+  return db.query<MemberOnLeaveToday>(
+    `SELECT lr.user_id, u.full_name, u.email, wlt.name AS leave_type_name
+     FROM leave_requests lr
+     JOIN users u ON u.id = lr.user_id
+     JOIN workspace_leave_types wlt ON wlt.id = lr.leave_type_id
+     WHERE lr.workspace_id = ?
+       AND lr.status = 'approved'
+       AND lr.start_date <= ?
+       AND lr.end_date >= ?
+       AND u.deleted_at IS NULL
+     ORDER BY u.full_name ASC`,
+    [workspaceId, date, date],
+  )
 }
 
 export async function createLeaveRequest(params: {

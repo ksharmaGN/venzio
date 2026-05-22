@@ -33,6 +33,13 @@ interface LeaveTypeWithBalance {
   used_days: number
 }
 
+interface MemberOnLeaveToday {
+  user_id: string
+  full_name: string | null
+  email: string
+  leave_type_name: string
+}
+
 interface LeaveRequestWithType {
   id: string
   leave_type_id: string
@@ -142,7 +149,7 @@ function formatDate(dateStr: string): { display: string; dayName: string } {
   };
 }
 
-type AccordionTab = "office" | "remote" | "leave" | "holidays" | "myLeaves";
+type AccordionTab = "office" | "remote" | "leave" | "onLeave" | "holidays" | "myLeaves";
 
 const TABS: { key: AccordionTab; label: string; accentColor: string }[] = [
   {
@@ -159,6 +166,11 @@ const TABS: { key: AccordionTab; label: string; accentColor: string }[] = [
     key: "leave",
     label: en.meWsToday.tabPeopleNotCheckedIn,
     accentColor: "var(--brand)",
+  },
+  {
+    key: "onLeave",
+    label: en.meWsToday.tabPeopleOnLeave,
+    accentColor: "var(--danger)",
   },
   {
     key: "holidays",
@@ -350,11 +362,20 @@ function MyLeavesBody({
     );
   }
 
-  const upcoming = leaves.filter((r) => r.start_date >= todayKey);
-  const past = leaves.filter((r) => r.end_date < todayKey);
+  const active   = leaves.filter((r) => r.start_date <= todayKey && r.end_date >= todayKey);
+  const upcoming = leaves.filter((r) => r.start_date > todayKey);
+  const past     = leaves.filter((r) => r.end_date < todayKey);
 
   return (
     <div>
+      {active.length > 0 && (
+        <>
+          <SectionLabel label={en.meWsToday.myLeavesActive} />
+          {active.map((r) => (
+            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+          ))}
+        </>
+      )}
       {upcoming.length > 0 && (
         <>
           <SectionLabel label={en.meWsToday.myLeavesUpcoming} />
@@ -408,6 +429,9 @@ export default function WorkspaceTodayPage() {
   const [myLeaves, setMyLeaves] = useState<LeaveRequestWithType[]>([]);
   const [myLeavesLoading, setMyLeavesLoading] = useState(true);
 
+  const [onLeaveToday, setOnLeaveToday] = useState<MemberOnLeaveToday[]>([]);
+  const [onLeaveTodayLoading, setOnLeaveTodayLoading] = useState(true);
+
   useEffect(() => {
     setModalPortalReady(true);
   }, []);
@@ -434,6 +458,11 @@ export default function WorkspaceTodayPage() {
       .then((r) => r.json())
       .then((d: { leaveRequests: LeaveRequestWithType[] }) => { setMyLeaves(d.leaveRequests ?? []); setMyLeavesLoading(false); })
       .catch(() => setMyLeavesLoading(false));
+
+    fetch(`/api/me/ws/${slug}/leave-requests/today`)
+      .then((r) => r.json())
+      .then((d: { members: MemberOnLeaveToday[] }) => { setOnLeaveToday(d.members ?? []); setOnLeaveTodayLoading(false); })
+      .catch(() => setOnLeaveTodayLoading(false));
   }, [slug]);
 
   function toggleTab(tab: AccordionTab) {
@@ -570,12 +599,16 @@ export default function WorkspaceTodayPage() {
 
   const inOffice = data.members.filter((m) => resolveMemberDisplayStatus(m) === "in_office");
   const remote   = data.members.filter((m) => resolveMemberDisplayStatus(m) === "remote");
-  const notIn    = data.members.filter((m) => resolveMemberDisplayStatus(m) === "not_in");
+  const checkedInIds = new Set([...inOffice, ...remote].map((m) => m.user_id));
+  const onLeaveTodayFiltered = onLeaveToday.filter((m) => !checkedInIds.has(m.user_id));
+  const onLeaveTodayIds = new Set(onLeaveTodayFiltered.map((m) => m.user_id));
+  const notIn    = data.members.filter((m) => resolveMemberDisplayStatus(m) === "not_in" && !onLeaveTodayIds.has(m.user_id));
 
   const tabMembers: Record<AccordionTab, MemberTodaySummary[]> = {
     office:   inOffice,
     remote:   remote,
     leave:    notIn,
+    onLeave:  [],
     holidays: [],
     myLeaves: [],
   };
@@ -698,7 +731,9 @@ export default function WorkspaceTodayPage() {
               ? holidays.length
               : tab.key === "myLeaves"
                 ? myLeaves.length
-                : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].length;
+                : tab.key === "onLeave"
+                  ? onLeaveTodayFiltered.length
+                  : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves" | "onLeave">].length;
 
           return (
             <div
@@ -935,9 +970,40 @@ export default function WorkspaceTodayPage() {
                         );
                       })
                     )
+                  ) : tab.key === "onLeave" ? (
+                    onLeaveTodayLoading ? (
+                      <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
+                        {[1, 2].map((i) => (
+                          <div key={i} style={{ height: "52px", borderRadius: "var(--radius-md)", background: "var(--surface-2)", animation: "vnz-pulse 1.5s ease-in-out infinite" }} />
+                        ))}
+                      </div>
+                    ) : onLeaveTodayFiltered.length === 0 ? (
+                      <p style={{ padding: "16px", fontFamily: "DM Sans, sans-serif", fontSize: "13px", color: "var(--text-muted)", textAlign: "center" }}>
+                        {en.meWsToday.onLeaveEmpty}
+                      </p>
+                    ) : (
+                      <div>
+                        {onLeaveTodayFiltered.map((m) => (
+                          <div key={m.user_id} style={{ display: "flex", alignItems: "center", gap: "12px", padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
+                            <Avatar name={m.full_name} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontFamily: "DM Sans, sans-serif", fontSize: "14px", fontWeight: 500, color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", margin: 0 }}>
+                                {m.full_name ?? m.email}
+                              </p>
+                              <p style={{ fontFamily: "DM Sans, sans-serif", fontSize: "12px", color: "var(--text-muted)", margin: 0 }}>
+                                {m.leave_type_name}
+                              </p>
+                            </div>
+                            <span style={{ fontSize: "11px", fontFamily: "DM Sans, sans-serif", fontWeight: 600, color: "var(--danger)", background: "color-mix(in srgb, var(--danger) 12%, transparent)", padding: "2px 8px", borderRadius: "20px", border: "1px solid var(--danger)", whiteSpace: "nowrap" }}>
+                              {en.meWsToday.onLeaveBadgeLabel}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )
                   ) : tab.key === "myLeaves" ? (
                     <MyLeavesBody leaves={myLeaves} loading={myLeavesLoading} todayKey={todayKey} />
-                  ) : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].length === 0 ? (
+                  ) : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves" | "onLeave">].length === 0 ? (
                     <p
                       style={{
                         padding: "16px",
@@ -951,7 +1017,7 @@ export default function WorkspaceTodayPage() {
                     </p>
                   ) : (
                     <div>
-                      {tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves">].map((m) => (
+                      {tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves" | "onLeave">].map((m) => (
                         <MemberRow key={m.user_id} m={m} />
                       ))}
                     </div>

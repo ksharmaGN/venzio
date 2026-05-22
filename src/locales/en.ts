@@ -84,6 +84,9 @@ export const en = {
     leaveWorkspaceSoleAdmin:
       "You are the only workspace admin. Transfer ownership before leaving.",
     tabMyLeaves: "My Applied Leaves",
+    tabPeopleOnLeave: "People on Leave Today",
+    onLeaveBadgeLabel: "On Leave",
+    onLeaveEmpty: "No one is on leave today",
     applyLeaveButtonAria: "Apply for leave",
     applyLeaveTitle: "Apply for Leave",
     applyLeaveFieldLeaveType: "Leave Type",
@@ -101,12 +104,15 @@ export const en = {
     applyLeaveErrorHoliday: (names: string) =>
       `Leave cannot be applied on company holidays: ${names}.`,
     myLeavesEmpty: "No leave requests yet.",
+    myLeavesActive: "Active",
     myLeavesUpcoming: "Upcoming",
     myLeavesPast: "Past",
     applyLeaveButtonText: "Apply Leave",
     applyLeaveSelectPlaceholder: "Select leave type…",
-    applyLeaveTypeOption: (name: string, days: number) =>
-      `${name} — ${days} day${days !== 1 ? 's' : ''} left`,
+    applyLeaveTypeOption: (name: string, days: number) => {
+      const formatted = Number.isInteger(days) ? days.toString() : days.toFixed(1)
+      return `${name} — ${formatted} day${days !== 1 ? 's' : ''} left`
+    },
     leaveDaysLabel: (days: number) => `${days} day${days !== 1 ? 's' : ''}`,
   },
 
