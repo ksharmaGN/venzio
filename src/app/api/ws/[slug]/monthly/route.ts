@@ -116,17 +116,24 @@ export async function GET(request: NextRequest, { params }: Props) {
 
   // Build per-user leave day sets for the month
   const leaveByUser = new Map<string, Set<string>>();
-  for (const lr of leaveRequests) {
-    const days = leaveByUser.get(lr.user_id) ?? new Set<string>();
-    const cur = new Date(lr.start_date + "T00:00:00Z");
-    const end = new Date(lr.end_date + "T00:00:00Z");
-    while (cur <= end) {
-      const key = cur.toISOString().slice(0, 10);
-      if (key >= startDate && key <= endDate) days.add(key);
-      cur.setUTCDate(cur.getUTCDate() + 1);
+
+for (const { user_id, start_date, end_date } of leaveRequests) {
+  const leaveDates = leaveByUser.get(user_id) ?? new Set<string>();
+
+  for (
+    let date = new Date(`${start_date}T00:00:00Z`);
+    date <= new Date(`${end_date}T00:00:00Z`);
+    date.setUTCDate(date.getUTCDate() + 1)
+  ) {
+    const day = date.toISOString().split("T")[0];
+
+    if (day >= startDate && day <= endDate) {
+      leaveDates.add(day);
     }
-    leaveByUser.set(lr.user_id, days);
   }
+
+  leaveByUser.set(user_id, leaveDates);
+}
 
   const members: MemberMonthRow[] = memberDetails.map((member) => {
     const joinedLocal = dateKeyInTimezone(member.added_at, tz);

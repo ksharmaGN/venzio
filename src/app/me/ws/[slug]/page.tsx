@@ -216,23 +216,23 @@ function leaveDays(start: string, end: string): number {
   );
 }
 
-function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }) {
-  const isPast = r.end_date < todayKey;
-  const isUpcoming = r.start_date > todayKey;
+function LeaveRow({ request: leaveRequest, todayKey }: { request: LeaveRequestWithType; todayKey: string }) {
+  const isPast = leaveRequest.end_date < todayKey;
+  const isUpcoming = leaveRequest.start_date > todayKey;
   const isActive = !isPast && !isUpcoming;
-  const days = leaveDays(r.start_date, r.end_date);
-  const [sy, sm, sd] = r.start_date.split("-").map(Number);
-  const [ey, em, ed] = r.end_date.split("-").map(Number);
-  const startLabel = new Date(sy, sm - 1, sd).toLocaleDateString("en-IN", {
+  const totalDays = leaveDays(leaveRequest.start_date, leaveRequest.end_date);
+  const [startYear, startMonth, startDay] = leaveRequest.start_date.split("-").map(Number);
+  const [endYear, endMonth, endDay] = leaveRequest.end_date.split("-").map(Number);
+  const formattedStart = new Date(startYear, startMonth - 1, startDay).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
   });
-  const endLabel = new Date(ey, em - 1, ed).toLocaleDateString("en-IN", {
+  const formattedEnd = new Date(endYear, endMonth - 1, endDay).toLocaleDateString("en-IN", {
     day: "2-digit",
     month: "short",
     year: "numeric",
   });
-  const dateLabel = r.start_date === r.end_date ? endLabel : `${startLabel} – ${endLabel}`;
+  const dateLabel = leaveRequest.start_date === leaveRequest.end_date ? formattedEnd : `${formattedStart} – ${formattedEnd}`;
 
   return (
     <div
@@ -251,7 +251,7 @@ function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }
             color: isPast ? "var(--text-muted)" : "var(--text-primary)",
           }}
         >
-          {r.leave_type_name}
+          {leaveRequest.leave_type_name}
         </span>
         <span
           style={{
@@ -269,7 +269,7 @@ function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }
             whiteSpace: "nowrap",
           }}
         >
-          {en.meWsToday.leaveDaysLabel(days)}
+          {en.meWsToday.leaveDaysLabel(totalDays)}
         </span>
       </div>
       <div
@@ -282,7 +282,7 @@ function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }
       >
         {dateLabel}
       </div>
-      {r.reason && (
+      {leaveRequest.reason && (
         <div
           style={{
             fontFamily: "DM Sans, sans-serif",
@@ -292,7 +292,7 @@ function LeaveRow({ r, todayKey }: { r: LeaveRequestWithType; todayKey: string }
             fontStyle: "italic",
           }}
         >
-          {r.reason}
+          {leaveRequest.reason}
         </div>
       )}
     </div>
@@ -372,7 +372,7 @@ function MyLeavesBody({
         <>
           <SectionLabel label={en.meWsToday.myLeavesActive} />
           {active.map((r) => (
-            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+            <LeaveRow key={r.id} request={r} todayKey={todayKey} />
           ))}
         </>
       )}
@@ -380,7 +380,7 @@ function MyLeavesBody({
         <>
           <SectionLabel label={en.meWsToday.myLeavesUpcoming} />
           {[...upcoming].reverse().map((r) => (
-            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+            <LeaveRow key={r.id} request={r} todayKey={todayKey} />
           ))}
         </>
       )}
@@ -388,7 +388,7 @@ function MyLeavesBody({
         <>
           <SectionLabel label={en.meWsToday.myLeavesPast} />
           {past.map((r) => (
-            <LeaveRow key={r.id} r={r} todayKey={todayKey} />
+            <LeaveRow key={r.id} request={r} todayKey={todayKey} />
           ))}
         </>
       )}
@@ -414,23 +414,21 @@ export default function WorkspaceTodayPage() {
   const [leaveError, setLeaveError] = useState<string | null>(null);
   const [modalPortalReady, setModalPortalReady] = useState(false);
 
-  // Apply Leave modal state
-  const [applyLeaveOpen, setApplyLeaveOpen] = useState(false);
-  const [leaveTypes, setLeaveTypes] = useState<LeaveTypeWithBalance[]>([]);
-  const [leaveTypesLoading, setLeaveTypesLoading] = useState(false);
-  const [selectedTypeId, setSelectedTypeId] = useState("");
-  const [leaveStartDate, setLeaveStartDate] = useState("");
-  const [leaveEndDate, setLeaveEndDate] = useState("");
-  const [leaveReason, setLeaveReason] = useState("");
-  const [leaveSubmitting, setLeaveSubmitting] = useState(false);
-  const [leaveSubmitError, setLeaveSubmitError] = useState<string | null>(null);
-  const [leaveSuccess, setLeaveSuccess] = useState(false);
+  const [applyLeave, setApplyLeave] = useState({
+    open: false,
+    types: [] as LeaveTypeWithBalance[],
+    typesLoading: false,
+    selectedTypeId: "",
+    startDate: "",
+    endDate: "",
+    reason: "",
+    submitting: false,
+    error: null as string | null,
+    success: false,
+  });
 
-  const [myLeaves, setMyLeaves] = useState<LeaveRequestWithType[]>([]);
-  const [myLeavesLoading, setMyLeavesLoading] = useState(true);
-
-  const [onLeaveToday, setOnLeaveToday] = useState<MemberOnLeaveToday[]>([]);
-  const [onLeaveTodayLoading, setOnLeaveTodayLoading] = useState(true);
+  const [myLeavesState, setMyLeavesState] = useState<{ data: LeaveRequestWithType[]; loading: boolean }>({ data: [], loading: true });
+  const [onLeaveTodayState, setOnLeaveTodayState] = useState<{ data: MemberOnLeaveToday[]; loading: boolean }>({ data: [], loading: true });
 
   useEffect(() => {
     setModalPortalReady(true);
@@ -456,13 +454,13 @@ export default function WorkspaceTodayPage() {
 
     fetch(`/api/me/ws/${slug}/leave-requests`)
       .then((r) => r.json())
-      .then((d: { leaveRequests: LeaveRequestWithType[] }) => { setMyLeaves(d.leaveRequests ?? []); setMyLeavesLoading(false); })
-      .catch(() => setMyLeavesLoading(false));
+      .then((d: { leaveRequests: LeaveRequestWithType[] }) => setMyLeavesState({ data: d.leaveRequests ?? [], loading: false }))
+      .catch(() => setMyLeavesState((prev) => ({ ...prev, loading: false })));
 
     fetch(`/api/me/ws/${slug}/leave-requests/today`)
       .then((r) => r.json())
-      .then((d: { members: MemberOnLeaveToday[] }) => { setOnLeaveToday(d.members ?? []); setOnLeaveTodayLoading(false); })
-      .catch(() => setOnLeaveTodayLoading(false));
+      .then((d: { members: MemberOnLeaveToday[] }) => setOnLeaveTodayState({ data: d.members ?? [], loading: false }))
+      .catch(() => setOnLeaveTodayState((prev) => ({ ...prev, loading: false })));
   }, [slug]);
 
   function toggleTab(tab: AccordionTab) {
@@ -470,59 +468,47 @@ export default function WorkspaceTodayPage() {
   }
 
   async function openApplyLeave() {
-    setApplyLeaveOpen(true);
-    setLeaveTypesLoading(true);
-    setLeaveSubmitError(null);
-    setLeaveSuccess(false);
-    setSelectedTypeId("");
-    setLeaveStartDate("");
-    setLeaveEndDate("");
-    setLeaveReason("");
+    setApplyLeave({ open: true, types: [], typesLoading: true, selectedTypeId: "", startDate: "", endDate: "", reason: "", submitting: false, error: null, success: false });
     try {
       const res = await fetch(`/api/me/ws/${slug}/leave-types`);
       if (res.ok) {
         const d = (await res.json()) as { leaveTypes: LeaveTypeWithBalance[] };
-        setLeaveTypes(d.leaveTypes ?? []);
+        setApplyLeave((prev) => ({ ...prev, types: d.leaveTypes ?? [] }));
       }
     } finally {
-      setLeaveTypesLoading(false);
+      setApplyLeave((prev) => ({ ...prev, typesLoading: false }));
     }
   }
 
   async function submitLeave() {
-    if (!selectedTypeId || !leaveStartDate || !leaveEndDate) return;
-    setLeaveSubmitting(true);
-    setLeaveSubmitError(null);
+    if (!applyLeave.selectedTypeId || !applyLeave.startDate || !applyLeave.endDate) return;
+    setApplyLeave((prev) => ({ ...prev, submitting: true, error: null }));
     try {
       const res = await fetch(`/api/me/ws/${slug}/leave`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          leave_type_id: selectedTypeId,
-          start_date: leaveStartDate,
-          end_date: leaveEndDate,
-          reason: leaveReason || null,
+          leave_type_id: applyLeave.selectedTypeId,
+          start_date: applyLeave.startDate,
+          end_date: applyLeave.endDate,
+          reason: applyLeave.reason || null,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (res.ok) {
-        setLeaveSuccess(true);
+        setApplyLeave((prev) => ({ ...prev, success: true }));
         fetch(`/api/me/ws/${slug}/leave-requests`)
           .then((r) => r.json())
-          .then((d: { leaveRequests: LeaveRequestWithType[] }) => setMyLeaves(d.leaveRequests ?? []))
+          .then((d: { leaveRequests: LeaveRequestWithType[] }) => setMyLeavesState({ data: d.leaveRequests ?? [], loading: false }))
           .catch(() => undefined);
         setTimeout(() => {
-          setApplyLeaveOpen(false);
-          setLeaveSuccess(false);
-          setLeaveSubmitting(false);
+          setApplyLeave((prev) => ({ ...prev, open: false, success: false, submitting: false }));
         }, 2000);
       } else {
-        setLeaveSubmitError(body.error ?? en.meWsToday.applyLeaveErrorGeneric);
-        setLeaveSubmitting(false);
+        setApplyLeave((prev) => ({ ...prev, error: body.error ?? en.meWsToday.applyLeaveErrorGeneric, submitting: false }));
       }
     } catch {
-      setLeaveSubmitError(en.meWsToday.applyLeaveErrorGeneric);
-      setLeaveSubmitting(false);
+      setApplyLeave((prev) => ({ ...prev, error: en.meWsToday.applyLeaveErrorGeneric, submitting: false }));
     }
   }
 
@@ -600,7 +586,7 @@ export default function WorkspaceTodayPage() {
   const inOffice = data.members.filter((m) => resolveMemberDisplayStatus(m) === "in_office");
   const remote   = data.members.filter((m) => resolveMemberDisplayStatus(m) === "remote");
   const checkedInIds = new Set([...inOffice, ...remote].map((m) => m.user_id));
-  const onLeaveTodayFiltered = onLeaveToday.filter((m) => !checkedInIds.has(m.user_id));
+  const onLeaveTodayFiltered = onLeaveTodayState.data.filter((m) => !checkedInIds.has(m.user_id));
   const onLeaveTodayIds = new Set(onLeaveTodayFiltered.map((m) => m.user_id));
   const notIn    = data.members.filter((m) => resolveMemberDisplayStatus(m) === "not_in" && !onLeaveTodayIds.has(m.user_id));
 
@@ -615,8 +601,8 @@ export default function WorkspaceTodayPage() {
 
   const todayKey = todayStr();
 
-  const holidayWarning = leaveStartDate && leaveEndDate
-    ? holidays.filter((h) => h.date >= leaveStartDate && h.date <= leaveEndDate)
+  const holidayWarning = applyLeave.startDate && applyLeave.endDate
+    ? holidays.filter((h) => h.date >= applyLeave.startDate && h.date <= applyLeave.endDate)
     : [];
 
   return (
@@ -730,7 +716,7 @@ export default function WorkspaceTodayPage() {
             tab.key === "holidays"
               ? holidays.length
               : tab.key === "myLeaves"
-                ? myLeaves.length
+                ? myLeavesState.data.length
                 : tab.key === "onLeave"
                   ? onLeaveTodayFiltered.length
                   : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves" | "onLeave">].length;
@@ -971,7 +957,7 @@ export default function WorkspaceTodayPage() {
                       })
                     )
                   ) : tab.key === "onLeave" ? (
-                    onLeaveTodayLoading ? (
+                    onLeaveTodayState.loading ? (
                       <div style={{ padding: "12px 16px", display: "flex", flexDirection: "column", gap: "10px" }}>
                         {[1, 2].map((i) => (
                           <div key={i} style={{ height: "52px", borderRadius: "var(--radius-md)", background: "var(--surface-2)", animation: "vnz-pulse 1.5s ease-in-out infinite" }} />
@@ -1002,7 +988,7 @@ export default function WorkspaceTodayPage() {
                       </div>
                     )
                   ) : tab.key === "myLeaves" ? (
-                    <MyLeavesBody leaves={myLeaves} loading={myLeavesLoading} todayKey={todayKey} />
+                    <MyLeavesBody leaves={myLeavesState.data} loading={myLeavesState.loading} todayKey={todayKey} />
                   ) : tabMembers[tab.key as Exclude<AccordionTab, "holidays" | "myLeaves" | "onLeave">].length === 0 ? (
                     <p
                       style={{
@@ -1159,7 +1145,7 @@ export default function WorkspaceTodayPage() {
         )}
 
       {modalPortalReady &&
-        applyLeaveOpen &&
+        applyLeave.open &&
         createPortal(
           <div
             role="presentation"
@@ -1180,7 +1166,7 @@ export default function WorkspaceTodayPage() {
               overflow: "auto",
             }}
             onClick={() => {
-              if (!leaveSubmitting) setApplyLeaveOpen(false);
+              if (!applyLeave.submitting) setApplyLeave((prev) => ({ ...prev, open: false }));
             }}
           >
             <div
@@ -1211,7 +1197,7 @@ export default function WorkspaceTodayPage() {
                 {en.meWsToday.applyLeaveTitle}
               </h2>
 
-              {leaveSuccess ? (
+              {applyLeave.success ? (
                 <p
                   style={{
                     fontFamily: "DM Sans, sans-serif",
@@ -1223,7 +1209,7 @@ export default function WorkspaceTodayPage() {
                 >
                   {en.meWsToday.applyLeaveSuccess}
                 </p>
-              ) : leaveTypesLoading ? (
+              ) : applyLeave.typesLoading ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "20px" }}>
                   {[1, 2, 3].map((i) => (
                     <div
@@ -1237,7 +1223,7 @@ export default function WorkspaceTodayPage() {
                     />
                   ))}
                 </div>
-              ) : leaveTypes.length === 0 ? (
+              ) : applyLeave.types.length === 0 ? (
                 <p
                   style={{
                     fontFamily: "DM Sans, sans-serif",
@@ -1264,8 +1250,8 @@ export default function WorkspaceTodayPage() {
                       {en.meWsToday.applyLeaveFieldLeaveType}
                     </label>
                     <select
-                      value={selectedTypeId}
-                      onChange={(e) => setSelectedTypeId(e.target.value)}
+                      value={applyLeave.selectedTypeId}
+                      onChange={(e) => setApplyLeave((prev) => ({ ...prev, selectedTypeId: e.target.value }))}
                       style={{
                         width: "100%",
                         height: "44px",
@@ -1282,7 +1268,7 @@ export default function WorkspaceTodayPage() {
                       }}
                     >
                       <option value="">{en.meWsToday.applyLeaveSelectPlaceholder}</option>
-                      {leaveTypes.map((t) => (
+                      {applyLeave.types.map((t) => (
                         <option key={t.id} value={t.id} disabled={t.available_days === 0}>
                           {en.meWsToday.applyLeaveTypeOption(t.name, t.available_days)}
                         </option>
@@ -1304,12 +1290,14 @@ export default function WorkspaceTodayPage() {
                     </label>
                     <input
                       type="date"
-                      value={leaveStartDate}
+                      value={applyLeave.startDate}
                       onChange={(e) => {
-                        setLeaveStartDate(e.target.value);
-                        if (leaveEndDate && e.target.value > leaveEndDate) {
-                          setLeaveEndDate(e.target.value);
-                        }
+                        const val = e.target.value;
+                        setApplyLeave((prev) => ({
+                          ...prev,
+                          startDate: val,
+                          endDate: prev.endDate && val > prev.endDate ? val : prev.endDate,
+                        }));
                       }}
                       style={{
                         width: "100%",
@@ -1341,9 +1329,9 @@ export default function WorkspaceTodayPage() {
                     </label>
                     <input
                       type="date"
-                      value={leaveEndDate}
-                      min={leaveStartDate || undefined}
-                      onChange={(e) => setLeaveEndDate(e.target.value)}
+                      value={applyLeave.endDate}
+                      min={applyLeave.startDate || undefined}
+                      onChange={(e) => setApplyLeave((prev) => ({ ...prev, endDate: e.target.value }))}
                       style={{
                         width: "100%",
                         height: "44px",
@@ -1391,8 +1379,8 @@ export default function WorkspaceTodayPage() {
                       {en.meWsToday.applyLeaveFieldReason}
                     </label>
                     <textarea
-                      value={leaveReason}
-                      onChange={(e) => setLeaveReason(e.target.value)}
+                      value={applyLeave.reason}
+                      onChange={(e) => setApplyLeave((prev) => ({ ...prev, reason: e.target.value }))}
                       placeholder={en.meWsToday.applyLeaveFieldReasonPlaceholder}
                       rows={3}
                       style={{
@@ -1411,7 +1399,7 @@ export default function WorkspaceTodayPage() {
                     />
                   </div>
 
-                  {leaveSubmitError && (
+                  {applyLeave.error && (
                     <p
                       style={{
                         fontFamily: "DM Sans, sans-serif",
@@ -1420,15 +1408,15 @@ export default function WorkspaceTodayPage() {
                         margin: "0 0 12px",
                       }}
                     >
-                      {leaveSubmitError}
+                      {applyLeave.error}
                     </p>
                   )}
 
                   <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
                     <button
                       type="button"
-                      disabled={leaveSubmitting}
-                      onClick={() => setApplyLeaveOpen(false)}
+                      disabled={applyLeave.submitting}
+                      onClick={() => setApplyLeave((prev) => ({ ...prev, open: false }))}
                       style={{
                         height: "44px",
                         padding: "0 16px",
@@ -1439,14 +1427,14 @@ export default function WorkspaceTodayPage() {
                         fontSize: "14px",
                         fontWeight: 600,
                         color: "var(--text-secondary)",
-                        cursor: leaveSubmitting ? "default" : "pointer",
+                        cursor: applyLeave.submitting ? "default" : "pointer",
                       }}
                     >
                       {en.meWsToday.applyLeaveCancel}
                     </button>
                     <button
                       type="button"
-                      disabled={leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0}
+                      disabled={applyLeave.submitting || !applyLeave.selectedTypeId || !applyLeave.startDate || !applyLeave.endDate || holidayWarning.length > 0}
                       onClick={() => void submitLeave()}
                       style={{
                         height: "44px",
@@ -1458,15 +1446,15 @@ export default function WorkspaceTodayPage() {
                         fontSize: "14px",
                         fontWeight: 600,
                         color: "#fff",
-                        cursor: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0
+                        cursor: applyLeave.submitting || !applyLeave.selectedTypeId || !applyLeave.startDate || !applyLeave.endDate || holidayWarning.length > 0
                           ? "not-allowed"
                           : "pointer",
-                        opacity: leaveSubmitting || !selectedTypeId || !leaveStartDate || !leaveEndDate || holidayWarning.length > 0
+                        opacity: applyLeave.submitting || !applyLeave.selectedTypeId || !applyLeave.startDate || !applyLeave.endDate || holidayWarning.length > 0
                           ? 0.65
                           : 1,
                       }}
                     >
-                      {leaveSubmitting ? en.meWsToday.applyLeaveSubmitting : en.meWsToday.applyLeaveSubmit}
+                      {applyLeave.submitting ? en.meWsToday.applyLeaveSubmitting : en.meWsToday.applyLeaveSubmit}
                     </button>
                   </div>
                 </>

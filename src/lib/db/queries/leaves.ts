@@ -1,4 +1,5 @@
 import { db } from '../index'
+import { MS_PER_DAY } from '@/lib/constants'
 
 export type AccrualFrequency = 'monthly' | 'quarterly' | 'half-yearly' | 'yearly'
 export type CreditTiming = 'start' | 'end'
@@ -92,7 +93,7 @@ export async function getUsedLeaveDays(
   return rows.reduce((sum, r) => {
     const start = new Date(r.start_date + 'T00:00:00Z')
     const end = new Date(r.end_date + 'T00:00:00Z')
-    return sum + Math.max(1, Math.floor((end.getTime() - start.getTime()) / 86400000) + 1)
+    return sum + Math.max(1, Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY) + 1)
   }, 0)
 }
 

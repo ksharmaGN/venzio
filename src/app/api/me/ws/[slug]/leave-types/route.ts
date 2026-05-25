@@ -1,26 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getWorkspaceBySlug, getWorkspaceMember } from '@/lib/db/queries/workspaces'
+import { requireWsMember } from '@/lib/ws-admin'
 import { getLeaveTypesWithBalance } from '@/lib/db/queries/leaves'
 
 interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const userId = req.headers.get('x-user-id')
-  if (!userId) {
+  const ctx = await requireWsMember(req, slug)
+  if (!ctx) {
     return NextResponse.json({ error: 'Unauthorized', code: 'UNAUTHORIZED' }, { status: 401 })
   }
 
-  const workspace = await getWorkspaceBySlug(slug)
-  if (!workspace) {
-    return NextResponse.json({ error: 'Workspace not found', code: 'NOT_FOUND' }, { status: 404 })
-  }
-
-  const member = await getWorkspaceMember(workspace.id, userId)
-  if (!member || member.status !== 'active') {
-    return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
-  }
-
-  const leaveTypes = await getLeaveTypesWithBalance(workspace.id, userId, member.added_at)
+  const leaveTypes = await getLeaveTypesWithBalance(ctx.workspace.id, ctx.userId, ctx.member.added_at)
   return NextResponse.json({ leaveTypes })
 }
