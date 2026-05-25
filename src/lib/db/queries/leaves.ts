@@ -120,39 +120,39 @@ function computeTotalAccrued(
   const now = new Date()
   if (now < joined) return 0
 
-  const pm = PERIOD_MONTHS[frequency]
-  const jy = joined.getFullYear()
-  const jm = joined.getMonth() // 0-indexed
+  const periodMonths = PERIOD_MONTHS[frequency]
+  const joinYear = joined.getFullYear()
+  const joinMonth = joined.getMonth() // 0-indexed
 
-  // First period: 1st of join-month → 1st of (join-month + pm)
-  const p1Start = new Date(jy, jm, 1)
-  const p2Start = new Date(jy, jm + pm, 1) // exclusive end of first period
+  // First period: 1st of join-month → 1st of (join-month + periodMonths)
+  const firstPeriodStart = new Date(joinYear, joinMonth, 1)
+  const secondPeriodStart = new Date(joinYear, joinMonth + periodMonths, 1) // exclusive end of first period
 
   // Pro-rata fraction for first period
-  const totalMsFirst = p2Start.getTime() - p1Start.getTime()
-  const workedMsFirst = p2Start.getTime() - joined.getTime()
-  const proRata = Math.min(1, Math.max(0, workedMsFirst / totalMsFirst))
-  const firstCredits = accrualCredits * proRata
+  const totalMsInFirstPeriod = secondPeriodStart.getTime() - firstPeriodStart.getTime()
+  const workedMsInFirstPeriod = secondPeriodStart.getTime() - joined.getTime()
+  const proRataFraction = Math.min(1, Math.max(0, workedMsInFirstPeriod / totalMsInFirstPeriod))
+  const firstPeriodCredits = accrualCredits * proRataFraction
 
   const round1 = (n: number) => Math.round(n * 10) / 10
 
   if (creditTiming === 'start') {
     // First period: available immediately on DOJ
-    if (now < p2Start) return round1(firstCredits)
+    if (now < secondPeriodStart) return round1(firstPeriodCredits)
 
-    // Full periods started since p2Start (current in-progress counts too → +1)
-    const monthsFromP2 = (now.getFullYear() - p2Start.getFullYear()) * 12 +
-      (now.getMonth() - p2Start.getMonth())
-    const periodsStarted = Math.floor(monthsFromP2 / pm) + 1
-    return round1(firstCredits + periodsStarted * accrualCredits)
+    // Full periods started since secondPeriodStart (current in-progress counts too → +1)
+    const monthsSinceSecondPeriod = (now.getFullYear() - secondPeriodStart.getFullYear()) * 12 +
+      (now.getMonth() - secondPeriodStart.getMonth())
+    const periodsStarted = Math.floor(monthsSinceSecondPeriod / periodMonths) + 1
+    return round1(firstPeriodCredits + periodsStarted * accrualCredits)
   } else {
     // 'end': credits available after completing each period
-    if (now < p2Start) return 0 // first period not yet done
+    if (now < secondPeriodStart) return 0 // first period not yet done
 
-    const monthsFromP2 = (now.getFullYear() - p2Start.getFullYear()) * 12 +
-      (now.getMonth() - p2Start.getMonth())
-    const periodsCompleted = Math.floor(monthsFromP2 / pm)
-    return round1(firstCredits + periodsCompleted * accrualCredits)
+    const monthsSinceSecondPeriod = (now.getFullYear() - secondPeriodStart.getFullYear()) * 12 +
+      (now.getMonth() - secondPeriodStart.getMonth())
+    const periodsCompleted = Math.floor(monthsSinceSecondPeriod / periodMonths)
+    return round1(firstPeriodCredits + periodsCompleted * accrualCredits)
   }
 }
 
