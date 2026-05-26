@@ -245,15 +245,13 @@ export default function MonthlyClient({ slug, tz: _tz, canExport, historyMonths 
     if (!canExport) return
     setExporting(true)
     try {
-      const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-      const endDate = `${year}-${String(month).padStart(2, '0')}-${String(data?.days_in_month ?? 31).padStart(2, '0')}`
-      const res = await fetch(`/api/ws/${slug}/export?start=${startDate}&end=${endDate}`)
+      const res = await fetch(`/api/ws/${slug}/export?year=${year}&month=${month}`)
       if (res.ok) {
         const blob = await res.blob()
         const url = URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `venzio-${slug}-${year}-${String(month).padStart(2, '0')}.csv`
+        a.download = `attendance-${slug}-${year}-${String(month).padStart(2, '0')}.xlsx`
         a.click()
         URL.revokeObjectURL(url)
       }
@@ -332,7 +330,7 @@ export default function MonthlyClient({ slug, tz: _tz, canExport, historyMonths 
               marginLeft: 'auto',
             }}
           >
-            {exporting ? 'Exporting…' : '↓ Export CSV'}
+            {exporting ? 'Exporting…' : '↓ Export Report'}
           </button>
         )}
       </div>
