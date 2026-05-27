@@ -8,26 +8,27 @@ import { todayInTz, localMidnightToUtc } from '@/lib/timezone'
 import { isOfficeMatched } from '@/lib/attendance-summary'
 
 export interface DashboardMember {
-  member_id: string
-  user_id: string
-  email: string
-  role: string
-  full_name: string | null
-  presence_status: 'present' | 'visited' | 'notIn'
+  member_id: string;
+  user_id: string;
+  email: string;
+  role: string;
+  full_name: string | null;
+  presence_status: "present" | "visited" | "notIn";
   latest_event: {
-    checkin_at: string
-    checkout_at: string | null
-    matched_by: MatchedBy
-    event_type: string
-    matched_signals: string[]
-    trust_flags: string[]
-    ip_address: string
-    gps_lat: number | null
-    gps_lng: number | null
-    location_label: string | null
-    checkout_location_mismatch: number | null
-  } | null
-  event_count: number
+    checkin_at: string;
+    checkout_at: string | null;
+    matched_by: MatchedBy;
+    event_type: string;
+    matched_signals: string[];
+    trust_flags: string[];
+    trust_score: number | null;
+    ip_address: string;
+    gps_lat: number | null;
+    gps_lng: number | null;
+    location_label: string | null;
+    checkout_location_mismatch: number | null;
+  } | null;
+  event_count: number;
 }
 
 export interface DashboardResponse {
@@ -126,16 +127,20 @@ export async function GET(
             matched_by: latest.matched_by,
             event_type: latest.event_type,
             matched_signals: latest.matched_signals,
-            trust_flags: latest.trust_flags ? (JSON.parse(latest.trust_flags) as string[]) : [],
+            trust_flags: latest.trust_flags
+              ? (JSON.parse(latest.trust_flags) as string[])
+              : [],
+            trust_score: latest.trust_score ?? null,
             ip_address: latest.ip_address,
             gps_lat: latest.gps_lat,
             gps_lng: latest.gps_lng,
             location_label: latest.location_label,
-            checkout_location_mismatch: latest.checkout_location_mismatch ?? null,
+            checkout_location_mismatch:
+              latest.checkout_location_mismatch ?? null,
           }
         : null,
       event_count: userEvents.length,
-    }
+    };
   })
 
   // Counts (always unfiltered)

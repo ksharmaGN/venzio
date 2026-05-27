@@ -9,6 +9,8 @@ import type { MemberStatsResponse, StatsInterval } from '@/app/api/ws/[slug]/mem
 import type { RealtimeResponse } from '@/app/api/ws/[slug]/realtime/route'
 import { fmtHours } from '@/lib/client/format-time'
 import { resolvePresenceTag, PRESENCE_TAG_CONFIG } from '@/lib/client/presence'
+import { en } from "@/locales/en";
+import { trustLevelFromScore } from "@/lib/trust-scoring";
 import { Users, Monitor, Home, Activity } from 'lucide-react'
 
 interface Props {
@@ -29,19 +31,32 @@ function getInitials(s: string): string {
 // ─── Status badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ member }: { member: DashboardMember }) {
-  const hasTrust = (member.latest_event?.trust_flags?.length ?? 0) > 0
-  if (hasTrust) {
+  const score = member.latest_event?.trust_score;
+  const hasTrustFlags = (member.latest_event?.trust_flags?.length ?? 0) > 0;
+  const lowTrust =
+    hasTrustFlags ||
+    (score != null && trustLevelFromScore(score) === "suspicious");
+  if (lowTrust) {
     return (
-      <span style={{
-        display: 'inline-flex', alignItems: 'center', height: '22px', padding: '0 9px',
-        borderRadius: '5px', fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 700,
-        background: 'color-mix(in srgb, var(--danger) 12%, transparent)',
-        color: 'var(--danger)', letterSpacing: '0.04em',
-        border: '1px solid color-mix(in srgb, var(--danger) 30%, transparent)',
-      }}>
-        SUSPICIOUS
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          height: "22px",
+          padding: "0 9px",
+          borderRadius: "5px",
+          fontSize: "11px",
+          fontFamily: "Plus Jakarta Sans, sans-serif",
+          fontWeight: 700,
+          background: "color-mix(in srgb, var(--amber) 12%, transparent)",
+          color: "var(--amber)",
+          letterSpacing: "0.04em",
+          border: "1px solid color-mix(in srgb, var(--amber) 30%, transparent)",
+        }}
+      >
+        {en.workspace.badgeVerificationReduced.toUpperCase()}
       </span>
-    )
+    );
   }
   const tag = resolvePresenceTag(member.presence_status, member.latest_event?.matched_by, member.latest_event?.event_type)
   const { label, color } = PRESENCE_TAG_CONFIG[tag]

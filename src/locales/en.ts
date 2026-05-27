@@ -58,6 +58,8 @@ export const en = {
   workspace: {
     // Used on /ws and /ws/:slug pages
     brandLogo: brand,
+    /** Admin Today dashboard when trust_flags or low trust_score */
+    badgeVerificationReduced: "Verification reduced",
   },
 
   /** Member workspace Today accordion (/me/ws/[slug]) */
@@ -100,7 +102,8 @@ export const en = {
     applyLeaveSuccess: "Leave applied successfully",
     applyLeaveCancel: "Cancel",
     applyLeaveErrorGeneric: "Could not submit leave. Try again.",
-    applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
+    applyLeaveErrorOverlap:
+      "You already have a leave request covering these dates.",
     applyLeaveErrorHoliday: (names: string) =>
       `Leave cannot be applied on company holidays: ${names}.`,
     myLeavesEmpty: "No leave requests yet.",
@@ -110,16 +113,19 @@ export const en = {
     applyLeaveButtonText: "Apply Leave",
     applyLeaveSelectPlaceholder: "Select leave type…",
     applyLeaveTypeOption: (name: string, days: number) => {
-      const formatted = Number.isInteger(days) ? days.toString() : days.toFixed(1)
-      return `${name} — ${formatted} day${days !== 1 ? 's' : ''} left`
+      const formatted = Number.isInteger(days)
+        ? days.toString()
+        : days.toFixed(1);
+      return `${name} — ${formatted} day${days !== 1 ? "s" : ""} left`;
     },
-    leaveDaysLabel: (days: number) => `${days} day${days !== 1 ? 's' : ''}`,
+    leaveDaysLabel: (days: number) => `${days} day${days !== 1 ? "s" : ""}`,
   },
 
   /** Workspace admin leave types settings (/ws/[slug]/settings) */
   wsLeaveTypes: {
     sectionTitle: "Leave Types",
-    sectionDescription: "Define leave types and how credits are accrued for team members. Credits accrue from each member's join date.",
+    sectionDescription:
+      "Define leave types and how credits are accrued for team members. Credits accrue from each member's join date.",
     addType: "Add type",
     labelName: "Type name",
     labelFrequency: "Accrual",
@@ -133,7 +139,8 @@ export const en = {
     optionYearly: "Yearly",
     placeholderName: "e.g. Sick Leave",
     emptyNoTypes: "No leave types yet. Add one below.",
-    deleteConfirm: "Remove this leave type? Existing leave requests are not affected.",
+    deleteConfirm:
+      "Remove this leave type? Existing leave requests are not affected.",
   },
 
   /** Workspace admin settings page (/ws/[slug]/settings) */
@@ -144,7 +151,8 @@ export const en = {
     workspaceNameLabel: "Workspace name",
     workspaceNamePlaceholder: "My Organisation",
     timezoneLabel: "Timezone",
-    timezoneHint: "The Today dashboard uses this timezone to determine the current day.",
+    timezoneHint:
+      "The Today dashboard uses this timezone to determine the current day.",
     allowRemoteLabel: "Allow remote check-ins",
     allowRemoteHint: "Count WFH days in attendance reports",
     leavesEnabledLabel: "Enable leaves & holidays",
@@ -155,8 +163,10 @@ export const en = {
     loading: "Loading…",
     // Signal configuration
     signalsTitle: "Signal configuration",
-    signalsDescription: "Signals define what counts as “in office” for your workspace. If no signals are registered, all check-in events from your members are shown.",
-    signalsEmpty: "No signals registered yet. Add a GPS location or IP context below.",
+    signalsDescription:
+      "Signals define what counts as “in office” for your workspace. If no signals are registered, all check-in events from your members are shown.",
+    signalsEmpty:
+      "No signals registered yet. Add a GPS location or IP context below.",
     signalRemove: "Remove",
     signalRemoveConfirm: "Remove this signal?",
     gpsFormTitle: "Register GPS location",
@@ -183,8 +193,10 @@ export const en = {
     cancelBtn: "Cancel",
     // Domain verification
     domainsTitle: "Email domain verification",
-    domainsDescription: "Verified domains enable auto-enrolment: employees who sign up with a matching email are automatically added as members.",
-    domainDnsInstructions: "Add this DNS TXT record, then click “Check verification”:",
+    domainsDescription:
+      "Verified domains enable auto-enrolment: employees who sign up with a matching email are automatically added as members.",
+    domainDnsInstructions:
+      "Add this DNS TXT record, then click “Check verification”:",
     domainDnsNameLabel: "Name",
     domainDnsValueLabel: "Value",
     domainCopied: "Copied!",
@@ -204,8 +216,10 @@ export const en = {
     // Archive / restore
     archiveTitle: "Archive workspace",
     restoreTitle: "Restore workspace",
-    archiveDescription: "Archiving hides this workspace from your active list. Members and all presence data are preserved. The workspace can be restored at any time from /ws.",
-    restoreDescription: "This workspace is currently archived. Restoring it will make it active again (subject to the 1 active workspace limit).",
+    archiveDescription:
+      "Archiving hides this workspace from your active list. Members and all presence data are preserved. The workspace can be restored at any time from /ws.",
+    restoreDescription:
+      "This workspace is currently archived. Restoring it will make it active again (subject to the 1 active workspace limit).",
     archiveBtn: "Archive workspace",
     restoreBtn: "Restore workspace",
     archiveConfirmText: "Archive this workspace?",
