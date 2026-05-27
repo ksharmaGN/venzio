@@ -31,112 +31,149 @@ export interface QueryWorkspaceEventsOptions {
 export async function queryWorkspaceEvents(
   workspaceId: string,
   workspacePlan: string,
-  options: QueryWorkspaceEventsOptions
+  options: QueryWorkspaceEventsOptions,
 ): Promise<PresenceEventWithMatch[]> {
-  const planLimits = getPlanLimits(workspacePlan)
+  const planLimits = getPlanLimits(workspacePlan);
 
   // Apply plan history gate
-  let effectiveStart = options.startDate
-  const historyGate = historyStartDate(workspacePlan)
+  let effectiveStart = options.startDate;
+  const historyGate = historyStartDate(workspacePlan);
   if (historyGate && effectiveStart < historyGate) {
-    effectiveStart = historyGate
+    effectiveStart = historyGate;
   }
 
   // Get active member user IDs (only status='active' members)
-  let memberIds = await getActiveMemberIds(workspaceId)
+  let memberIds = await getActiveMemberIds(workspaceId);
 
   // Filter to a single member if requested (skip free-plan cap so that member always sees their own rows)
   if (options.userId) {
-    if (!memberIds.includes(options.userId)) return []
-    memberIds = [options.userId]
-  } else if (planLimits.maxUsers !== null && memberIds.length > planLimits.maxUsers) {
-    memberIds = memberIds.slice(0, planLimits.maxUsers)
+    if (!memberIds.includes(options.userId)) return [];
+    memberIds = [options.userId];
+  } else if (
+    planLimits.maxUsers !== null &&
+    memberIds.length > planLimits.maxUsers
+  ) {
+    memberIds = memberIds.slice(0, planLimits.maxUsers);
   }
 
-  if (memberIds.length === 0) return []
+  if (memberIds.length === 0) return [];
 
   // Fetch all events in range for these users
   const events = await getEventsForUsers({
     userIds: memberIds,
     start: effectiveStart,
     end: options.endDate,
-  })
+  });
 
   // Apply event type filter
   const filteredEvents = options.eventType
     ? events.filter((e) => e.event_type === options.eventType)
-    : events
+    : events;
 
   // Get signal configs
-  const signals = await getWorkspaceSignals(workspaceId)
-  const overrideEventIds = await getOverrideEventIds(workspaceId)
+  const signals = await getWorkspaceSignals(workspaceId);
+  const overrideEventIds = await getOverrideEventIds(workspaceId);
 
   // Config-light mode: no signals configured - all events pass through as verified
   if (signals.length === 0) {
     return filteredEvents.map((event) => ({
       ...event,
-      matched_by: overrideEventIds.has(event.id) ? 'override' as MatchedBy : 'verified' as MatchedBy,
+      matched_by: overrideEventIds.has(event.id)
+        ? ("override" as MatchedBy)
+        : ("verified" as MatchedBy),
       matched_signals: [] as string[],
-    }))
+    }));
   }
 
   // Signal matching mode
-  type GpsSignal = WorkspaceSignalConfig & { gps_lat: number; gps_lng: number }
-  type IpSignal = WorkspaceSignalConfig & { ip_geo_lat: number; ip_geo_lng: number }
+  type GpsSignal = WorkspaceSignalConfig & { gps_lat: number; gps_lng: number };
+  type IpSignal = WorkspaceSignalConfig & {
+    ip_geo_lat: number;
+    ip_geo_lng: number;
+  };
 
-  const gpsSignals = signals.filter((s): s is GpsSignal =>
-    s.signal_type === 'gps' && s.gps_lat !== null && s.gps_lng !== null
-  )
-  const ipSignals = signals.filter((s): s is IpSignal =>
-    s.signal_type === 'ip' && s.ip_geo_lat !== null && s.ip_geo_lng !== null
-  )
+  const gpsSignals = signals.filter(
+    (s): s is GpsSignal =>
+      s.signal_type === "gps" && s.gps_lat !== null && s.gps_lng !== null,
+  );
+  const ipSignals = signals.filter(
+    (s): s is IpSignal =>
+      s.signal_type === "ip" && s.ip_geo_lat !== null && s.ip_geo_lng !== null,
+  );
 
-  // Determine which signal types are configured for this workspace
-  const configuredTypes = new Set<string>()
-  if (gpsSignals.length > 0) configuredTypes.add('gps')
-  if (ipSignals.length > 0) configuredTypes.add('ip')
+  // Attendance AND gate: GPS only (IP is contextual — see trust layer in lib/trust.ts)
+  const attendanceTypes = new Set<string>();
+  if (gpsSignals.length > 0) attendanceTypes.add("gps");
 
-  const result: PresenceEventWithMatch[] = []
+  const result: PresenceEventWithMatch[] = [];
 
   for (const event of filteredEvents) {
     // Admin override always passes through - bypass signal matching entirely
     if (overrideEventIds.has(event.id)) {
-      result.push({ ...event, matched_by: 'override', matched_signals: [] })
-      continue
+      result.push({ ...event, matched_by: "override", matched_signals: [] });
+      continue;
     }
 
-    const matched = new Set<string>()
+    const matched = new Set<string>();
 
     // GPS: check if event GPS coords match any configured GPS signal within radius
-    if (configuredTypes.has('gps') && event.gps_lat !== null && event.gps_lng !== null) {
+    if (
+      attendanceTypes.has("gps") &&
+      event.gps_lat !== null &&
+      event.gps_lng !== null
+    ) {
       for (const signal of gpsSignals) {
-        const radius = options.overrideGpsRadius ?? signal.gps_radius_m ?? 300
-        if (haversineMetres(event.gps_lat, event.gps_lng, signal.gps_lat, signal.gps_lng) <= radius) {
-          matched.add('gps')
-          break
+        const radius = options.overrideGpsRadius ?? signal.gps_radius_m ?? 300;
+        if (
+          haversineMetres(
+            event.gps_lat,
+            event.gps_lng,
+            signal.gps_lat,
+            signal.gps_lng,
+          ) <= radius
+        ) {
+          matched.add("gps");
+          break;
         }
       }
     }
 
-    // IP: check if event IP geo coords match any configured IP signal within proximity
-    if (configuredTypes.has('ip') && event.ip_geo_lat !== null && event.ip_geo_lng !== null) {
+    // IP: contextual only — recorded in matched_signals for explainability, not required for verified
+    if (
+      ipSignals.length > 0 &&
+      event.ip_geo_lat !== null &&
+      event.ip_geo_lng !== null
+    ) {
       for (const signal of ipSignals) {
-        if (haversineMetres(event.ip_geo_lat, event.ip_geo_lng, signal.ip_geo_lat, signal.ip_geo_lng) <= (signal.ip_proximity_m ?? 500)) {
-          matched.add('ip')
-          break
+        if (
+          haversineMetres(
+            event.ip_geo_lat,
+            event.ip_geo_lng,
+            signal.ip_geo_lat,
+            signal.ip_geo_lng,
+          ) <= (signal.ip_proximity_m ?? 500)
+        ) {
+          matched.add("ip");
+          break;
         }
       }
     }
 
-    // AND semantics: ALL configured types must match
-    const allMatched = configuredTypes.size > 0 && [...configuredTypes].every(t => matched.has(t))
-    const anyMatched = matched.size > 0
-    const matched_by: MatchedBy = allMatched ? 'verified' : anyMatched ? 'partial' : 'none'
+    // AND semantics: ALL attendance types (GPS, future WiFi/BLE) must match — IP excluded
+    const allMatched =
+      attendanceTypes.size > 0 &&
+      [...attendanceTypes].every((t) => matched.has(t));
+    const anyMatched = matched.size > 0;
+    const matched_by: MatchedBy = allMatched
+      ? "verified"
+      : anyMatched
+        ? "partial"
+        : "none";
 
-    result.push({ ...event, matched_by, matched_signals: [...matched] })
+    result.push({ ...event, matched_by, matched_signals: [...matched] });
   }
 
-  return result
+  return result;
 }
 
 /**
