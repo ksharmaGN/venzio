@@ -8,38 +8,39 @@ function toSqliteDt(s: string): string {
 }
 
 export interface PresenceEvent {
-  id: string
-  user_id: string
-  event_type: string
-  checkin_at: string
-  checkout_at: string | null
-  checkout_reason: string | null
-  note: string | null
-  ip_address: string
-  ip_geo_lat: number | null
-  ip_geo_lng: number | null
-  gps_lat: number | null
-  gps_lng: number | null
-  gps_accuracy_m: number | null
-  source: string
-  api_token_id: string | null
-  created_at: string
+  id: string;
+  user_id: string;
+  event_type: string;
+  checkin_at: string;
+  checkout_at: string | null;
+  checkout_reason: string | null;
+  note: string | null;
+  ip_address: string;
+  ip_geo_lat: number | null;
+  ip_geo_lng: number | null;
+  gps_lat: number | null;
+  gps_lng: number | null;
+  gps_accuracy_m: number | null;
+  source: string;
+  api_token_id: string | null;
+  created_at: string;
   // Checkout-time signals (captured when user checks out)
-  checkout_gps_lat: number | null
-  checkout_gps_lng: number | null
-  checkout_gps_accuracy_m: number | null
-  checkout_ip_address: string | null
-  checkout_ip_geo_lat: number | null
-  checkout_ip_geo_lng: number | null
-  checkout_location_label: string | null
-  location_label: string | null
-  deleted_at: string | null
-  checkout_location_mismatch: number | null
-  device_info: string | null
-  trust_flags: string | null
-  device_timezone: string | null
-  scheduled_checkout_at: string | null
-  push_reminders_sent: string | null
+  checkout_gps_lat: number | null;
+  checkout_gps_lng: number | null;
+  checkout_gps_accuracy_m: number | null;
+  checkout_ip_address: string | null;
+  checkout_ip_geo_lat: number | null;
+  checkout_ip_geo_lng: number | null;
+  checkout_location_label: string | null;
+  location_label: string | null;
+  deleted_at: string | null;
+  checkout_location_mismatch: number | null;
+  device_info: string | null;
+  trust_flags: string | null;
+  trust_score: number | null;
+  device_timezone: string | null;
+  scheduled_checkout_at: string | null;
+  push_reminders_sent: string | null;
 }
 
 export interface CronEvent {
@@ -262,11 +263,24 @@ export async function getEventsForUsers(params: {
   )
 }
 
-export async function updateEventTrustFlags(eventId: string, flags: string[]): Promise<void> {
+export interface TrustPersist {
+  trustFlags: string[];
+  trustScore: number;
+}
+
+export async function updateEventTrust(
+  eventId: string,
+  trust: TrustPersist,
+): Promise<void> {
   await db.execute(
-    'UPDATE presence_events SET trust_flags = ? WHERE id = ?',
-    [JSON.stringify(flags), eventId]
-  )
+    "UPDATE presence_events SET trust_flags = ?, trust_score = ? WHERE id = ?",
+    [JSON.stringify(trust.trustFlags), trust.trustScore, eventId],
+  );
+}
+
+/** @deprecated Use updateEventTrust */
+export async function updateEventTrustFlags(eventId: string, flags: string[]): Promise<void> {
+  await updateEventTrust(eventId, { trustFlags: flags, trustScore: 100 });
 }
 
 export async function setScheduledCheckout(eventId: string, scheduledCheckoutAt: string): Promise<void> {

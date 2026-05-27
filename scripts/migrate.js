@@ -211,6 +211,7 @@ const ADDITIVE_MIGRATIONS = [
   `ALTER TABLE presence_events ADD COLUMN checkout_location_mismatch INTEGER`,
   `ALTER TABLE presence_events ADD COLUMN device_info TEXT`,
   `ALTER TABLE presence_events ADD COLUMN trust_flags TEXT`,
+  `ALTER TABLE presence_events ADD COLUMN trust_score INTEGER`,
   `ALTER TABLE presence_events ADD COLUMN device_timezone TEXT`,
 
   // admin_overrides - effective checkout for regularization

@@ -77,6 +77,7 @@ CREATE TABLE IF NOT EXISTS presence_events (
   checkout_location_mismatch INTEGER,
   device_info           TEXT,
   trust_flags           TEXT,
+  trust_score           INTEGER,
   device_timezone       TEXT,
   created_at            TEXT NOT NULL DEFAULT (datetime('now'))
 );
