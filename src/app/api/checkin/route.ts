@@ -41,6 +41,9 @@ export async function POST(request: NextRequest) {
     is_remote?: boolean;
     device_info?: string | null;
     device_timezone?: string | null;
+    device_id?: string;
+    native_platform?: 'android' | 'ios';
+    mock_location_state?: { isMockLocation?: boolean };
   };
   try {
     body = await request.json();
@@ -110,6 +113,9 @@ export async function POST(request: NextRequest) {
     gpsLat: event.gps_lat,
     gpsLng: event.gps_lng,
     checkinAt: event.checkin_at,
+    mockLocationEnabled: body.mock_location_state?.isMockLocation === true,
+    deviceId: body.device_id ?? null,
+    nativePlatform: body.native_platform ?? null,
   }).catch(() => {})
 
   const stats = await getUserStats(userId)

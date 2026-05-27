@@ -11,6 +11,12 @@ import {
   stopProgress,
 } from "@/components/shared/TopProgressBar";
 import { collectDeviceInfo } from "@/lib/client/device-info";
+import { checkMockLocation, getDeviceFingerprint } from "@/lib/client/native-trust";
+import {
+  cancelCheckoutReminders,
+  scheduleCheckoutReminders,
+} from "@/lib/client/native-notifications";
+import { isNativeApp } from "@/lib/client/app-channel";
 
 /** Play a short chime via Web Audio API — works regardless of OS notification mode. */
 function playChime(): void {
@@ -193,6 +199,8 @@ export default function CheckinButtons({
       }
       const gpsCoords = gps;
       const deviceInfo = await collectDeviceInfo().catch(() => null);
+      const mockState = isNativeApp() ? await checkMockLocation() : null;
+      const fingerprint = isNativeApp() ? await getDeviceFingerprint() : null;
 
       const res = await fetch("/api/checkin", {
         method: "POST",
@@ -205,6 +213,9 @@ export default function CheckinButtons({
             : undefined,
           device_info: deviceInfo ? JSON.stringify(deviceInfo) : null,
           device_timezone: deviceInfo?.timezone ?? null,
+          device_id: fingerprint?.deviceHash,
+          native_platform: fingerprint?.platform === "web" ? undefined : fingerprint?.platform,
+          mock_location_state: mockState ?? undefined,
         }),
       });
 
@@ -214,6 +225,9 @@ export default function CheckinButtons({
         setState("checked_in");
         setActiveEvent(data.event);
         await requestNotificationPermission();
+        if (data.event?.checkin_at) {
+          void scheduleCheckoutReminders(data.event.checkin_at);
+        }
         showToast("Checked in!", "success");
         router.refresh();
       } else if (res.status === 409) {
@@ -240,6 +254,8 @@ export default function CheckinButtons({
     startProgress();
     try {
       const deviceInfo = await collectDeviceInfo().catch(() => null);
+      const mockState = isNativeApp() ? await checkMockLocation() : null;
+      const fingerprint = isNativeApp() ? await getDeviceFingerprint() : null;
 
       const res = await fetch("/api/checkin", {
         method: "POST",
@@ -251,6 +267,9 @@ export default function CheckinButtons({
           device_info: deviceInfo ? JSON.stringify(deviceInfo) : null,
           device_timezone: deviceInfo?.timezone ?? null,
           event_type: "remote_checkin",
+          device_id: fingerprint?.deviceHash,
+          native_platform: fingerprint?.platform === "web" ? undefined : fingerprint?.platform,
+          mock_location_state: mockState ?? undefined,
         }),
       });
 
@@ -260,6 +279,9 @@ export default function CheckinButtons({
         setState("checked_in");
         setActiveEvent(data.event);
         await requestNotificationPermission();
+        if (data.event?.checkin_at) {
+          void scheduleCheckoutReminders(data.event.checkin_at);
+        }
         showToast("Checked in remotely!", "success");
         router.refresh();
       } else if (res.status === 409) {
@@ -316,6 +338,7 @@ export default function CheckinButtons({
       const data = await res.json();
 
       if (res.ok) {
+        void cancelCheckoutReminders();
         const hrs = data.duration_hours ? fmtHours(data.duration_hours) : "";
         setState("checked_out");
         setActiveEvent(null);

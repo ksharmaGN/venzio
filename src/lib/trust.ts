@@ -1,5 +1,6 @@
 import { updateEventTrust, type TrustPersist } from "./db/queries/events";
 import { getUserEvents } from "./db/queries/events";
+import { isKnownDevice, upsertTrustedDevice } from "./db/queries/trusted-devices";
 import { haversineMetres } from "./geo";
 import { computeTrustScore, type TrustFlag } from "./trust-scoring";
 
@@ -22,10 +23,27 @@ interface EvalParams {
   gpsLat: number | null;
   gpsLng: number | null;
   checkinAt: string;
+  mockLocationEnabled?: boolean;
+  deviceId?: string | null;
+  nativePlatform?: string | null;
 }
 
 export async function evaluateTrust(params: EvalParams): Promise<TrustPersist> {
   const flags: TrustFlag[] = [];
+
+  if (params.mockLocationEnabled) {
+    flags.push("mock_location_enabled");
+  }
+
+  if (params.deviceId) {
+    const known = await isKnownDevice(params.userId, params.deviceId);
+    if (!known) flags.push("unknown_device");
+    await upsertTrustedDevice({
+      userId: params.userId,
+      deviceHash: params.deviceId,
+      platform: params.nativePlatform ?? "native",
+    }).catch(() => {});
+  }
 
   // 1. Mock GPS: accuracy <= 1m
   if (params.gpsAccuracyM !== null && params.gpsAccuracyM <= 1) {
