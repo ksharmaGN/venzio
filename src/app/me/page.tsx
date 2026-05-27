@@ -13,6 +13,7 @@ import {
 import { listHolidayDatesInRange } from "@/lib/db/queries/holidays";
 import { monthBoundsUtc, todayInTz } from "@/lib/timezone";
 import CheckinButtons from "@/components/user/CheckinButtons";
+import NativeAppSetup from "@/components/user/NativeAppSetup";
 import EventCard from "@/components/user/EventCard";
 import TimezoneReporter from "@/components/user/TimezoneReporter";
 import WorkspacesStrip from "./WorkspacesStrip";
@@ -97,6 +98,7 @@ export default async function MePage() {
         name={profile?.full_name ?? user.email.split("@")[0]}
         allowRemote={!!primaryWorkspace?.allow_remote}
       />
+      <NativeAppSetup isCheckedIn={!!activeEvent} />
 
       {/* This month attendance summary */}
       <div
