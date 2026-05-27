@@ -289,6 +289,23 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_leave_requests_ws_user
    ON leave_requests(workspace_id, user_id)`,
+
+  // trusted_devices - native app device binding (Phase 2)
+  `CREATE TABLE IF NOT EXISTS trusted_devices (
+  id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_hash   TEXT NOT NULL,
+  platform      TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, device_hash)
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id)`,
+
+  // users - native reminder preferences (stored server-side for sync)
+  `ALTER TABLE users ADD COLUMN reminder_office_arrival INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE users ADD COLUMN reminder_checkout INTEGER NOT NULL DEFAULT 1`,
+  `ALTER TABLE users ADD COLUMN reminder_interval_hours INTEGER NOT NULL DEFAULT 4`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

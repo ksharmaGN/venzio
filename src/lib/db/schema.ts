@@ -204,4 +204,16 @@ CREATE TABLE IF NOT EXISTS workspace_holidays (
 CREATE INDEX IF NOT EXISTS idx_workspace_holidays_ws_date ON workspace_holidays(workspace_id, date);
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_holidays_ws_name_date_active ON workspace_holidays(workspace_id, name, date) WHERE deleted_at IS NULL;
+
+CREATE TABLE IF NOT EXISTS trusted_devices (
+  id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  device_hash   TEXT NOT NULL,
+  platform      TEXT NOT NULL,
+  first_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_id, device_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trusted_devices_user ON trusted_devices(user_id);
 `;
