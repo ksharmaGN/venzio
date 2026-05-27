@@ -74,14 +74,21 @@ Presence event → records WHAT signals were actually captured
 queryWorkspaceEvents() → compares event signals against workspace config
 ```
 
-**AND semantics:** If workspace has GPS + WiFi configured, event must match BOTH.
+**Two layers (do not conflate):**
+- **Attendance (`matched_by`):** AND semantics for **GPS** (and future WiFi/BLE when enabled). Computed at query time in `queryWorkspaceEvents()` — not stored on `presence_events`.
+- **Trust (`trust_score`, `trust_flags`):** Fraud hints in `src/lib/trust.ts`; persisted on events; never blocks check-in.
+
+**IP is not an attendance gate.** When configured, IP may appear in `matched_signals` for explainability but does not affect `verified` vs `partial`. IP feeds trust heuristics (e.g. `vpn_suspected`).
+
+**WiFi matching is dormant** in `lib/signals.ts` (DB/admin stubs exist; client does not send SSID).
+
 **Admin override:** Bypasses signal matching. Never apply signal logic to overridden events.
 **Config-light mode:** No signals configured → all events pass (for small teams / trial orgs).
 
 `MatchedBy` type: `'verified' | 'partial' | 'none' | 'override'`
-- `verified` - all configured signals matched
-- `partial` - some signals matched, not all
-- `none` - no signals matched (check-in exists but not verified)
+- `verified` - all **attendance** signal types matched (GPS, etc.)
+- `partial` - some attendance/contextual signals matched, not all required
+- `none` - no attendance signals matched (check-in exists but not verified)
 - `override` - admin manually overrode this event
 
 **Attendance stats:** Use `src/lib/attendance-summary.ts` for all WFO/WFH/Leave or office/remote/absent counts. Count by workspace-local day, not by event. If any event on a day is `verified` or `override`, the day is WFO/office. If events exist but none are verified/overridden, the day is WFH/remote. If no event exists, the day is Leave/absent. Never count one day in both WFO and WFH.

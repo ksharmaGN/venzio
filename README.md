@@ -479,8 +479,9 @@ Server-rendered. Shows who is present right now, who visited today, and who hasn
 
 | Badge                  | Colour     | Meaning                                     |
 | ---------------------- | ---------- | ------------------------------------------- |
-| ✓ GPS+IP (all signals) | Teal       | `verified` - all configured signals matched |
-| ~ GPS (some signals)   | Amber      | `partial` - some configured signals matched |
+| ✓ Verified (GPS)       | Teal       | `verified` - all attendance signals matched (GPS; IP contextual only) |
+| ~ Partial              | Amber      | `partial` - some signals matched, not all attendance types |
+| Verification reduced   | Amber      | Low `trust_score` or `trust_flags` on latest event (fraud hint, not attendance) |
 | Unverified             | Muted grey | `none` - no signals matched                 |
 | Override               | Purple     | Admin override applied                      |
 | -                      | Muted      | Config-light mode (no signals configured)   |
@@ -723,7 +724,8 @@ What the dashboard query does:
 3. Calls `queryWorkspaceEvents(workspace.id, plan, { startDate, endDate })`:
    - Fetches active member IDs (capped by plan's `maxUsers`)
    - Fetches all their presence events in the date range
-   - **Signal matching**: each event tested against GPS proximity (Haversine < radius), IP geolocation proximity. No match → `matched_by: 'none'`
+   - **Signal matching**: GPS proximity (Haversine < radius) gates `verified`; IP proximity is contextual (in `matched_signals`, trust heuristics) but not required for verified attendance
+   - **Trust scoring**: `trust_score` / `trust_flags` on events (async after check-in via `src/lib/trust.ts`)
    - Config-light mode: if no signals are configured, all events pass through
    - Admin overrides bypass signal matching entirely
 4. Groups members: **In office now** (open event) · **Visited today** (closed events) · **Not in** (no events today)
@@ -740,7 +742,7 @@ All members: active, invited, declined. Invite by email → consent email sent. 
 **Settings tab - `/ws/:slug/settings`**
 
 - Edit workspace name and timezone
-- **Signal config**: add GPS (lat/lng + radius, auto-detects workspace timezone from coordinates) or IP (geocoded from your server-side IP)
+- **Signal config**: add GPS (lat/lng + radius, auto-detects workspace timezone from coordinates) or IP (contextual — geocoded from admin's IP when configuring; does not gate verified attendance)
 - **Domain verification**: add a domain → DNS TXT record generated → click "Check verification" → server resolves DNS, marks domain verified (scoped `WHERE id = ? AND workspace_id = ?` at DB level), auto-enrolls any existing users whose email matches
 - **Archive workspace**: soft-archives the workspace (`archived_at` stamped). All data preserved. Workspace moves to "Archived" section in `/ws` picker.
 

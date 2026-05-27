@@ -6,7 +6,7 @@ Venzio is a **presence intelligence platform**. Two PWA surfaces:
 - `/me/*` - mobile-first, individuals record their own presence
 - `/ws/:slug/*` - desktop-first, org admins query presence data
 
-**Core USP:** Multi-signal presence verification (AND, not OR). When a workspace has GPS + WiFi + IP signals configured, ALL must match for a check-in to count as verified. This makes faking presence extremely difficult.
+**Core USP:** Multi-signal presence verification (AND for attendance, not OR). Office `matched_by: 'verified'` requires all **attendance** signals (GPS today; WiFi/BLE when enabled) to match. **IP is contextual only** — it appears in `matched_signals` and trust heuristics but is not required for verified attendance. Trust scoring (`trust_score`, `trust_flags` in `src/lib/trust.ts`) is a separate fraud layer.
 
 **Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On **`/me/timeline`**, the default **All workspaces** view uses `GET /api/events` (global history, no per-workspace `matched_by`). Selecting a workspace uses `GET /api/me/ws/[slug]/events`, which calls `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics.
 
@@ -36,18 +36,21 @@ Every query that touches workspace data must include `AND workspace_id = ?`. No 
 
 ## Signal Matching - Core Logic
 
-**AND semantics, not OR.** If a workspace has configured multiple signal types, an event is considered "verified" only if it matches ALL configured signal types.
+**AND semantics for attendance, not OR.** `matched_by: 'verified'` only if all **attendance** types in workspace config match (GPS; WiFi/BLE when live in `lib/signals.ts`).
 
 ```
-Signal types: GPS, WiFi, IP
-If workspace has [GPS, WiFi] configured:
-  → event must match GPS AND WiFi to be verified
-  → matching only GPS = unverified
-  → matching nothing = not counted at all
+Attendance signals: GPS (WiFi/BLE planned)
+Contextual (not AND-gated): IP geo proximity → matched_signals + trust_flags only
+
+If workspace has [GPS] configured:
+  → event must match GPS to be verified
+  → IP match alone does not verify office attendance
 
 Config-light mode (no signals configured):
-  → all events from active members pass through
+  → all events from active members pass through as verified
 ```
+
+**Trust layer:** `evaluateTrust()` after check-in sets `trust_score` (0–100) and `trust_flags` (e.g. `vpn_suspected`, `impossible_travel`). Low scores surface as "Verification reduced" in admin UI — check-in is never hard-blocked.
 
 `MatchedBy` values: `'verified'` (all configured signals matched) | `'partial'` (some matched) | `'none'` (no signals matched) | `'override'` (admin override bypassed matching)
 
