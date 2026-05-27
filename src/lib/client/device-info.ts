@@ -1,4 +1,7 @@
+import { getAppChannel, type AppChannel } from './app-channel'
+
 export interface DeviceInfo {
+  app_channel: AppChannel
   user_agent: string
   platform: string
   language: string
@@ -28,6 +31,7 @@ export async function collectDeviceInfo(): Promise<DeviceInfo> {
   }
 
   const info: DeviceInfo = {
+    app_channel: getAppChannel(),
     user_agent: navigator.userAgent,
     platform: navigator.platform,
     language: navigator.language,

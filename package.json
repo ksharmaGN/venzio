@@ -8,9 +8,20 @@
     "build": "next build",
     "start": "next start",
     "migrate": "node ./scripts/migrate.js",
-    "db:sync": "node ./scripts/sync-local-db.js"
+    "db:sync": "node ./scripts/sync-local-db.js",
+    "cap:sync": "cap sync",
+    "cap:copy": "cap copy",
+    "cap:android": "cap open android",
+    "cap:run:android": "cap run android"
   },
   "dependencies": {
+    "@capacitor/android": "^7.6.5",
+    "@capacitor/app": "^7.1.2",
+    "@capacitor/cli": "^7.6.5",
+    "@capacitor/core": "^7.6.5",
+    "@capacitor/geolocation": "^7.1.8",
+    "@capacitor/ios": "^7.6.5",
+    "@capacitor/local-notifications": "^7.0.6",
     "@libsql/client": "^0.14.0",
     "@types/web-push": "^3.6.4",
     "bcryptjs": "^3.0.3",
