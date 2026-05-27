@@ -7,6 +7,8 @@ Venzio is a full-stack Next.js application with two PWA surfaces:
 - **User side** (`/me/*`) - mobile-first, individuals record their own presence
 - **Org side** (`/ws/:slug/*`) - desktop-first, companies query presence data
 
+**Native Android (optional):** Capacitor shell in `android/` loads the hosted `/me` UI (`CAPACITOR_SERVER_URL`). APK sideload from [`/download`](src/app/(public)/download/page.tsx). Uses on-device local notifications and geofences — no FCM/Firebase. iPhone users continue with the PWA until App Store distribution is added.
+
 ---
 
 ## Tech Stack

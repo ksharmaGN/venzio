@@ -8,6 +8,8 @@ Venzio is a **presence intelligence platform**. Two PWA surfaces:
 
 **Core USP:** Multi-signal presence verification (AND for attendance, not OR). Office `matched_by: 'verified'` requires all **attendance** signals (GPS today; WiFi/BLE when enabled) to match. **IP is contextual only** — it appears in `matched_signals` and trust heuristics but is not required for verified attendance. Trust scoring (`trust_score`, `trust_flags` in `src/lib/trust.ts`) is a separate fraud layer.
 
+**Native Android (Phase 2):** `capacitor.config.ts` + `android/` remote WebView. Custom plugins `NativeTrust` (mock location, device hash) and `NativeGeofence` (office circles from `GET /api/me/geofences`). Checkout/arrival reminders use `@capacitor/local-notifications`; Web Push VAPID unchanged for PWA. No FCM/APNs in repo.
+
 **Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On **`/me/timeline`**, the default **All workspaces** view uses `GET /api/events` (global history, no per-workspace `matched_by`). Selecting a workspace uses `GET /api/me/ws/[slug]/events`, which calls `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics.
 
 ---

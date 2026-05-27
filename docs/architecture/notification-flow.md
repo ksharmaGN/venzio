@@ -4,14 +4,25 @@
 
 ## 1. Overview
 
-Venzio sends two categories of notifications:
+Venzio uses a **dual path** depending on client:
+
+| Client | Checkout / arrival reminders | Mechanism |
+|--------|------------------------------|-----------|
+| **PWA / browser** | Stale reminders 4h–22h, auto-checkout warning | Client `setTimeout` + SW `showNotification` |
+| **PWA / browser (subscribed)** | Same milestones when tab closed | `POST /api/push/cron` → Web Push VAPID → `public/sw.js` |
+| **Capacitor Android** | Office arrival + checkout 2h/4h/8h/12h | `@capacitor/local-notifications` scheduled on device |
+| **Capacitor Android** | Office geofence enter (not checked in) | `NativeGeofence` foreground service → local notification |
+
+No FCM, Firebase, or APNs in the open-source stack. Native cloud push is deferred.
 
 | Category | Trigger | Mechanism |
 |----------|---------|-----------|
-| Stale reminders | 4h, 8h, 12h, 16h, 18h, 20h, 22h from check-in | Client `setTimeout` + SW `showNotification` |
-| Auto-checkout warning | T−15 min before `scheduled_checkout_at` | Client `setTimeout` + SW `showNotification` |
+| Stale reminders (web) | 4h, 8h, 12h, 16h, 18h, 20h, 22h from check-in | Client `setTimeout` + SW `showNotification` |
+| Checkout reminders (native) | On check-in success | `scheduleCheckoutReminders()` — OS alarms at +2h/+4h/+8h/+12h |
+| Office arrival (native) | Geofence ENTER from `GET /api/me/geofences` circles | `NativeGeofence` — no coords stored server-side |
+| Auto-checkout warning | T−15 min before `scheduled_checkout_at` | Web: `setTimeout`; native: local notification schedule |
 | Auto-checkout | At `scheduled_checkout_at` (T+12h) | Client `setTimeout` → `POST /api/checkin/checkout` |
-| Server push (cron) | Hourly cron (server-driven) | `POST /api/push/cron` → `sendPushToUser()` → VAPID → SW |
+| Server push (cron) | Hourly cron (web subs only) | `POST /api/push/cron` → `sendPushToUser()` → VAPID → SW |
 
 Notes:
 - The cron endpoint requires `Authorization: Bearer ${CRON_SECRET}` and is **disabled** if `CRON_SECRET` is not set in the runtime environment.

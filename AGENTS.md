@@ -58,6 +58,14 @@ AI agent coordination guide for working on this codebase.
 
 English UI copy, emails, and stable technical identifiers live in `src/locales/en.ts`. Import `en` and use nested keys (for example `en.meWsToday.tabPeopleNotCheckedIn`). Avoid hardcoding product strings in components or routes; when editing a file that still has literals, prefer moving those strings into `en` in the same change. Technical identifiers (cookie names, DNS prefixes, DB filenames) already belong under `en.constants`.
 
+### Native Android (Capacitor)
+
+- Remote WebView: `CAPACITOR_SERVER_URL` → hosted `/me` (cookies + `/api/*` unchanged).
+- **Notifications:** local-first on native (`src/lib/client/native-notifications.ts`); Web Push cron only for `push_subscriptions` (PWA).
+- **Trust:** `NativeTrust` plugin → `device_id` + `mock_location_state` on `POST /api/checkin`; `trusted_devices` table.
+- **Geofences:** `GET /api/me/geofences` — office GPS circles only; no location storage on server.
+- Do not add FCM, Firebase, `google-services.json`, or APNs unless explicitly scoped to `later-cloud-stores`.
+
 ### Multi-workspace + `/me/timeline`
 
 Users can be active in multiple workspaces. The default **All workspaces** timeline (`GET /api/events`) shows the user’s presence history without workspace-scoped signal evaluation. When a workspace is selected in the UI, use **`GET /api/me/ws/[slug]/events`** (member auth + membership check) so `queryWorkspaceEvents()` can attach `matched_by` / `matched_signals` for that workspace only. Do not add `workspace_id` to `presence_events`; keep AND semantics in `lib/signals.ts`.
