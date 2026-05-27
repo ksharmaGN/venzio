@@ -23,6 +23,26 @@ jobs:
       - name: Trigger push reminders
         if: steps.gate.outputs.ok == 'true'
         run: |
-          curl -sf -m 30 -X POST \
-            -H "Authorization: Bearer ${CRON_SECRET}" \
-            "${APP_URL}/api/push/cron"
+          set -euo pipefail
+
+          url="${APP_URL%/}/api/push/cron"
+          echo "Calling: ${url}"
+
+          # Capture status + body for debugging (no secrets printed).
+          http_code="$(
+            curl -sS -m 30 -X POST \
+              -H "Authorization: Bearer ${CRON_SECRET}" \
+              -H "Accept: application/json" \
+              -o /tmp/cron_resp.json \
+              -w "%{http_code}" \
+              "${url}" || true
+          )"
+
+          echo "HTTP ${http_code}"
+          echo "Response body:"
+          cat /tmp/cron_resp.json || true
+
+          # Fail the step for non-2xx responses (keeps signal in Actions UI).
+          if [ "${http_code}" -lt 200 ] || [ "${http_code}" -ge 300 ]; then
+            exit 1
+          fi

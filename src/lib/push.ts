@@ -18,6 +18,7 @@ export interface PushPayload {
   data?: Record<string, unknown>
 }
 
+/** Web Push (VAPID) only. Native cloud push deferred until Phase 2 local notifications. */
 export async function sendPushToUser(userId: string, payload: PushPayload): Promise<void> {
   const { publicKey, privateKey, email } = getVapidConfig()
   webpush.setVapidDetails(email, publicKey, privateKey)
