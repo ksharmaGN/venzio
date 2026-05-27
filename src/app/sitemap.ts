@@ -9,6 +9,7 @@ const routes = [
   { url: "/pricing", priority: 0.8 },
   { url: "/for-you", priority: 0.7 },
   { url: "/open-source", priority: 0.6 },
+  { url: "/download", priority: 0.7 },
   { url: "/privacy", priority: 0.3 },
   { url: "/terms", priority: 0.3 },
 ];
