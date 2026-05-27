@@ -104,7 +104,10 @@ export async function GET(request: NextRequest, { params }: Props) {
   const signalsConfigured = workspaceSignals.length > 0
   const holidaySet = new Set(holidayDates)
   const effectiveEndDate = endDate > todayStr ? todayStr : endDate
-  const orgWorkingDays   = countWorkdays(startDate, effectiveEndDate, holidaySet)
+  const workingDayNums: number[] = (() => {
+    try { return JSON.parse(ctx.workspace.working_days ?? '[1,2,3,4,5]') } catch { return [1, 2, 3, 4, 5] }
+  })()
+  const orgWorkingDays   = countWorkdays(startDate, effectiveEndDate, holidaySet, workingDayNums)
 
   const byUser = new Map<string, typeof allEvents>()
   for (const ev of allEvents) {
@@ -137,6 +140,7 @@ export async function GET(request: NextRequest, { params }: Props) {
       timezone: tz,
       todayDate: todayStr,
       holidayDates,
+      workingDays: workingDayNums,
     })
     const leaveDays = leaveByUser.get(member.user_id)
     const days: Record<string, string> = { ...summary.days }
@@ -156,11 +160,11 @@ export async function GET(request: NextRequest, { params }: Props) {
   const sheet     = workbook.addWorksheet(`${monthName} ${year}`)
 
   const dayHeaders = Array.from({ length: daysInMonth }, (_, i) => {
-    const d   = i + 1
-    const dow = new Date(year, month - 1, d).getDay()
+    const dayOfMonth  = i + 1
+    const dayOfWeek   = new Date(year, month - 1, dayOfMonth).getDay()
     return {
-      label: `${String(d).padStart(2, '0')}-${monthStr}-${year}`,
-      isWeekend: dow === 0 || dow === 6,
+      label: `${String(dayOfMonth).padStart(2, '0')}-${monthStr}-${year}`,
+      isWeekend: !workingDayNums.includes(dayOfWeek),
     }
   })
 
@@ -187,9 +191,9 @@ export async function GET(request: NextRequest, { params }: Props) {
       member.full_name ?? member.email,
     ]
 
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr   = `${year}-${monthStr}-${String(d).padStart(2, '0')}`
-      const isWeekend    = dayHeaders[d - 1].isWeekend
+    for (let dayOfMonth = 1; dayOfMonth <= daysInMonth; dayOfMonth++) {
+      const dateStr   = `${year}-${monthStr}-${String(dayOfMonth).padStart(2, '0')}`
+      const isWeekend    = dayHeaders[dayOfMonth - 1].isWeekend
       const rawStatus = days[dateStr]
       const status    = !rawStatus && holidaySet.has(dateStr) ? 'holiday' : rawStatus
       rowData.push(cellValue(status, isWeekend))
@@ -201,10 +205,10 @@ export async function GET(request: NextRequest, { params }: Props) {
     const dataRow = sheet.addRow(rowData)
     dataRow.height = 20
 
-    for (let d = 1; d <= daysInMonth; d++) {
-      const cell      = dataRow.getCell(3 + d)
-      const dateStr   = `${year}-${monthStr}-${String(d).padStart(2, '0')}`
-      const isWeekend    = dayHeaders[d - 1].isWeekend
+    for (let dayOfMonth = 1; dayOfMonth <= daysInMonth; dayOfMonth++) {
+      const cell      = dataRow.getCell(3 + dayOfMonth)
+      const dateStr   = `${year}-${monthStr}-${String(dayOfMonth).padStart(2, '0')}`
+      const isWeekend    = dayHeaders[dayOfMonth - 1].isWeekend
       const rawStatus = days[dateStr]
       const status    = !rawStatus && holidaySet.has(dateStr) ? 'holiday' : rawStatus
       const f         = cellFill(status, isWeekend)
@@ -227,8 +231,8 @@ export async function GET(request: NextRequest, { params }: Props) {
   sheet.getColumn(1).width = 18
   sheet.getColumn(2).width = 28
   sheet.getColumn(3).width = 20
-  for (let d = 1; d <= daysInMonth; d++) {
-    sheet.getColumn(3 + d).width = dayHeaders[d - 1].isWeekend ? 5 : 8
+  for (let dayOfMonth = 1; dayOfMonth <= daysInMonth; dayOfMonth++) {
+    sheet.getColumn(3 + dayOfMonth).width = dayHeaders[dayOfMonth - 1].isWeekend ? 5 : 8
   }
   sheet.getColumn(4 + daysInMonth).width = 14
   sheet.getColumn(5 + daysInMonth).width = 20
