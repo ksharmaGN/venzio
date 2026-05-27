@@ -6,6 +6,7 @@ import type { PresenceEventWithMatch, MatchedBy } from '@/lib/signals'
 import type { MemberWithUser } from '@/lib/db/queries/workspaces'
 import { todayInTz, localMidnightToUtc } from '@/lib/timezone'
 import { isOfficeMatched } from '@/lib/attendance-summary'
+import { parseAppChannel, type AppChannel } from '@/lib/parse-device-info'
 
 export interface DashboardMember {
   member_id: string;
@@ -22,6 +23,7 @@ export interface DashboardMember {
     matched_signals: string[];
     trust_flags: string[];
     trust_score: number | null;
+    app_channel: AppChannel | null;
     ip_address: string;
     gps_lat: number | null;
     gps_lng: number | null;
@@ -131,6 +133,7 @@ export async function GET(
               ? (JSON.parse(latest.trust_flags) as string[])
               : [],
             trust_score: latest.trust_score ?? null,
+            app_channel: parseAppChannel(latest.device_info),
             ip_address: latest.ip_address,
             gps_lat: latest.gps_lat,
             gps_lng: latest.gps_lng,

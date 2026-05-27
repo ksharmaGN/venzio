@@ -11,6 +11,7 @@ import { fmtHours } from '@/lib/client/format-time'
 import { resolvePresenceTag, PRESENCE_TAG_CONFIG } from '@/lib/client/presence'
 import { en } from "@/locales/en";
 import { trustLevelFromScore } from "@/lib/trust-scoring";
+import { appChannelLabel } from "@/lib/parse-device-info";
 import { Users, Monitor, Home, Activity } from 'lucide-react'
 
 interface Props {
@@ -277,6 +278,19 @@ function MembersModal({
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px', flexShrink: 0 }}>
                       <StatusBadge member={m} />
+                      {m.latest_event?.app_channel &&
+                        (m.latest_event.app_channel === "capacitor_android" ||
+                          m.latest_event.app_channel === "capacitor_ios") && (
+                        <span
+                          style={{
+                            fontSize: "10px",
+                            color: "var(--text-muted)",
+                            fontFamily: "Plus Jakarta Sans, sans-serif",
+                          }}
+                        >
+                          {appChannelLabel(m.latest_event.app_channel)}
+                        </span>
+                      )}
                       {m.latest_event?.checkout_location_mismatch != null && m.latest_event.checkout_location_mismatch > 0 && (
                         <span
                           title={`Checked out from a different location (${Math.round(m.latest_event.checkout_location_mismatch)}m away from office). Hours may not count as in-office.`}
