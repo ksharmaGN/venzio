@@ -4,6 +4,11 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { en } from '@/locales/en'
 import LoadingButton from '@/components/shared/LoadingButton'
+import {
+  loadNotificationPrefs,
+  saveNotificationPrefs,
+  type NotificationPrefs,
+} from '@/lib/client/native-notifications'
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -872,6 +877,102 @@ function DangerSection() {
   );
 }
 
+function RemindersSection() {
+  const [prefs, setPrefs] = useState<NotificationPrefs>(loadNotificationPrefs())
+  const [saved, setSaved] = useState(false)
+  const r = en.settings.reminders
+
+  async function persist(next: NotificationPrefs) {
+    setPrefs(next)
+    saveNotificationPrefs(next)
+    try {
+      await fetch('/api/me/reminders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          office_arrival: next.officeArrival,
+          checkout_reminders: next.checkoutReminders,
+          interval_hours: next.intervalHours,
+        }),
+      })
+    } catch {
+      /* local prefs still apply */
+    }
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
+  useEffect(() => {
+    fetch('/api/me/reminders')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!data) return
+        const next: NotificationPrefs = {
+          officeArrival: !!data.office_arrival,
+          checkoutReminders: !!data.checkout_reminders,
+          intervalHours: data.interval_hours === 2 ? 2 : 4,
+        }
+        setPrefs(next)
+        saveNotificationPrefs(next)
+      })
+      .catch(() => {})
+  }, [])
+
+  return (
+    <SectionCard title={r.sectionTitle}>
+      <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.6 }}>
+        {r.sectionIntro}
+      </p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={prefs.officeArrival}
+          onChange={(e) => persist({ ...prefs, officeArrival: e.target.checked })}
+        />
+        <span style={{ fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{r.officeArrival}</span>
+      </label>
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '-8px 0 12px 28px' }}>{r.officeArrivalHelp}</p>
+      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px', cursor: 'pointer' }}>
+        <input
+          type="checkbox"
+          checked={prefs.checkoutReminders}
+          onChange={(e) => persist({ ...prefs, checkoutReminders: e.target.checked })}
+        />
+        <span style={{ fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>{r.checkoutReminders}</span>
+      </label>
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '-8px 0 12px 28px' }}>{r.checkoutHelp}</p>
+      <div style={{ marginBottom: '12px' }}>
+        <span style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+          {r.intervalLabel}
+        </span>
+        <select
+          value={prefs.intervalHours}
+          onChange={(e) =>
+            persist({
+              ...prefs,
+              intervalHours: Number(e.target.value) as 2 | 4,
+            })
+          }
+          style={{
+            height: '40px',
+            padding: '0 12px',
+            borderRadius: 'var(--radius-md)',
+            border: '1px solid var(--border)',
+            fontFamily: 'Plus Jakarta Sans, sans-serif',
+          }}
+        >
+          <option value={2}>{r.interval2h}</option>
+          <option value={4}>{r.interval4h}</option>
+        </select>
+      </div>
+      <p style={{ fontSize: '12px', color: 'var(--text-muted)', lineHeight: 1.6 }}>{r.backgroundNote}</p>
+      {saved && (
+        <p style={{ marginTop: '12px', fontSize: '13px', color: 'var(--teal)' }}>{r.saved}</p>
+      )}
+    </SectionCard>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -902,6 +1003,7 @@ export default function SettingsPage() {
         Settings
       </h1>
       <ProfileSection initialName={profileName} email={profileEmail} />
+      <RemindersSection />
       <EmailSection />
       <PasswordSection />
       <OrgSection />

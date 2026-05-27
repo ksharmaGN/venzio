@@ -62,6 +62,43 @@ export const en = {
     badgeVerificationReduced: "Verification reduced",
   },
 
+  download: {
+    label: "Android app",
+    title: "Install Venzio on Android",
+    intro:
+      "The native Android app uses on-device reminders and office geofences — no Play Store or Google push account required. Your check-ins still go to the same Venzio account.",
+    downloadApk: "Download APK",
+    iosNote:
+      "On iPhone, install the Venzio PWA from Safari (Share → Add to Home Screen). App Store distribution is planned later.",
+    steps: [
+      "Download the APK using the button above.",
+      "When prompted, allow installs from this source (Android may call it “unknown apps”).",
+      "Open Venzio and sign in with the same email you use on the web.",
+      "Allow location and notifications when asked — used only for arrival nudges and checkout reminders on your device.",
+    ],
+    checksumNote:
+      "Release builds publish SHA-256 checksums on GitHub Releases alongside each tagged APK.",
+    pwaLink: "Prefer the browser? Use Venzio for You →",
+  },
+
+  settings: {
+    reminders: {
+      sectionTitle: "Reminders (native app)",
+      sectionIntro:
+        "On the Android app, Venzio schedules reminders on your device. Nothing tracks your live location on our servers.",
+      officeArrival: "Office arrival nudges",
+      officeArrivalHelp: "When you enter an office geofence and have not checked in yet.",
+      checkoutReminders: "Checkout reminders",
+      checkoutHelp: "Scheduled at 2h / 4h / 8h / 12h after check-in (based on interval below).",
+      intervalLabel: "Reminder interval",
+      interval2h: "Every 2 hours",
+      interval4h: "Every 4 hours",
+      backgroundNote:
+        "Background location keeps geofence nudges accurate. You can turn it off in system settings; web/PWA users still get Web Push when subscribed.",
+      saved: "Reminder preferences saved",
+    },
+  },
+
   /** Member workspace Today accordion (/me/ws/[slug]) */
   meWsToday: {
     tabPeopleInOffice: "People in Office Today",
