@@ -1,5 +1,5 @@
 import { db } from '../index'
-import { MS_PER_DAY } from '@/lib/constants'
+import { countWorkdays } from '@/lib/attendance-summary'
 
 export type AccrualFrequency = 'monthly' | 'quarterly' | 'half-yearly' | 'yearly'
 export type CreditTiming = 'start' | 'end'
@@ -86,6 +86,7 @@ export async function getUsedLeaveDays(
   workspaceId: string,
   userId: string,
   leaveTypeId: string,
+  workingDays: number[] = [1, 2, 3, 4, 5],
 ): Promise<number> {
   const rows = await db.query<{ start_date: string; end_date: string }>(
     `SELECT start_date, end_date FROM leave_requests
@@ -93,9 +94,7 @@ export async function getUsedLeaveDays(
     [workspaceId, userId, leaveTypeId],
   )
   return rows.reduce((sum, r) => {
-    const start = new Date(r.start_date + 'T00:00:00Z')
-    const end = new Date(r.end_date + 'T00:00:00Z')
-    return sum + Math.max(1, Math.floor((end.getTime() - start.getTime()) / MS_PER_DAY) + 1)
+    return sum + countWorkdays(r.start_date, r.end_date, undefined, workingDays)
   }, 0)
 }
 
@@ -162,12 +161,13 @@ export async function getLeaveTypesWithBalance(
   workspaceId: string,
   userId: string,
   memberJoinedAt: string,
+  workingDays: number[] = [1, 2, 3, 4, 5],
 ): Promise<LeaveTypeWithBalance[]> {
   const types = await getWorkspaceLeaveTypes(workspaceId)
   return Promise.all(
     types.map(async (t) => {
       const totalAccrued = computeTotalAccrued(memberJoinedAt, t.accrual_frequency, t.accrual_credits, t.credit_timing)
-      const usedDays = await getUsedLeaveDays(workspaceId, userId, t.id)
+      const usedDays = await getUsedLeaveDays(workspaceId, userId, t.id, workingDays)
       return {
         ...t,
         total_accrued: totalAccrued,

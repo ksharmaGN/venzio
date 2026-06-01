@@ -232,6 +232,9 @@ const ADDITIVE_MIGRATIONS = [
   // workspaces - leaves & holidays feature toggle
   `ALTER TABLE workspaces ADD COLUMN leaves_enabled INTEGER NOT NULL DEFAULT 1`,
 
+  // workspaces - working days configuration
+  `ALTER TABLE workspaces ADD COLUMN working_days TEXT NOT NULL DEFAULT '[1,2,3,4,5]'`,
+
   // push_subscriptions - Web Push
   `CREATE TABLE IF NOT EXISTS push_subscriptions (
   id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
