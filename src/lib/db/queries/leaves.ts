@@ -24,6 +24,8 @@ export interface LeaveRequest {
   end_date: string
   reason: string | null
   status: string
+  rejection_reason: string | null
+  actioned_by_user_id: string | null
   created_at: string
 }
 
@@ -281,8 +283,8 @@ export async function createLeaveRequest(params: {
   const id = crypto.randomUUID().replace(/-/g, '')
   await db.execute(
     `INSERT INTO leave_requests
-       (id, workspace_id, user_id, leave_type_id, start_date, end_date, reason)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+       (id, workspace_id, user_id, leave_type_id, start_date, end_date, reason, status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')`,
     [
       id,
       params.workspaceId,
@@ -296,4 +298,47 @@ export async function createLeaveRequest(params: {
   const row = await db.queryOne<LeaveRequest>('SELECT * FROM leave_requests WHERE id = ?', [id])
   if (!row) throw new Error('Leave request insert succeeded but row not found')
   return row
+}
+
+export async function getLeaveRequestById(
+  id: string,
+  workspaceId: string,
+): Promise<LeaveRequest | null> {
+  return db.queryOne<LeaveRequest>(
+    'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
+    [id, workspaceId],
+  )
+}
+
+export type ActionLeaveError = 'NOT_FOUND' | 'ALREADY_ACTIONED'
+export type ActionLeaveResult =
+  | { updated: LeaveRequest }
+  | { error: ActionLeaveError }
+
+export async function actionLeaveRequest(params: {
+  id: string
+  workspaceId: string
+  action: 'approve' | 'reject'
+  actionedByUserId: string
+  rejectionReason?: string | null
+}): Promise<ActionLeaveResult> {
+  const row = await db.queryOne<LeaveRequest>(
+    'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
+    [params.id, params.workspaceId],
+  )
+  if (!row) return { error: 'NOT_FOUND' }
+  if (row.status !== 'pending') return { error: 'ALREADY_ACTIONED' }
+
+  const newStatus = params.action === 'approve' ? 'approved' : 'rejected'
+  await db.execute(
+    `UPDATE leave_requests
+     SET status = ?, actioned_by_user_id = ?, rejection_reason = ?
+     WHERE id = ?`,
+    [newStatus, params.actionedByUserId, params.rejectionReason ?? null, params.id],
+  )
+  const updated = await db.queryOne<LeaveRequest>(
+    'SELECT * FROM leave_requests WHERE id = ?',
+    [params.id],
+  )
+  return { updated: updated! }
 }

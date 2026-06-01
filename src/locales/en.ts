@@ -97,7 +97,7 @@ export const en = {
     applyLeaveNoTypes: "No leave types configured. Ask your workspace admin.",
     applyLeaveSubmit: "Submit Leave",
     applyLeaveSubmitting: "Submitting…",
-    applyLeaveSuccess: "Leave applied successfully",
+    applyLeaveSuccess: "Leave request submitted — pending HR approval.",
     applyLeaveCancel: "Cancel",
     applyLeaveErrorGeneric: "Could not submit leave. Try again.",
     applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
@@ -114,6 +114,33 @@ export const en = {
       return `${name} — ${formatted} day${days !== 1 ? 's' : ''} left`
     },
     leaveDaysLabel: (days: number) => `${days} day${days !== 1 ? 's' : ''}`,
+    leaveStatusPending: "Submitted",
+    leaveStatusApproved: "Approved",
+    leaveStatusRejected: "Rejected",
+    leaveRejectedPrefix: "Rejected:",
+  },
+
+  /** Workspace admin leave requests (/ws/[slug]/leaves) */
+  wsLeaves: {
+    title: "Leave Requests",
+    filterPending: "Pending",
+    filterActive: "Active",
+    filterAll: "All",
+    filterUpcoming: "Upcoming",
+    filterPast: "Past",
+    statusPending: "Submitted",
+    statusApproved: "Approved",
+    statusRejected: "Rejected",
+    approveBtn: "Approve",
+    rejectBtn: "Reject",
+    approveConfirm: "Approve this leave request?",
+    rejectReasonLabel: "Rejection reason",
+    rejectReasonPlaceholder: "Why is this request being rejected?",
+    confirmRejectBtn: "Confirm Rejection",
+    cancelBtn: "Cancel",
+    approving: "Approving…",
+    rejecting: "Rejecting…",
+    searchPlaceholder: "Search by name or email…",
   },
 
   /** Workspace admin leave types settings (/ws/[slug]/settings) */

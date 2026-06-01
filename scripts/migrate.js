@@ -279,18 +279,22 @@ const ADDITIVE_MIGRATIONS = [
 
   // leave_requests - employee leave submissions
   `CREATE TABLE IF NOT EXISTS leave_requests (
-  id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id       TEXT NOT NULL REFERENCES users(id),
-  leave_type_id TEXT NOT NULL REFERENCES workspace_leave_types(id),
-  start_date    TEXT NOT NULL,
-  end_date      TEXT NOT NULL,
-  reason        TEXT,
-  status        TEXT NOT NULL DEFAULT 'approved',
-  created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  id                   TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id              TEXT NOT NULL REFERENCES users(id),
+  leave_type_id        TEXT NOT NULL REFERENCES workspace_leave_types(id),
+  start_date           TEXT NOT NULL,
+  end_date             TEXT NOT NULL,
+  reason               TEXT,
+  status               TEXT NOT NULL DEFAULT 'pending',
+  rejection_reason     TEXT,
+  actioned_by_user_id  TEXT REFERENCES users(id),
+  created_at           TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_leave_requests_ws_user
    ON leave_requests(workspace_id, user_id)`,
+  `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
+  `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
