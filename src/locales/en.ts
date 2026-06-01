@@ -122,6 +122,7 @@ export const en = {
 
   /** Workspace admin leave requests (/ws/[slug]/leaves) */
   wsLeaves: {
+    title: "Leave Requests",
     filterPending: "Pending",
     filterActive: "Active",
     filterAll: "All",

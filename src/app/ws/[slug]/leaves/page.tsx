@@ -257,10 +257,8 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<Filter>('pending')
   const [search, setSearch] = useState('')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [activeRow, setActiveRow] = useState<{ id: string; mode: 'viewing' | 'rejecting' | 'approving' | 'rejecting-submitting' } | null>(null)
   const [rejectReason, setRejectReason] = useState('')
-  const [actioningId, setActioningId] = useState<string | null>(null)
 
   const load = useCallback(async () => {
     const res = await fetch(`/api/ws/${slug}/leaves`)
@@ -279,7 +277,7 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
 
   async function handleApprove(id: string) {
     if (!confirm(en.wsLeaves.approveConfirm)) return
-    setActioningId(id)
+    setActiveRow({ id, mode: 'approving' })
     try {
       const res = await fetch(`/api/ws/${slug}/leaves/${id}`, {
         method: 'PATCH',
@@ -288,17 +286,19 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
       })
       if (res.ok) {
         setRows((prev) => prev.map((r) => r.id === id ? { ...r, status: 'approved' } : r))
-        setExpandedId(null)
+        setActiveRow(null)
+      } else {
+        setActiveRow({ id, mode: 'viewing' })
       }
-    } finally {
-      setActioningId(null)
+    } catch {
+      setActiveRow({ id, mode: 'viewing' })
     }
   }
 
   async function handleReject(id: string) {
     const trimmed = rejectReason.trim()
     if (!trimmed) return
-    setActioningId(id)
+    setActiveRow({ id, mode: 'rejecting-submitting' })
     try {
       const res = await fetch(`/api/ws/${slug}/leaves/${id}`, {
         method: 'PATCH',
@@ -309,12 +309,13 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
         setRows((prev) => prev.map((r) =>
           r.id === id ? { ...r, status: 'rejected', rejection_reason: trimmed } : r,
         ))
-        setRejectingId(null)
         setRejectReason('')
-        setExpandedId(null)
+        setActiveRow(null)
+      } else {
+        setActiveRow({ id, mode: 'rejecting' })
       }
-    } finally {
-      setActioningId(null)
+    } catch {
+      setActiveRow({ id, mode: 'rejecting' })
     }
   }
 
@@ -341,7 +342,7 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
     margin: 0,
   }}
 >
-  Leave Requests
+  {en.wsLeaves.title}
   {!loading && (
     <span
       style={{
@@ -406,15 +407,15 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
               const isPast = r.end_date < today
               const days = leaveDays(r.start_date, r.end_date)
               const statusBadge = statusStyle(r.status)
-              const isExpanded = expandedId === r.id
-              const isActioning = actioningId === r.id
-              const isRejecting = rejectingId === r.id
+              const isExpanded = activeRow?.id === r.id
+              const isRejecting = activeRow?.id === r.id && (activeRow.mode === 'rejecting' || activeRow.mode === 'rejecting-submitting')
+              const isActioning = activeRow?.id === r.id && (activeRow.mode === 'approving' || activeRow.mode === 'rejecting-submitting')
 
               return (
                 <React.Fragment key={r.id}>
                   {/* Main row */}
                   <div
-                    onClick={() => setExpandedId(isExpanded ? null : r.id)}
+                    onClick={() => setActiveRow(isExpanded ? null : { id: r.id, mode: 'viewing' })}
                     style={{ display: 'grid', gridTemplateColumns: '1fr 120px 160px 60px 80px 140px', padding: '12px 16px', gap: '12px', borderTop: idx === 0 ? 'none' : '1px solid var(--border)', alignItems: 'center', cursor: 'pointer', background: isExpanded ? 'var(--surface-1)' : 'transparent' }}
                   >
                     <div style={{ minWidth: 0 }}>
@@ -452,7 +453,7 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
                           <button
                             type="button"
                             disabled={isActioning}
-                            onClick={() => { setRejectingId(isRejecting ? null : r.id); setRejectReason(''); setExpandedId(r.id) }}
+                            onClick={() => { setActiveRow(isRejecting ? { id: r.id, mode: 'viewing' } : { id: r.id, mode: 'rejecting' }); setRejectReason('') }}
                             style={{ height: '28px', padding: '0 10px', background: 'none', color: 'var(--danger)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', fontWeight: 600, cursor: isActioning ? 'not-allowed' : 'pointer', opacity: isActioning ? 0.6 : 1, whiteSpace: 'nowrap' }}
                           >
                             {en.wsLeaves.rejectBtn}
@@ -517,7 +518,7 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
                             </button>
                             <button
                               type="button"
-                              onClick={() => { setRejectingId(null); setRejectReason('') }}
+                              onClick={() => { setActiveRow(prev => prev ? { ...prev, mode: 'viewing' } : null); setRejectReason('') }}
                               style={{ height: '32px', padding: '0 14px', background: 'none', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer' }}
                             >
                               {en.wsLeaves.cancelBtn}
