@@ -47,10 +47,11 @@ export default function NotificationPanel({ slug, onClose }: { slug: string; onC
 
   return (
     <div ref={ref} style={{
-      width: '320px', maxHeight: '420px', background: 'var(--surface-0)',
+      width: '320px', maxHeight: '440px', background: 'var(--surface-0)',
       border: '1px solid var(--border)', borderRadius: '10px',
-      overflowY: 'auto', display: 'flex', flexDirection: 'column',
+      overflow: 'hidden', display: 'flex', flexDirection: 'column',
     }}>
+      {/* Sticky header — does not scroll with the list */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <span style={{ fontFamily: 'Syne, sans-serif', fontSize: '14px', fontWeight: 600, color: 'var(--navy)' }}>{en.notifications.bellAriaLabel}</span>
         {unreadCount > 0 && (
@@ -59,15 +60,19 @@ export default function NotificationPanel({ slug, onClose }: { slug: string; onC
           </button>
         )}
       </div>
-      {loading ? (
-        <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {[1, 2, 3].map(i => <div key={i} style={{ height: '52px', background: 'var(--surface-2)', borderRadius: '6px' }} />)}
-        </div>
-      ) : notifications.length === 0 ? (
-        <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
-          {en.notifications.empty}
-        </div>
-      ) : notifications.map(n => <NotificationRow key={n.id} notification={n} onClick={() => handleRow(n)} />)}
+
+      {/* Scrollable notification list */}
+      <div style={{ overflowY: 'auto', flex: 1 }}>
+        {loading ? (
+          <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {[1, 2, 3].map(i => <div key={i} style={{ height: '64px', background: 'var(--surface-2)', borderRadius: '6px' }} />)}
+          </div>
+        ) : notifications.length === 0 ? (
+          <div style={{ padding: '32px 16px', textAlign: 'center', color: 'var(--text-muted)', fontFamily: 'DM Sans, sans-serif', fontSize: '13px' }}>
+            {en.notifications.empty}
+          </div>
+        ) : notifications.map(n => <NotificationRow key={n.id} notification={n} onClick={() => handleRow(n)} />)}
+      </div>
     </div>
   )
 }

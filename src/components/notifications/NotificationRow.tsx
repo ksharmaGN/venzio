@@ -54,7 +54,7 @@ export default function NotificationRow({ notification, onClick }: { notificatio
         <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', fontWeight: unread ? 600 : 400, color: 'var(--navy)', lineHeight: '1.4' }}>
           {notification.title}
         </div>
-        <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
           {notification.body}
         </div>
         <div style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
