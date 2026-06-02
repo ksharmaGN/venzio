@@ -227,7 +227,7 @@ export async function hasOverlappingLeaveRequest(
 ): Promise<boolean> {
   const row = await db.queryOne<{ cnt: number }>(
     `SELECT COUNT(*) AS cnt FROM leave_requests
-     WHERE workspace_id = ? AND user_id = ? AND status = 'approved'
+     WHERE workspace_id = ? AND user_id = ? AND status IN ('approved', 'pending')
        AND start_date <= ? AND end_date >= ?`,
     [workspaceId, userId, endDate, startDate],
   )
@@ -322,20 +322,22 @@ export async function actionLeaveRequest(params: {
   actionedByUserId: string
   rejectionReason?: string | null
 }): Promise<ActionLeaveResult> {
-  const row = await db.queryOne<LeaveRequest>(
-    'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
-    [params.id, params.workspaceId],
-  )
-  if (!row) return { error: 'NOT_FOUND' }
-  if (row.status !== 'pending') return { error: 'ALREADY_ACTIONED' }
-
   const newStatus = params.action === 'approve' ? 'approved' : 'rejected'
-  await db.execute(
+  // Atomic: WHERE status='pending' prevents concurrent double-actions.
+  // changes === 0 means either the row doesn't exist or was already actioned.
+  const { changes } = await db.execute(
     `UPDATE leave_requests
      SET status = ?, actioned_by_user_id = ?, rejection_reason = ?
-     WHERE id = ?`,
-    [newStatus, params.actionedByUserId, params.rejectionReason ?? null, params.id],
+     WHERE id = ? AND workspace_id = ? AND status = 'pending'`,
+    [newStatus, params.actionedByUserId, params.rejectionReason ?? null, params.id, params.workspaceId],
   )
+  if (changes === 0) {
+    const existing = await db.queryOne<LeaveRequest>(
+      'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
+      [params.id, params.workspaceId],
+    )
+    return existing ? { error: 'ALREADY_ACTIONED' } : { error: 'NOT_FOUND' }
+  }
   const updated = await db.queryOne<LeaveRequest>(
     'SELECT * FROM leave_requests WHERE id = ?',
     [params.id],
