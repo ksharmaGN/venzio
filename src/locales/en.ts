@@ -161,6 +161,26 @@ export const en = {
     placeholderName: "e.g. Sick Leave",
     emptyNoTypes: "No leave types yet. Add one below.",
     deleteConfirm: "Remove this leave type? Existing leave requests are not affected.",
+    removeBtn: "Remove",
+  },
+
+  /** Workspace admin member detail - opening leave balances section */
+  wsLeaveBalances: {
+    sectionTitle: "Opening Leave Balances",
+    sectionDescription: "Set the starting balance for each leave type. Takes effect from the start of the next quarter.",
+    effectiveFrom: "Effective from",
+    currentBalance: "Current",
+    notSet: "Not set",
+    saveBtn: "Save",
+    saving: "Saving…",
+    importCsv: "Import from CSV",
+    importHelp: "CSV columns: email, leave_type, balance_days",
+    noLeaveTypes: "No leave types configured for this workspace.",
+    searchPlaceholder: "Search member by name or email…",
+    changeMember: "✕ Change",
+    invalidBalance: "Enter a valid number ≥ 0",
+    failedToSave: "Failed to save",
+    importFailed: "Import failed",
   },
 
   /** Workspace admin settings page (/ws/[slug]/settings) */

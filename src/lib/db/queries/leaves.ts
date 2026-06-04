@@ -35,6 +35,26 @@ export interface LeaveTypeWithBalance extends LeaveType {
   used_days: number
 }
 
+export interface LeaveBalanceAdjustment {
+  id: string
+  workspace_id: string
+  user_id: string
+  leave_type_id: string
+  balance_days: number
+  effective_date: string
+  created_by: string
+  created_at: string
+}
+
+export function nextQuarterStart(): string {
+  const now = new Date()
+  const month = now.getMonth() // 0-indexed
+  const nextQStartMonth = Math.floor(month / 3) * 3 + 3
+  const year = nextQStartMonth >= 12 ? now.getFullYear() + 1 : now.getFullYear()
+  const m = nextQStartMonth >= 12 ? 0 : nextQStartMonth
+  return `${year}-${String(m + 1).padStart(2, '0')}-01`
+}
+
 export async function getWorkspaceLeaveTypes(workspaceId: string): Promise<LeaveType[]> {
   return db.query<LeaveType>(
     `SELECT * FROM workspace_leave_types
@@ -87,11 +107,15 @@ export async function getUsedLeaveDays(
   userId: string,
   leaveTypeId: string,
   workingDays: number[] = [1, 2, 3, 4, 5],
+  fromDate?: string,
 ): Promise<number> {
   const rows = await db.query<{ start_date: string; end_date: string }>(
     `SELECT start_date, end_date FROM leave_requests
-     WHERE workspace_id = ? AND user_id = ? AND leave_type_id = ? AND status = 'approved'`,
-    [workspaceId, userId, leaveTypeId],
+     WHERE workspace_id = ? AND user_id = ? AND leave_type_id = ? AND status = 'approved'
+     ${fromDate ? "AND start_date >= ?" : ""}`,
+    fromDate
+      ? [workspaceId, userId, leaveTypeId, fromDate]
+      : [workspaceId, userId, leaveTypeId],
   )
   return rows.reduce((sum, r) => {
     return sum + countWorkdays(r.start_date, r.end_date, undefined, workingDays)
@@ -164,10 +188,24 @@ export async function getLeaveTypesWithBalance(
   workingDays: number[] = [1, 2, 3, 4, 5],
 ): Promise<LeaveTypeWithBalance[]> {
   const types = await getWorkspaceLeaveTypes(workspaceId)
+  const today = new Date().toISOString().slice(0, 10)
   return Promise.all(
     types.map(async (t) => {
-      const totalAccrued = computeTotalAccrued(memberJoinedAt, t.accrual_frequency, t.accrual_credits, t.credit_timing)
-      const usedDays = await getUsedLeaveDays(workspaceId, userId, t.id, workingDays)
+      const adj = await getLatestLeaveBalanceAdjustment(workspaceId, userId, t.id)
+
+      let totalAccrued: number
+      let usedDays: number
+
+      if (adj && adj.effective_date <= today) {
+        totalAccrued =
+          adj.balance_days +
+          computeTotalAccrued(adj.effective_date, t.accrual_frequency, t.accrual_credits, t.credit_timing)
+        usedDays = await getUsedLeaveDays(workspaceId, userId, t.id, workingDays, adj.effective_date)
+      } else {
+        totalAccrued = computeTotalAccrued(memberJoinedAt, t.accrual_frequency, t.accrual_credits, t.credit_timing)
+        usedDays = await getUsedLeaveDays(workspaceId, userId, t.id, workingDays)
+      }
+
       return {
         ...t,
         total_accrued: totalAccrued,
@@ -270,6 +308,61 @@ export async function getMembersOnLeaveToday(workspaceId: string, date: string):
      ORDER BY u.full_name ASC`,
     [workspaceId, date, date],
   )
+}
+
+export async function getLatestLeaveBalanceAdjustment(
+  workspaceId: string,
+  userId: string,
+  leaveTypeId: string,
+): Promise<LeaveBalanceAdjustment | null> {
+  return db.queryOne<LeaveBalanceAdjustment>(
+    `SELECT * FROM leave_initial_balances
+     WHERE workspace_id = ? AND user_id = ? AND leave_type_id = ?
+     ORDER BY created_at DESC LIMIT 1`,
+    [workspaceId, userId, leaveTypeId],
+  )
+}
+
+export async function getLatestLeaveBalanceAdjustmentsForUser(
+  workspaceId: string,
+  userId: string,
+): Promise<LeaveBalanceAdjustment[]> {
+  return db.query<LeaveBalanceAdjustment>(
+    `SELECT lba.*
+     FROM leave_initial_balances lba
+     WHERE lba.workspace_id = ? AND lba.user_id = ?
+       AND lba.created_at = (
+         SELECT MAX(lba2.created_at)
+         FROM leave_initial_balances lba2
+         WHERE lba2.workspace_id = lba.workspace_id
+           AND lba2.user_id = lba.user_id
+           AND lba2.leave_type_id = lba.leave_type_id
+       )`,
+    [workspaceId, userId],
+  )
+}
+
+export async function setLeaveBalanceAdjustment(params: {
+  workspaceId: string
+  userId: string
+  leaveTypeId: string
+  balanceDays: number
+  effectiveDate: string
+  createdBy: string
+}): Promise<LeaveBalanceAdjustment> {
+  const id = crypto.randomUUID().replace(/-/g, '')
+  await db.execute(
+    `INSERT INTO leave_initial_balances
+       (id, workspace_id, user_id, leave_type_id, balance_days, effective_date, created_by)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [id, params.workspaceId, params.userId, params.leaveTypeId, params.balanceDays, params.effectiveDate, params.createdBy],
+  )
+  const row = await db.queryOne<LeaveBalanceAdjustment>(
+    'SELECT * FROM leave_initial_balances WHERE id = ?',
+    [id],
+  )
+  if (!row) throw new Error('Adjustment insert succeeded but row not found')
+  return row
 }
 
 export async function createLeaveRequest(params: {

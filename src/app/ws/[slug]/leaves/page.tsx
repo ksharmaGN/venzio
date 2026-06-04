@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams } from 'next/navigation'
 import { en } from '@/locales/en'
 
@@ -190,7 +190,7 @@ function LeaveTypesSection({ slug }: { slug: string }) {
                 </span>
               </div>
               <button type="button" onClick={() => deleteType(t.id)} style={{ background: 'none', border: 'none', color: 'var(--danger)', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer' }}>
-                Remove
+                {en.wsLeaveTypes.removeBtn}
               </button>
             </div>
           ))}
@@ -538,6 +538,301 @@ function LeaveRequestsSection({ slug }: { slug: string }) {
   )
 }
 
+// ─── Opening Leave Balances ───────────────────────────────────────────────────
+
+interface BalanceMember {
+  member_id: string
+  user_id: string | null
+  email: string
+  full_name: string | null
+}
+
+interface BalanceEntry {
+  leave_type_id: string
+  leave_type_name: string
+  balance_days: number | null
+  effective_date: string | null
+  created_at: string | null
+}
+
+function nextQuarterLabel(): string {
+  const now = new Date()
+  const m = now.getMonth()
+  const nextQMonth = Math.floor(m / 3) * 3 + 3
+  const year = nextQMonth >= 12 ? now.getFullYear() + 1 : now.getFullYear()
+  const month = nextQMonth >= 12 ? 0 : nextQMonth
+  return new Date(year, month, 1).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function LeaveBalancesSection({ slug }: { slug: string }) {
+  const [search, setSearch] = useState('')
+  const [results, setResults] = useState<BalanceMember[]>([])
+  const [showDrop, setShowDrop] = useState(false)
+  const [selected, setSelected] = useState<BalanceMember | null>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  const [entries, setEntries] = useState<BalanceEntry[]>([])
+  const [loadingBalances, setLoadingBalances] = useState(false)
+  const [inputs, setInputs] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState<Record<string, boolean>>({})
+  const [saveMsg, setSaveMsg] = useState<Record<string, { text: string; ok: boolean }>>({})
+
+  const [importing, setImporting] = useState(false)
+  const [importMsg, setImportMsg] = useState<{ text: string; ok: boolean } | null>(null)
+  const [importErrors, setImportErrors] = useState<{ row: number; email: string; leave_type: string; error: string }[]>([])
+
+  // Search members
+  useEffect(() => {
+    if (!search.trim()) { setResults([]); setShowDrop(false); return }
+    const t = setTimeout(async () => {
+      const res = await fetch(`/api/ws/${slug}/members?search=${encodeURIComponent(search)}&limit=8`).catch(() => null)
+      if (res?.ok) {
+        const d = await res.json() as { members?: BalanceMember[] }
+        setResults(d.members ?? [])
+        setShowDrop(true)
+      }
+    }, 250)
+    return () => clearTimeout(t)
+  }, [search, slug])
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (dropRef.current && !dropRef.current.contains(e.target as Node)) setShowDrop(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  // Load balances when member selected
+  useEffect(() => {
+    if (!selected) { setEntries([]); setInputs({}); return }
+    setLoadingBalances(true)
+    fetch(`/api/ws/${slug}/members/${selected.member_id}/leave-balances`)
+      .then(r => r.json())
+      .then((d: { adjustments?: BalanceEntry[] }) => {
+        const adj = d.adjustments ?? []
+        setEntries(adj)
+        setInputs(Object.fromEntries(adj.map(e => [e.leave_type_id, e.balance_days != null ? String(e.balance_days) : ''])))
+        setSaveMsg({})
+      })
+      .catch(() => {})
+      .finally(() => setLoadingBalances(false))
+  }, [selected, slug])
+
+  function selectMember(m: BalanceMember) {
+    setSelected(m)
+    setSearch('')
+    setShowDrop(false)
+  }
+
+  async function handleSave(leaveTypeId: string) {
+    if (!selected) return
+    const val = parseFloat(inputs[leaveTypeId] ?? '')
+    if (isNaN(val) || val < 0) {
+      setSaveMsg(p => ({ ...p, [leaveTypeId]: { text: en.wsLeaveBalances.invalidBalance, ok: false } }))
+      return
+    }
+    setSaving(p => ({ ...p, [leaveTypeId]: true }))
+    setSaveMsg(p => ({ ...p, [leaveTypeId]: { text: '', ok: true } }))
+    try {
+      const res = await fetch(`/api/ws/${slug}/members/${selected.member_id}/leave-balances`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leave_type_id: leaveTypeId, balance_days: val }),
+      })
+      const data = await res.json() as { adjustment?: { balance_days: number; effective_date: string; created_at: string } }
+      if (res.ok && data.adjustment) {
+        setEntries(prev => prev.map(e =>
+          e.leave_type_id === leaveTypeId
+            ? { ...e, balance_days: data.adjustment!.balance_days, effective_date: data.adjustment!.effective_date, created_at: data.adjustment!.created_at }
+            : e,
+        ))
+        setSaveMsg(p => ({ ...p, [leaveTypeId]: { text: en.wsLeaveBalances.saveBtn + ' ✓', ok: true } }))
+      } else {
+        setSaveMsg(p => ({ ...p, [leaveTypeId]: { text: en.wsLeaveBalances.failedToSave, ok: false } }))
+      }
+    } catch {
+      setSaveMsg(p => ({ ...p, [leaveTypeId]: { text: 'Failed to save', ok: false } }))
+    } finally {
+      setSaving(p => ({ ...p, [leaveTypeId]: false }))
+    }
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    setImporting(true)
+    setImportMsg(null)
+    setImportErrors([])
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await fetch(`/api/ws/${slug}/leave-balances/import`, { method: 'POST', body: fd })
+      const data = await res.json() as { imported?: number; errors?: typeof importErrors }
+      if (res.ok) {
+        const n = data.imported ?? 0
+        const errs = data.errors ?? []
+        setImportMsg({ text: `${n} imported${errs.length ? `, ${errs.length} error${errs.length > 1 ? 's' : ''}` : ''}`, ok: errs.length === 0 })
+        setImportErrors(errs)
+        if (selected) {
+          const refresh = await fetch(`/api/ws/${slug}/members/${selected.member_id}/leave-balances`)
+          if (refresh.ok) {
+            const rd = await refresh.json() as { adjustments?: BalanceEntry[] }
+            const adj = rd.adjustments ?? []
+            setEntries(adj)
+            setInputs(Object.fromEntries(adj.map(a => [a.leave_type_id, a.balance_days != null ? String(a.balance_days) : ''])))
+          }
+        }
+      } else {
+        setImportMsg({ text: en.wsLeaveBalances.importFailed, ok: false })
+      }
+    } catch {
+      setImportMsg({ text: en.wsLeaveBalances.importFailed, ok: false })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  return (
+    <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '20px', marginBottom: '24px' }}>
+      {/* Header */}
+      <div style={{ marginBottom: '16px' }}>
+        <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: '15px', fontWeight: 700, color: 'var(--navy)', margin: '0 0 6px' }}>
+          {en.wsLeaveBalances.sectionTitle}
+        </h2>
+        <p style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>
+          {en.wsLeaveBalances.sectionDescription}{' '}
+          <span style={{ color: 'var(--brand)', fontWeight: 500 }}>{en.wsLeaveBalances.effectiveFrom} {nextQuarterLabel()}.</span>
+        </p>
+      </div>
+
+      {/* Member search */}
+      <div ref={dropRef} style={{ position: 'relative', marginBottom: '16px' }}>
+        {selected ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px', background: 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)' }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {selected.full_name ?? selected.email}
+              </span>
+              {selected.full_name && (
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>{selected.email}</span>
+              )}
+            </div>
+            <button type="button" onClick={() => { setSelected(null); setEntries([]); setInputs({}); setSaveMsg({}) }}
+              style={{ background: 'none', border: 'none', fontSize: '12px', fontFamily: 'DM Sans, sans-serif', color: 'var(--text-muted)', cursor: 'pointer', padding: '0 4px' }}>
+              {en.wsLeaveBalances.changeMember}
+            </button>
+          </div>
+        ) : (
+          <input
+            type="search"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            onFocus={() => results.length > 0 && setShowDrop(true)}
+            placeholder={en.wsLeaveBalances.searchPlaceholder}
+            style={{ ...inputStyle, height: '40px', fontSize: '13px' }}
+          />
+        )}
+        {showDrop && results.length > 0 && (
+          <div style={{ position: 'absolute', top: '44px', left: 0, right: 0, background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', zIndex: 50, overflow: 'hidden' }}>
+            {results.map(m => (
+              <button key={m.member_id} type="button" onClick={() => selectMember(m)}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '10px 14px', background: 'none', border: 'none', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'none')}
+              >
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>{m.full_name ?? m.email}</span>
+                {m.full_name && <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', marginLeft: '6px' }}>{m.email}</span>}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Balance rows */}
+      {selected && (
+        loadingBalances ? (
+          <div style={{ height: '44px', background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)', animation: 'vnz-pulse 1.5s ease-in-out infinite', marginBottom: '16px' }} />
+        ) : entries.length === 0 ? (
+          <p style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+            {en.wsLeaveBalances.noLeaveTypes}
+          </p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+            {entries.map(entry => (
+              <div key={entry.leave_type_id} style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)', flex: '1 1 140px', minWidth: 0 }}>
+                  {entry.leave_type_name}
+                </span>
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                  {en.wsLeaveBalances.currentBalance}:{' '}
+                  <span style={{ color: entry.balance_days != null ? 'var(--teal)' : 'var(--text-muted)', fontWeight: 600 }}>
+                    {entry.balance_days != null ? `${entry.balance_days}d` : en.wsLeaveBalances.notSet}
+                  </span>
+                </span>
+                <input
+                  type="number" min={0} step={0.5}
+                  value={inputs[entry.leave_type_id] ?? ''}
+                  onChange={e => setInputs(p => ({ ...p, [entry.leave_type_id]: e.target.value }))}
+                  placeholder="0"
+                  style={{ width: '80px', height: '36px', padding: '0 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', background: 'var(--surface-2)', color: 'var(--text-primary)', outline: 'none', flexShrink: 0 }}
+                />
+                <button type="button" disabled={saving[entry.leave_type_id]}
+                  onClick={() => void handleSave(entry.leave_type_id)}
+                  style={{ height: '36px', padding: '0 14px', background: 'var(--brand)', color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, cursor: saving[entry.leave_type_id] ? 'not-allowed' : 'pointer', opacity: saving[entry.leave_type_id] ? 0.7 : 1, flexShrink: 0 }}>
+                  {saving[entry.leave_type_id] ? en.wsLeaveBalances.saving : en.wsLeaveBalances.saveBtn}
+                </button>
+                {saveMsg[entry.leave_type_id]?.text && (
+                  <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: saveMsg[entry.leave_type_id].ok ? 'var(--teal)' : 'var(--danger)' }}>
+                    {saveMsg[entry.leave_type_id].text}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {/* CSV import */}
+      <div style={{ borderTop: '1px solid var(--border)', paddingTop: '14px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', height: '36px', padding: '0 14px', background: importing ? 'var(--surface-2)' : 'var(--surface-1)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', fontWeight: 500, color: importing ? 'var(--text-muted)' : 'var(--text-primary)', cursor: importing ? 'not-allowed' : 'pointer', flexShrink: 0 }}>
+            {importing ? '…' : en.wsLeaveBalances.importCsv}
+            <input type="file" accept=".csv" style={{ display: 'none' }} disabled={importing} onChange={handleImport} />
+          </label>
+          <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)' }}>
+            {en.wsLeaveBalances.importHelp}
+          </span>
+        </div>
+        {importMsg && (
+          <p style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '13px', color: importMsg.ok ? 'var(--teal)' : 'var(--danger)', margin: 0 }}>
+            {importMsg.text}
+          </p>
+        )}
+        {importErrors.length > 0 && (
+          <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden', marginTop: '4px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr', padding: '6px 12px', background: 'var(--surface-1)', borderBottom: '1px solid var(--border)', gap: '8px' }}>
+              {['Row', 'Email', 'Leave Type', 'Error'].map(h => (
+                <span key={h} style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</span>
+              ))}
+            </div>
+            {importErrors.map((err, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '40px 1fr 1fr 1fr', padding: '6px 12px', borderTop: i === 0 ? 'none' : '1px solid var(--border)', gap: '8px', alignItems: 'center' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '12px', color: 'var(--text-muted)' }}>{err.row}</span>
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{err.email}</span>
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{err.leave_type}</span>
+                <span style={{ fontFamily: 'DM Sans, sans-serif', fontSize: '12px', color: 'var(--danger)' }}>{err.error}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function AdminLeavesPage() {
@@ -555,6 +850,7 @@ export default function AdminLeavesPage() {
       </div>
 
       <LeaveTypesSection slug={slug} />
+      <LeaveBalancesSection slug={slug} />
       <LeaveRequestsSection slug={slug} />
 
       <style>{`

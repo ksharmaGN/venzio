@@ -295,6 +295,21 @@ const ADDITIVE_MIGRATIONS = [
    ON leave_requests(workspace_id, user_id)`,
   `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
   `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
+
+
+  // leave_initial_balances - HR-set opening balances per employee per leave type
+  `CREATE TABLE IF NOT EXISTS leave_initial_balances (
+  id              TEXT NOT NULL PRIMARY KEY,
+  workspace_id    TEXT NOT NULL REFERENCES workspaces(id),
+  user_id         TEXT NOT NULL REFERENCES users(id),
+  leave_type_id   TEXT NOT NULL REFERENCES workspace_leave_types(id),
+  balance_days    REAL NOT NULL,
+  effective_date  TEXT NOT NULL,
+  created_by      TEXT NOT NULL REFERENCES users(id),
+  created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_lib_ws_user_type
+   ON leave_initial_balances(workspace_id, user_id, leave_type_id)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
