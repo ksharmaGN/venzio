@@ -5,8 +5,8 @@ export type NotificationType = 'leave_submitted' | 'leave_approved' | 'leave_rej
 export interface Notification {
   id: string
   user_id: string
-  workspace_id: string
-  workspace_slug: string
+  workspace_id: string | null
+  workspace_slug: string | null
   type: NotificationType
   title: string
   body: string
@@ -18,7 +18,7 @@ export interface Notification {
 
 export async function createNotification(params: {
   userId: string
-  workspaceId: string
+  workspaceId?: string | null
   type: NotificationType
   title: string
   body: string
@@ -28,7 +28,7 @@ export async function createNotification(params: {
   await db.execute(
     `INSERT INTO notifications (user_id, workspace_id, type, title, body, ref_id, ref_type)
      VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [params.userId, params.workspaceId, params.type, params.title, params.body, params.refId ?? null, params.refType ?? null],
+    [params.userId, params.workspaceId ?? null, params.type, params.title, params.body, params.refId ?? null, params.refType ?? null],
   )
 }
 
@@ -41,7 +41,7 @@ export async function getNotificationsForUser(
   if (workspaceId) {
     return db.query<Notification>(
       `SELECT n.*, w.slug AS workspace_slug
-       FROM notifications n JOIN workspaces w ON w.id = n.workspace_id
+       FROM notifications n LEFT JOIN workspaces w ON w.id = n.workspace_id
        WHERE n.user_id = ? AND n.workspace_id = ?
        ORDER BY n.created_at DESC LIMIT ? OFFSET ?`,
       [userId, workspaceId, limit, offset],
@@ -49,7 +49,7 @@ export async function getNotificationsForUser(
   }
   return db.query<Notification>(
     `SELECT n.*, w.slug AS workspace_slug
-     FROM notifications n JOIN workspaces w ON w.id = n.workspace_id
+     FROM notifications n LEFT JOIN workspaces w ON w.id = n.workspace_id
      WHERE n.user_id = ?
      ORDER BY n.created_at DESC LIMIT ? OFFSET ?`,
     [userId, limit, offset],

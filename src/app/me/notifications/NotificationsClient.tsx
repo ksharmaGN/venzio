@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import NotificationRow from '@/components/notifications/NotificationRow'
 import type { Notification } from '@/lib/db/queries/notifications'
+import { fetchMeNotifications, markMeNotificationsRead } from '@/lib/api/notifications'
+
 import { en } from '@/locales/en'
 
 export default function NotificationsClient() {
@@ -13,23 +15,22 @@ export default function NotificationsClient() {
   const router = useRouter()
 
   useEffect(() => {
-    fetch('/api/me/notifications')
-      .then(response => response.ok ? response.json() : null)
-      .then(data => { if (data) { setNotifications(data.notifications ?? []); setUnreadCount(data.unread_count ?? 0) }; setLoading(false) })
+    fetchMeNotifications()
+      .then(data => { if (data) { setNotifications(data.notifications); setUnreadCount(data.unread_count) }; setLoading(false) })
       .catch(() => setLoading(false))
   }, [])
 
   const markAll = async () => {
-    const res = await fetch('/api/me/notifications/read', { method: 'PATCH' })
-    if (!res.ok) return
+    const ok = await markMeNotificationsRead()
+    if (!ok) return
     setNotifications(prev => prev.map(notification => ({ ...notification, read_at: new Date().toISOString() })))
     setUnreadCount(0)
   }
 
   const handleRow = async (notification: Notification) => {
     if (!notification.read_at) {
-      const res = await fetch('/api/me/notifications/read', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [notification.id] }) })
-      if (res.ok) {
+      const ok = await markMeNotificationsRead([notification.id])
+      if (ok) {
         setNotifications(prev => prev.map(notif => notif.id === notification.id ? { ...notif, read_at: new Date().toISOString() } : notif))
         setUnreadCount(prevCount => Math.max(0, prevCount - 1))
       }

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import NotificationRow from './NotificationRow'
 import type { Notification } from '@/lib/db/queries/notifications'
+import { fetchWsNotifications, markWsNotificationsRead } from '@/lib/api/notifications'
 import { en } from '@/locales/en'
 
 export default function NotificationPanel({ slug, onClose }: { slug: string; onClose: () => void }) {
@@ -14,9 +15,8 @@ export default function NotificationPanel({ slug, onClose }: { slug: string; onC
   const router = useRouter()
 
   useEffect(() => {
-    fetch(`/api/ws/${slug}/notifications`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) { setNotifications(d.notifications ?? []); setUnreadCount(d.unread_count ?? 0) }; setLoading(false) })
+    fetchWsNotifications(slug)
+      .then(d => { if (d) { setNotifications(d.notifications); setUnreadCount(d.unread_count) }; setLoading(false) })
       .catch(() => setLoading(false))
   }, [slug])
 
@@ -27,16 +27,16 @@ export default function NotificationPanel({ slug, onClose }: { slug: string; onC
   }, [onClose])
 
   const markAll = async () => {
-    const res = await fetch(`/api/ws/${slug}/notifications/read`, { method: 'PATCH' })
-    if (!res.ok) return
+    const ok = await markWsNotificationsRead(slug)
+    if (!ok) return
     setNotifications(p => p.map(n => ({ ...n, read_at: new Date().toISOString() })))
     setUnreadCount(0)
   }
 
   const handleRow = async (n: Notification) => {
     if (!n.read_at) {
-      const res = await fetch(`/api/ws/${slug}/notifications/read`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: [n.id] }) })
-      if (res.ok) {
+      const ok = await markWsNotificationsRead(slug, [n.id])
+      if (ok) {
         setNotifications(p => p.map(x => x.id === n.id ? { ...x, read_at: new Date().toISOString() } : x))
         setUnreadCount(c => Math.max(0, c - 1))
       }

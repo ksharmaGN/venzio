@@ -300,7 +300,7 @@ const ADDITIVE_MIGRATIONS = [
   `CREATE TABLE IF NOT EXISTS notifications (
   id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
   type         TEXT NOT NULL,
   title        TEXT NOT NULL,
   body         TEXT NOT NULL,

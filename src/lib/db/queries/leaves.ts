@@ -310,6 +310,11 @@ export async function getLeaveRequestById(
   )
 }
 
+export enum LeaveAction {
+  APPROVE = 'approve',
+  REJECT = 'reject',
+}
+
 export type ActionLeaveError = 'NOT_FOUND' | 'ALREADY_ACTIONED'
 export type ActionLeaveResult =
   | { updated: LeaveRequest }
@@ -318,11 +323,11 @@ export type ActionLeaveResult =
 export async function actionLeaveRequest(params: {
   id: string
   workspaceId: string
-  action: 'approve' | 'reject'
+  action: LeaveAction
   actionedByUserId: string
   rejectionReason?: string | null
 }): Promise<ActionLeaveResult> {
-  const newStatus = params.action === 'approve' ? 'approved' : 'rejected'
+  const newStatus = params.action === LeaveAction.APPROVE ? 'approved' : 'rejected'
   // Atomic: WHERE status='pending' prevents concurrent double-actions.
   // changes === 0 means either the row doesn't exist or was already actioned.
   const { changes } = await db.execute(

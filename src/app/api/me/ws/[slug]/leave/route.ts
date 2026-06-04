@@ -127,14 +127,13 @@ export async function POST(req: NextRequest, { params }: Props) {
   try {
     const [employee, admins] = await Promise.all([
       getUserById(userId),
-      getActiveWorkspaceAdmins(workspace.id),
+      getActiveWorkspaceAdmins(workspace.id, userId),
     ])
     const employeeName = employee?.full_name ?? employee?.email ?? 'Someone'
     const title = en.notifications.leaveSubmittedTitle
     const body = en.notifications.leaveSubmittedBody(employeeName, requestedDays, leaveType.name)
     await Promise.allSettled(
       admins
-        .filter((a) => a.user_id !== userId)
         .flatMap((a) => [
           createNotification({ userId: a.user_id, workspaceId: workspace.id, type: 'leave_submitted', title, body, refId: leaveRequest.id, refType: 'leave_request' }),
           sendPushToUser(a.user_id, { title, body, tag: `leave-submitted-${leaveRequest.id}` }),
