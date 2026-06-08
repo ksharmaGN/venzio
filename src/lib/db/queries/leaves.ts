@@ -33,6 +33,18 @@ export interface LeaveTypeWithBalance extends LeaveType {
   available_days: number
   total_accrued: number
   used_days: number
+  opening_balance: number
+}
+
+export interface LeaveOpeningBalance {
+  id: string
+  workspace_id: string
+  user_id: string
+  leave_type_id: string
+  balance_days: number
+  note: string | null
+  created_at: string
+  updated_at: string
 }
 
 export async function getWorkspaceLeaveTypes(workspaceId: string): Promise<LeaveType[]> {
@@ -125,9 +137,14 @@ function computeTotalAccrued(
   const joinYear = joined.getFullYear()
   const joinMonth = joined.getMonth() // 0-indexed
 
-  // First period: 1st of join-month → 1st of (join-month + periodMonths)
-  const firstPeriodStart = new Date(joinYear, joinMonth, 1)
-  const secondPeriodStart = new Date(joinYear, joinMonth + periodMonths, 1) // exclusive end of first period
+  // Align first period to calendar boundaries:
+  // quarterly  → Jan/Apr/Jul/Oct  (floor(m/3)*3)
+  // half-yearly → Jan/Jul          (floor(m/6)*6)
+  // yearly      → Jan              (floor(m/12)*12 = 0)
+  // monthly     → unchanged        (floor(m/1)*1 = m)
+  const periodIndex = Math.floor(joinMonth / periodMonths)
+  const firstPeriodStart = new Date(joinYear, periodIndex * periodMonths, 1)
+  const secondPeriodStart = new Date(joinYear, periodIndex * periodMonths + periodMonths, 1)
 
   // Pro-rata fraction for first period
   const totalMsInFirstPeriod = secondPeriodStart.getTime() - firstPeriodStart.getTime()
@@ -162,20 +179,118 @@ export async function getLeaveTypesWithBalance(
   userId: string,
   memberJoinedAt: string,
   workingDays: number[] = [1, 2, 3, 4, 5],
+  cutoverDate?: string | null,
 ): Promise<LeaveTypeWithBalance[]> {
   const types = await getWorkspaceLeaveTypes(workspaceId)
   return Promise.all(
     types.map(async (t) => {
-      const totalAccrued = computeTotalAccrued(memberJoinedAt, t.accrual_frequency, t.accrual_credits, t.credit_timing)
+      const obRecord = await getOpeningBalance(workspaceId, userId, t.id)
+      const openingDays = obRecord?.balance_days ?? 0
+      // If workspace has a cutover date that is later than the member's join date,
+      // use it as the accrual start for ALL leave types (Venzio takes over from that date).
+      // Opening balance is independent — it applies regardless of cutover logic.
+      const memberDateOnly = memberJoinedAt.slice(0, 10)
+      const accrualStart = cutoverDate && cutoverDate > memberDateOnly ? cutoverDate : memberJoinedAt
+      const totalAccrued = computeTotalAccrued(accrualStart, t.accrual_frequency, t.accrual_credits, t.credit_timing)
       const usedDays = await getUsedLeaveDays(workspaceId, userId, t.id, workingDays)
       return {
         ...t,
+        opening_balance: openingDays,
         total_accrued: totalAccrued,
         used_days: usedDays,
-        available_days: Math.max(0, totalAccrued - usedDays),
+        available_days: Math.max(0, openingDays + totalAccrued - usedDays),
       }
     }),
   )
+}
+
+export async function getOpeningBalance(
+  workspaceId: string,
+  userId: string,
+  leaveTypeId: string,
+): Promise<LeaveOpeningBalance | null> {
+  return db.queryOne<LeaveOpeningBalance>(
+    `SELECT * FROM leave_opening_balances
+     WHERE workspace_id = ? AND user_id = ? AND leave_type_id = ?`,
+    [workspaceId, userId, leaveTypeId],
+  )
+}
+
+export async function getMemberOpeningBalances(
+  workspaceId: string,
+  userId: string,
+): Promise<LeaveOpeningBalance[]> {
+  return db.query<LeaveOpeningBalance>(
+    `SELECT * FROM leave_opening_balances
+     WHERE workspace_id = ? AND user_id = ?
+     ORDER BY created_at ASC`,
+    [workspaceId, userId],
+  )
+}
+
+export async function getAllOpeningBalances(workspaceId: string): Promise<
+  (LeaveOpeningBalance & { user_email: string; user_full_name: string | null; leave_type_name: string; member_record_id: string })[]
+> {
+  return db.query(
+    `SELECT lob.*,
+            u.email AS user_email,
+            u.full_name AS user_full_name,
+            wlt.name AS leave_type_name,
+            wm.id AS member_record_id
+     FROM leave_opening_balances lob
+     JOIN users u ON u.id = lob.user_id
+     JOIN workspace_leave_types wlt ON wlt.id = lob.leave_type_id
+     JOIN workspace_members wm ON wm.workspace_id = lob.workspace_id AND wm.user_id = lob.user_id
+     WHERE lob.workspace_id = ?
+       AND u.deleted_at IS NULL
+       AND wlt.deleted_at IS NULL
+     ORDER BY u.email ASC, wlt.name ASC`,
+    [workspaceId],
+  )
+}
+
+export async function upsertOpeningBalance(params: {
+  workspaceId: string
+  userId: string
+  leaveTypeId: string
+  balanceDays: number
+  note?: string | null
+}): Promise<LeaveOpeningBalance> {
+  const existing = await getOpeningBalance(params.workspaceId, params.userId, params.leaveTypeId)
+  if (existing) {
+    await db.execute(
+      `UPDATE leave_opening_balances
+       SET balance_days = ?, note = ?, updated_at = datetime('now')
+       WHERE workspace_id = ? AND user_id = ? AND leave_type_id = ?`,
+      [params.balanceDays, params.note ?? null, params.workspaceId, params.userId, params.leaveTypeId],
+    )
+  } else {
+    const id = crypto.randomUUID().replace(/-/g, '')
+    await db.execute(
+      `INSERT INTO leave_opening_balances (id, workspace_id, user_id, leave_type_id, balance_days, note)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, params.workspaceId, params.userId, params.leaveTypeId, params.balanceDays, params.note ?? null],
+    )
+  }
+  const row = await getOpeningBalance(params.workspaceId, params.userId, params.leaveTypeId)
+  if (!row) throw new Error('Opening balance upsert succeeded but row not found')
+  return row
+}
+
+export async function bulkUpsertOpeningBalances(
+  items: { workspaceId: string; userId: string; leaveTypeId: string; balanceDays: number; note?: string | null }[],
+): Promise<{ imported: number; errors: string[] }> {
+  let imported = 0
+  const errors: string[] = []
+  for (const item of items) {
+    try {
+      await upsertOpeningBalance(item)
+      imported++
+    } catch (err) {
+      errors.push(`Failed for user ${item.userId} / type ${item.leaveTypeId}: ${(err as Error).message}`)
+    }
+  }
+  return { imported, errors }
 }
 
 export interface LeaveRequestWithType extends LeaveRequest {

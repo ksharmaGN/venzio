@@ -98,7 +98,7 @@ export async function POST(req: NextRequest, { params }: Props) {
     return NextResponse.json({ error: 'Leave type not found', code: 'NOT_FOUND' }, { status: 404 })
   }
 
-  const typesWithBalance = await getLeaveTypesWithBalance(workspace.id, userId, member.added_at, workingDayNums)
+  const typesWithBalance = await getLeaveTypesWithBalance(workspace.id, userId, member.added_at, workingDayNums, workspace.leave_cutover_date)
   const typeBalance = typesWithBalance.find((t) => t.id === leaveTypeId)
   const requestedDays = workingDaysInRange
 

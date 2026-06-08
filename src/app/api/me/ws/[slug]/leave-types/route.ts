@@ -20,6 +20,7 @@ export async function GET(req: NextRequest, { params }: Props) {
     ctx.userId,
     ctx.member.added_at,
     workingDayNums,
+    ctx.workspace.leave_cutover_date,
   )
   return NextResponse.json({ leaveTypes })
 }

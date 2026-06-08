@@ -13,6 +13,7 @@ export interface Workspace {
   allow_remote: number
   leaves_enabled: number
   working_days: string   // JSON array e.g. '[1,2,3,4,5]'
+  leave_cutover_date: string | null
   created_at: string
   updated_at: string
 }
@@ -94,7 +95,7 @@ export async function getWorkspaceById(id: string): Promise<Workspace | null> {
 
 export async function updateWorkspace(
   workspaceId: string,
-  updates: Partial<Pick<Workspace, 'name' | 'display_timezone' | 'allow_remote' | 'leaves_enabled' | 'working_days'>>
+  updates: Partial<Pick<Workspace, 'name' | 'display_timezone' | 'allow_remote' | 'leaves_enabled' | 'working_days' | 'leave_cutover_date'>>
 ): Promise<void> {
   const fields = Object.keys(updates).map((k) => `${k} = ?`)
   const values = Object.values(updates)
