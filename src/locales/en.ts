@@ -368,5 +368,17 @@ export const en = {
       title: `${brand} - auto checked out`,
       body: "You were automatically checked out after 24 hours.",
     },
+    bellAriaLabel: 'Notifications',
+    markAllRead: 'Mark all as read',
+    empty: 'No notifications yet',
+    leaveSubmittedTitle: 'New leave request',
+    leaveApprovedTitle: 'Leave approved',
+    leaveRejectedTitle: 'Leave rejected',
+    leaveSubmittedBody: (name: string, days: number, type: string) =>
+      `${name} applied for ${days} day(s) of ${type}`,
+    leaveApprovedBody: (type: string, start: string, end: string) =>
+      `Your ${type} from ${start} to ${end} has been approved`,
+    leaveRejectedBody: (type: string, start: string, end: string) =>
+      `Your ${type} from ${start} to ${end} was rejected`,
   },
 };

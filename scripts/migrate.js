@@ -295,6 +295,23 @@ const ADDITIVE_MIGRATIONS = [
    ON leave_requests(workspace_id, user_id)`,
   `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
   `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
+
+  // notifications - in-app notification center
+  `CREATE TABLE IF NOT EXISTS notifications (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  ref_id       TEXT,
+  ref_type     TEXT,
+  read_at      TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user_list ON notifications(user_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_workspace ON notifications(workspace_id, created_at DESC)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

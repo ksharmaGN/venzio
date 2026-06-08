@@ -170,6 +170,16 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
   )
 }
 
+export async function getActiveWorkspaceAdmins(workspaceId: string, excludeUserId?: string): Promise<{ user_id: string }[]> {
+  return db.query<{ user_id: string }>(
+    `SELECT wm.user_id FROM workspace_members wm
+     JOIN users u ON u.id = wm.user_id
+     WHERE wm.workspace_id = ? AND wm.role = 'admin' AND wm.status = 'active' AND u.deleted_at IS NULL
+     ${excludeUserId ? 'AND wm.user_id != ?' : ''}`,
+    excludeUserId ? [workspaceId, excludeUserId] : [workspaceId],
+  )
+}
+
 export async function getActiveMemberIds(workspaceId: string): Promise<string[]> {
   const rows = await db.query<{ user_id: string }>(
     `SELECT user_id FROM workspace_members
