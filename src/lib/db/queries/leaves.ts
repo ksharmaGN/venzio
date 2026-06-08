@@ -342,7 +342,7 @@ export async function hasOverlappingLeaveRequest(
 ): Promise<boolean> {
   const row = await db.queryOne<{ cnt: number }>(
     `SELECT COUNT(*) AS cnt FROM leave_requests
-     WHERE workspace_id = ? AND user_id = ? AND status = 'approved'
+     WHERE workspace_id = ? AND user_id = ? AND status IN ('approved', 'pending')
        AND start_date <= ? AND end_date >= ?`,
     [workspaceId, userId, endDate, startDate],
   )
@@ -425,6 +425,11 @@ export async function getLeaveRequestById(
   )
 }
 
+export enum LeaveAction {
+  APPROVE = 'approve',
+  REJECT = 'reject',
+}
+
 export type ActionLeaveError = 'NOT_FOUND' | 'ALREADY_ACTIONED'
 export type ActionLeaveResult =
   | { updated: LeaveRequest }
@@ -433,24 +438,26 @@ export type ActionLeaveResult =
 export async function actionLeaveRequest(params: {
   id: string
   workspaceId: string
-  action: 'approve' | 'reject'
+  action: LeaveAction
   actionedByUserId: string
   rejectionReason?: string | null
 }): Promise<ActionLeaveResult> {
-  const row = await db.queryOne<LeaveRequest>(
-    'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
-    [params.id, params.workspaceId],
-  )
-  if (!row) return { error: 'NOT_FOUND' }
-  if (row.status !== 'pending') return { error: 'ALREADY_ACTIONED' }
-
-  const newStatus = params.action === 'approve' ? 'approved' : 'rejected'
-  await db.execute(
+  const newStatus = params.action === LeaveAction.APPROVE ? 'approved' : 'rejected'
+  // Atomic: WHERE status='pending' prevents concurrent double-actions.
+  // changes === 0 means either the row doesn't exist or was already actioned.
+  const { changes } = await db.execute(
     `UPDATE leave_requests
      SET status = ?, actioned_by_user_id = ?, rejection_reason = ?
-     WHERE id = ?`,
-    [newStatus, params.actionedByUserId, params.rejectionReason ?? null, params.id],
+     WHERE id = ? AND workspace_id = ? AND status = 'pending'`,
+    [newStatus, params.actionedByUserId, params.rejectionReason ?? null, params.id, params.workspaceId],
   )
+  if (changes === 0) {
+    const existing = await db.queryOne<LeaveRequest>(
+      'SELECT * FROM leave_requests WHERE id = ? AND workspace_id = ?',
+      [params.id, params.workspaceId],
+    )
+    return existing ? { error: 'ALREADY_ACTIONED' } : { error: 'NOT_FOUND' }
+  }
   const updated = await db.queryOne<LeaveRequest>(
     'SELECT * FROM leave_requests WHERE id = ?',
     [params.id],

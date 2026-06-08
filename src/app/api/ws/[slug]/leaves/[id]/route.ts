@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireWsAdmin } from '@/lib/ws-admin'
-import { actionLeaveRequest, getLeaveTypeById } from '@/lib/db/queries/leaves'
+import { actionLeaveRequest, getLeaveTypeById, LeaveAction } from '@/lib/db/queries/leaves'
 import { getUserById } from '@/lib/db/queries/users'
+import { createNotification } from '@/lib/db/queries/notifications'
+import { sendPushToUser } from '@/lib/push'
+import { en } from '@/locales/en'
 
 interface Props { params: Promise<{ slug: string; id: string }> }
 
@@ -18,7 +21,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
   }
 
   const action = body.action
-  if (action !== 'approve' && action !== 'reject') {
+  if (action !== LeaveAction.APPROVE && action !== LeaveAction.REJECT) {
     return NextResponse.json(
       { error: 'action must be "approve" or "reject"', code: 'VALIDATION_ERROR' },
       { status: 422 },
@@ -28,7 +31,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
   const rejectionReason =
     typeof body.rejection_reason === 'string' ? body.rejection_reason.trim() : ''
 
-  if (action === 'reject' && !rejectionReason) {
+  if (action === LeaveAction.REJECT && !rejectionReason) {
     return NextResponse.json(
       { error: 'rejection_reason is required when rejecting', code: 'VALIDATION_ERROR' },
       { status: 422 },
@@ -40,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     workspaceId: ctx.workspace.id,
     action,
     actionedByUserId: ctx.userId,
-    rejectionReason: action === 'reject' ? rejectionReason : null,
+    rejectionReason: action === LeaveAction.REJECT ? rejectionReason : null,
   })
 
   if ('error' in result) {
@@ -56,11 +59,25 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     )
   }
 
-  // Fetch employee and leave type for context (used by future notification tickets)
   const [employee, leaveType] = await Promise.all([
     getUserById(result.updated.user_id),
     getLeaveTypeById(result.updated.leave_type_id, ctx.workspace.id),
   ])
+
+  // Notify the requesting employee (leaveType may be null if soft-deleted — use fallback name)
+  if (employee) {
+    const leaveTypeName = leaveType?.name ?? 'Leave'
+    const isApproved = action === LeaveAction.APPROVE
+    const notifType = isApproved ? 'leave_approved' as const : 'leave_rejected' as const
+    const title = isApproved ? en.notifications.leaveApprovedTitle : en.notifications.leaveRejectedTitle
+    const notifBody = isApproved
+      ? en.notifications.leaveApprovedBody(leaveTypeName, result.updated.start_date, result.updated.end_date)
+      : en.notifications.leaveRejectedBody(leaveTypeName, result.updated.start_date, result.updated.end_date)
+    await Promise.allSettled([
+      createNotification({ userId: result.updated.user_id, workspaceId: ctx.workspace.id, type: notifType, title, body: notifBody, refId: result.updated.id, refType: 'leave_request' }),
+      sendPushToUser(result.updated.user_id, { title, body: notifBody, tag: `leave-${notifType}-${result.updated.id}` }),
+    ])
+  }
 
   return NextResponse.json({
     leaveRequest: result.updated,
