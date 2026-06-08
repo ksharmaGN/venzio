@@ -295,6 +295,23 @@ const ADDITIVE_MIGRATIONS = [
    ON leave_requests(workspace_id, user_id)`,
   `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
   `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
+
+  // leave_cutover_date - workspace-level migration anchor date for opening balances
+  `ALTER TABLE workspaces ADD COLUMN leave_cutover_date TEXT`,
+
+  // leave_opening_balances - carried-over balances when migrating from another system
+  `CREATE TABLE IF NOT EXISTS leave_opening_balances (
+  id              TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id    TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL REFERENCES users(id),
+  leave_type_id   TEXT NOT NULL REFERENCES workspace_leave_types(id),
+  balance_days    REAL NOT NULL DEFAULT 0,
+  note            TEXT,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_lob_ws_user_type
+   ON leave_opening_balances (workspace_id, user_id, leave_type_id)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

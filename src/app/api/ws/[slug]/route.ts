@@ -20,6 +20,7 @@ export async function GET(request: NextRequest, { params }: Props) {
     allow_remote: !!ctx.workspace.allow_remote,
     leaves_enabled: !!ctx.workspace.leaves_enabled,
     working_days,
+    leave_cutover_date: ctx.workspace.leave_cutover_date ?? null,
   })
 }
 
@@ -34,6 +35,7 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     allowRemote?: boolean
     leavesEnabled?: boolean
     workingDays?: number[]
+    leaveCutoverDate?: string | null
   }
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid body', code: 'INVALID_BODY' }, { status: 400 })
@@ -45,6 +47,7 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     allow_remote?: number
     leaves_enabled?: number
     working_days?: string
+    leave_cutover_date?: string | null
   } = {}
   if (body.name?.trim()) updates.name = body.name.trim()
   if (body.displayTimezone?.trim()) updates.display_timezone = body.displayTimezone.trim()
@@ -62,6 +65,16 @@ export async function PATCH(request: NextRequest, { params }: Props) {
       )
     }
     updates.working_days = JSON.stringify(body.workingDays)
+  }
+  if ('leaveCutoverDate' in body) {
+    const d = body.leaveCutoverDate
+    if (d !== null && d !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+      return NextResponse.json(
+        { error: 'leaveCutoverDate must be YYYY-MM-DD or null', code: 'VALIDATION_ERROR' },
+        { status: 400 },
+      )
+    }
+    updates.leave_cutover_date = d ?? null
   }
 
   if (Object.keys(updates).length > 0) {

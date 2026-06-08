@@ -143,6 +143,33 @@ export const en = {
     searchPlaceholder: "Search by name or email…",
   },
 
+  /** Workspace admin opening balances (migration from another system) */
+  wsOpeningBalances: {
+    sectionTitle: "Opening Balances",
+    sectionDescription: "Set the leave balances employees carried over from a previous system (e.g. Zoho). Venzio will add these to accrual from the cutover date forward.",
+    cutoverDateLabel: "Cutover date",
+    cutoverDateHint: "Venzio starts computing accrual from this date. Set this to the first day of the period (month, quarter, etc.) after your last Zoho export.",
+    cutoverDateSave: "Save date",
+    cutoverDateSaved: "Cutover date saved",
+    cutoverDateCleared: "Cutover date cleared",
+    importBtn: "Import from CSV",
+    importHint: "CSV columns: email, leave_type, opening_balance",
+    importSuccess: (n: number) => `${n} balance${n !== 1 ? 's' : ''} imported`,
+    importErrors: (n: number) => `${n} row${n !== 1 ? 's' : ''} skipped — see details below`,
+    colEmployee: "Employee",
+    colLeaveType: "Leave Type",
+    colBalance: "Opening Balance (days)",
+    colNote: "Note",
+    emptyNoBalances: "No opening balances set yet. Import a CSV or add one below.",
+    addBtn: "Add balance",
+    addPlaceholderNote: "Optional note",
+    saveRow: "Save",
+    savingRow: "Saving…",
+    rowSaved: "Saved",
+    deleteConfirm: "Remove this opening balance?",
+    errorFetch: "Failed to load opening balances",
+  },
+
   /** Workspace admin leave types settings (/ws/[slug]/settings) */
   wsLeaveTypes: {
     sectionTitle: "Leave Types",
