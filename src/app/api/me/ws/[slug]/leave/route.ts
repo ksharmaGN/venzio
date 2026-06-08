@@ -8,6 +8,11 @@ import {
   hasOverlappingLeaveRequest,
   createLeaveRequest,
 } from '@/lib/db/queries/leaves'
+import { getUserById } from '@/lib/db/queries/users'
+import { getActiveWorkspaceAdmins } from '@/lib/db/queries/workspaces'
+import { createNotification } from '@/lib/db/queries/notifications'
+import { sendPushToUser } from '@/lib/push'
+import { en } from '@/locales/en'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -117,6 +122,24 @@ export async function POST(req: NextRequest, { params }: Props) {
     endDate,
     reason,
   })
+
+  // Notify all active workspace admins
+  try {
+    const [employee, admins] = await Promise.all([
+      getUserById(userId),
+      getActiveWorkspaceAdmins(workspace.id, userId),
+    ])
+    const employeeName = employee?.full_name ?? employee?.email ?? 'Someone'
+    const title = en.notifications.leaveSubmittedTitle
+    const body = en.notifications.leaveSubmittedBody(employeeName, requestedDays, leaveType.name)
+    await Promise.allSettled(
+      admins
+        .flatMap((a) => [
+          createNotification({ userId: a.user_id, workspaceId: workspace.id, type: 'leave_submitted', title, body, refId: leaveRequest.id, refType: 'leave_request' }),
+          sendPushToUser(a.user_id, { title, body, tag: `leave-submitted-${leaveRequest.id}` }),
+        ]),
+    )
+  } catch { /* notification failure must not block the response */ }
 
   return NextResponse.json({ leaveRequest }, { status: 201 })
 }
