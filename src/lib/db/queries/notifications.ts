@@ -77,15 +77,15 @@ export async function markNotificationsRead(
   ids?: string[],
 ): Promise<void> {
   if (ids && ids.length > 0) {
-    const ph = ids.map(() => '?').join(', ')
+    const placeholders = ids.map(() => '?').join(', ')
     if (workspaceId) {
       await db.execute(
-        `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND workspace_id = ? AND id IN (${ph}) AND read_at IS NULL`,
+        `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND workspace_id = ? AND id IN (${placeholders}) AND read_at IS NULL`,
         [userId, workspaceId, ...ids],
       )
     } else {
       await db.execute(
-        `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND id IN (${ph}) AND read_at IS NULL`,
+        `UPDATE notifications SET read_at = datetime('now') WHERE user_id = ? AND id IN (${placeholders}) AND read_at IS NULL`,
         [userId, ...ids],
       )
     }
