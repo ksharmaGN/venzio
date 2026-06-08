@@ -20,7 +20,7 @@ export async function GET(request: NextRequest, { params }: Props) {
     allow_remote: !!ctx.workspace.allow_remote,
     leaves_enabled: !!ctx.workspace.leaves_enabled,
     working_days,
-    leave_cutover_date: ctx.workspace.leave_cutover_date ?? null,
+    leave_cutover_date: ctx.workspace.leave_cutover_date,
   })
 }
 

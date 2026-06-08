@@ -7,6 +7,7 @@ import {
   getWorkspaceLeaveTypes,
   bulkUpsertOpeningBalances,
 } from '@/lib/db/queries/leaves'
+import { parseRawStr, parseRawNum } from '@/lib/constants'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -99,13 +100,13 @@ export async function POST(req: NextRequest, { params }: Props) {
     const rowNum = i + 2
     const raw = rawRows[i]
 
-    const email = typeof raw.email === 'string' ? raw.email.trim().toLowerCase() : null
+    const email = parseRawStr(raw.email, true)
     if (!email) {
       errors.push({ row: rowNum, reason: 'Missing or empty "email"' })
       continue
     }
 
-    const leaveTypeName = typeof raw.leave_type === 'string' ? raw.leave_type.trim() : null
+    const leaveTypeName = parseRawStr(raw.leave_type)
     if (!leaveTypeName) {
       errors.push({ row: rowNum, reason: 'Missing or empty "leave_type"' })
       continue
@@ -117,17 +118,11 @@ export async function POST(req: NextRequest, { params }: Props) {
       continue
     }
 
-    const balanceRaw = raw.opening_balance
-    const balanceDays =
-      typeof balanceRaw === 'number'
-        ? balanceRaw
-        : typeof balanceRaw === 'string'
-          ? parseFloat(balanceRaw)
-          : NaN
+    const balanceDays = parseRawNum(raw.opening_balance)
     if (isNaN(balanceDays) || balanceDays < 0) {
       errors.push({
         row: rowNum,
-        reason: `"opening_balance" must be a non-negative number (got "${balanceRaw}")`,
+        reason: `"opening_balance" must be a non-negative number (got "${raw.opening_balance}")`,
       })
       continue
     }
