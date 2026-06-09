@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserByEmailIncludeDeleted, getRateLimitCount, recordRateLimitHit } from '@/lib/db/queries/users'
 import { getAdminWorkspacesForUser } from '@/lib/db/queries/workspaces'
-import { verifyPassword, createJwt, setSessionCookie } from '@/lib/auth'
+import {
+  verifyPassword,
+  createJwt,
+  setSessionCookie,
+  isNativeClientRequest,
+} from "@/lib/auth";
 import { extractIp } from '@/lib/geo'
 
 function apiError(message: string, code: string, status: number) {
@@ -76,8 +81,16 @@ export async function POST(request: NextRequest) {
   const adminWorkspaces = await getAdminWorkspacesForUser(user.id);
   const redirect = getRedirectAfterLogin(adminWorkspaces);
 
-  return NextResponse.json({
+  const payload: {
+    user: { id: string; email: string; full_name: string | null };
+    redirect: string;
+    session_token?: string;
+  } = {
     user: { id: user.id, email: user.email, full_name: user.full_name },
     redirect,
-  });
+  };
+  if (isNativeClientRequest(request)) {
+    payload.session_token = token;
+  }
+  return NextResponse.json(payload);
 }

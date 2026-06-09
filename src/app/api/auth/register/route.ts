@@ -10,7 +10,14 @@ import {
   getWorkspaceBySlug,
   linkUserToMemberRecord,
 } from '@/lib/db/queries/workspaces'
-import { hashPassword, createJwt, setSessionCookie, verifyOtpCookie, clearOtpCookie } from '@/lib/auth'
+import {
+  hashPassword,
+  createJwt,
+  setSessionCookie,
+  verifyOtpCookie,
+  clearOtpCookie,
+  isNativeClientRequest,
+} from "@/lib/auth";
 import { validateSlug } from '@/lib/slug'
 import { validatePassword } from '@/lib/password'
 
@@ -131,8 +138,16 @@ export async function POST(request: NextRequest) {
   const adminWorkspaces = await getAdminWorkspacesForUser(user.id)
   const redirect = getRedirectAfterLogin(adminWorkspaces)
 
-  return NextResponse.json({
+  const payload: {
+    user: { id: string; email: string; full_name: string | null };
+    redirect: string;
+    session_token?: string;
+  } = {
     user: { id: user.id, email: user.email, full_name: user.full_name },
     redirect,
-  })
+  };
+  if (isNativeClientRequest(request)) {
+    payload.session_token = token;
+  }
+  return NextResponse.json(payload);
 }

@@ -8,6 +8,17 @@ const COOKIE_NAME = en.constants.cookieSession
 const TOKEN_EXPIRY = '30d'
 const BCRYPT_ROUNDS = 12
 
+/** Secure cookies on HTTPS production (Capacitor WebView drops non-secure cookies on https://). */
+function sessionCookieSecure(): boolean {
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? ''
+  if (appUrl.startsWith('https://')) return true
+  return !!process.env.TURSO_AUTH_TOKEN
+}
+
+export function isNativeClientRequest(request: { headers: { get(name: string): string | null } }): boolean {
+  return request.headers.get('x-venzio-native') === '1'
+}
+
 // ─── JWT ─────────────────────────────────────────────────────────────────────
 
 function getJwtSecret(): Uint8Array {
@@ -48,21 +59,22 @@ export async function verifyJwt(token: string): Promise<JwtPayload | null> {
 export async function setSessionCookie(token: string): Promise<void> {
   const cookieStore = await cookies()
   const maxAge = 60 * 60 * 24 * 30 // 30 days
+  const secure = sessionCookieSecure();
   cookieStore.set(COOKIE_NAME, token, {
     httpOnly: true,
-    secure: !!process.env.TURSO_AUTH_TOKEN,
-    sameSite: 'lax',
-    path: '/',
+    secure,
+    sameSite: "lax",
+    path: "/",
     maxAge,
-  })
+  });
   // Non-httpOnly flag cookie so client components can detect auth state
-  cookieStore.set(en.constants.cookieUI, '1', {
+  cookieStore.set(en.constants.cookieUI, "1", {
     httpOnly: false,
-    secure: !!process.env.TURSO_AUTH_TOKEN,
-    sameSite: 'lax',
-    path: '/',
+    secure,
+    sameSite: "lax",
+    path: "/",
     maxAge,
-  })
+  });
 }
 
 export async function clearSessionCookie(): Promise<void> {
@@ -128,7 +140,7 @@ export async function setOtpVerifiedCookie(email: string): Promise<void> {
   const cookieStore = await cookies()
   cookieStore.set(OTP_COOKIE_NAME, token, {
     httpOnly: true,
-    secure: !!process.env.TURSO_AUTH_TOKEN,
+    secure: sessionCookieSecure(),
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 15,

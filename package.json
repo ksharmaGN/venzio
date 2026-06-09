@@ -12,7 +12,14 @@
     "cap:sync": "cap sync",
     "cap:copy": "cap copy",
     "cap:android": "cap open android",
-    "cap:run:android": "cap run android"
+    "cap:run:android": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" cap run android",
+    "cap:build:android:debug": "JAVA_HOME=\"/Applications/Android Studio.app/Contents/jbr/Contents/Home\" cap sync android && cd android && ./gradlew assembleDebug",
+    "android:icons": "bash scripts/generate-android-icons.sh",
+    "ios:icons": "bash scripts/generate-ios-icons.sh",
+    "cap:ios": "cap open ios",
+    "cap:sync:ios": "cap sync ios && cd ios/App && pod install",
+    "cap:run:ios": "cap run ios",
+    "ios:setup": "bash scripts/setup-ios.sh"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.5",

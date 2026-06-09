@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getUserByEmail, updateUserPassword } from '@/lib/db/queries/users'
-import { verifyOtpCookie, createJwt, setSessionCookie, hashPassword } from '@/lib/auth'
+import {
+  verifyOtpCookie,
+  createJwt,
+  setSessionCookie,
+  hashPassword,
+  isNativeClientRequest,
+} from "@/lib/auth";
 import { validatePassword } from '@/lib/password'
 import { getAdminWorkspacesForUser } from '@/lib/db/queries/workspaces'
 
@@ -47,5 +53,12 @@ export async function POST(request: NextRequest) {
         ? '/ws'
         : '/me'
 
-  return NextResponse.json({ success: true, redirect })
+  const payload: { success: true; redirect: string; session_token?: string } = {
+    success: true,
+    redirect,
+  };
+  if (isNativeClientRequest(request)) {
+    payload.session_token = token;
+  }
+  return NextResponse.json(payload);
 }

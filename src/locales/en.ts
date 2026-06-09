@@ -69,7 +69,7 @@ export const en = {
       "The native Android app uses on-device reminders and office geofences — no Play Store or Google push account required. Your check-ins still go to the same Venzio account.",
     downloadApk: "Download APK",
     iosNote:
-      "On iPhone, install the Venzio PWA from Safari (Share → Add to Home Screen). App Store distribution is planned later.",
+      "On iPhone you can run the native app from Xcode with a free Apple ID (personal device, ~7-day signing) or use the PWA from Safari. See docs/NATIVE_APPS.md.",
     steps: [
       "Download the APK using the button above.",
       "When prompted, allow installs from this source (Android may call it “unknown apps”).",
@@ -85,11 +85,13 @@ export const en = {
     reminders: {
       sectionTitle: "Reminders (native app)",
       sectionIntro:
-        "On the Android app, Venzio schedules reminders on your device. Nothing tracks your live location on our servers.",
+        "On the Android or iOS app, Venzio schedules reminders on your device. Nothing tracks your live location on our servers.",
       officeArrival: "Office arrival nudges",
-      officeArrivalHelp: "When you enter an office geofence and have not checked in yet.",
+      officeArrivalHelp:
+        "When you enter an office geofence and have not checked in yet.",
       checkoutReminders: "Checkout reminders",
-      checkoutHelp: "Scheduled at 2h / 4h / 8h / 12h after check-in (based on interval below).",
+      checkoutHelp:
+        "Immediate check-in confirmation, then reminders at 4h–22h (see interval). Auto-checkout warning 15 min before T+12h.",
       intervalLabel: "Reminder interval",
       interval2h: "Every 2 hours",
       interval4h: "Every 4 hours",
@@ -324,6 +326,17 @@ export const en = {
     },
   },
 
+  native: {
+    notifications: {
+      channelCheckin: "Check-in",
+      channelCheckinDesc: "Confirmation when you check in",
+      channelReminders: "Checkout reminders",
+      channelRemindersDesc: "Stale check-in and auto-checkout reminders",
+      channelArrival: "Office arrival",
+      channelArrivalDesc: "Nudge when you are near an office geofence",
+    },
+  },
+
   constants: {
     // ── Auth cookies ──────────────────────────────────────────────────────────
     cookieSession: "vnz_session",
@@ -349,6 +362,21 @@ export const en = {
   },
 
   notifications: {
+    checkinConfirmed: {
+      title: `${brand} — checked in`,
+      body: (autoCheckoutAtLabel: string) =>
+        `You're checked in. Auto checkout at ${autoCheckoutAtLabel} unless you check out sooner.`,
+    },
+    autoCheckoutSoon: {
+      title: `${brand} — auto checkout soon`,
+      body: (autoCheckoutAtLabel: string) =>
+        `Venzio will check you out at ${autoCheckoutAtLabel} (about 15 minutes). Tap to check out yourself.`,
+    },
+    officeArrival: {
+      title: `${brand} — near the office`,
+      body: (officeName: string) =>
+        `You're near ${officeName}. Tap to check in.`,
+    },
     // Stale check-in reminders - fired at 4h, 8h, 12h, 16h, 18h, 20h, 22h after check-in
     stale: {
       4: {

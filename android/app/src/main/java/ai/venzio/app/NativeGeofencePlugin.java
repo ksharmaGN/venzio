@@ -22,6 +22,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import org.json.JSONException;
+import org.json.JSONObject;
 
 @CapacitorPlugin(name = "NativeGeofence")
 public class NativeGeofencePlugin extends Plugin {
@@ -46,15 +48,21 @@ public class NativeGeofencePlugin extends Plugin {
         }
         List<GeofenceCircle> circles = new ArrayList<>();
         for (int i = 0; i < arr.length(); i++) {
-            JSObject o = arr.getJSObject(i);
-            if (o == null) continue;
+            JSObject o;
+            try {
+                JSONObject raw = arr.getJSONObject(i);
+                o = JSObject.fromJSONObject(raw);
+            } catch (JSONException e) {
+                continue;
+            }
+            Integer radius = o.getInteger("radiusM", 300);
             circles.add(
                 new GeofenceCircle(
                     o.getString("id", "g" + i),
                     o.getString("name", "Office"),
-                    o.getDouble("lat", 0),
-                    o.getDouble("lng", 0),
-                    o.getInteger("radiusM", 300)));
+                    o.optDouble("lat", 0),
+                    o.optDouble("lng", 0),
+                    radius != null ? radius : 300));
         }
         GeofenceMonitorService.setGeofences(circlesToJson(circles));
         Context ctx = getContext();
@@ -142,7 +150,7 @@ public class NativeGeofencePlugin extends Plugin {
                 new NotificationCompat.Builder(this, CHANNEL_ID)
                     .setContentTitle("Venzio")
                     .setContentText("Monitoring office arrival for check-in reminders")
-                    .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                    .setSmallIcon(R.mipmap.ic_launcher)
                     .setOngoing(true)
                     .build());
             locationManager =

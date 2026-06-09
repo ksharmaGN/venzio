@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect } from 'react'
+import { isNativeApp } from "@/lib/client/app-channel";
 import { subscribeToPush } from '@/lib/push-client'
 
 export default function SwRegister() {
   useEffect(() => {
+    if (isNativeApp()) return;
     if (!('serviceWorker' in navigator)) return
     navigator.serviceWorker
       .register('/sw.js')

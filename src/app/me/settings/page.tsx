@@ -575,7 +575,9 @@ function LogoutSection() {
 
   async function logout() {
     setLoading(true)
-    await fetch('/api/auth/logout', { method: 'POST' })
+    const { clearNativeSession } = await import("@/lib/client/native-session");
+    await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    await clearNativeSession();
     window.location.href = '/login'
   }
 

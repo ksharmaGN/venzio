@@ -7,6 +7,12 @@ import { useIsLoggedIn } from '@/hooks/useIsLoggedIn';
 import Image from 'next/image'
 import { en } from '@/locales/en'
 import { startProgress, stopProgress } from '@/components/shared/TopProgressBar'
+import { isNativeApp } from "@/lib/client/app-channel";
+import {
+  authFetch,
+  completeAuthFromResponse,
+  restoreNativeSession,
+} from "@/lib/client/native-session";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -303,13 +309,14 @@ function PasswordStep({
     setError(null)
     startProgress()
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
-      })
+      });
       const data = await res.json()
       if (res.ok) {
+        await completeAuthFromResponse(data);
         onSuccess(data.redirect ?? '/me')
       } else {
         setError(data.error || 'Incorrect password')
@@ -404,13 +411,14 @@ function DeactivatedStep({
     setError(null)
     startProgress()
     try {
-      const res = await fetch('/api/me/reactivate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/me/reactivate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
-      })
+      });
       const data = await res.json()
       if (res.ok) {
+        await completeAuthFromResponse(data);
         onSuccess(data.redirect ?? '/me')
       } else {
         setError(data.error || 'Reactivation failed')
@@ -711,13 +719,14 @@ function ResetPasswordStep({
     setLoading(true)
     setError(null)
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, newPassword: password }),
-      })
+      });
       const data = await res.json()
       if (res.ok) {
+        await completeAuthFromResponse(data);
         onSuccess(data.redirect ?? '/me')
       } else {
         setError(data.error ?? 'Reset failed')
@@ -906,18 +915,19 @@ function PersonalSetupStep({
     setError(null)
     startProgress()
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
           full_name: fullName.trim(),
           password,
-          accountType: 'personal',
+          accountType: "personal",
         }),
-      })
+      });
       const data = await res.json()
       if (res.ok) {
+        await completeAuthFromResponse(data);
         onSuccess(data.redirect ?? '/me')
       } else {
         setError(data.error || 'Registration failed')
@@ -1091,21 +1101,22 @@ function OrgSetupStep({
     setError(null)
     startProgress()
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await authFetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email,
           full_name: fullName.trim(),
           password,
-          accountType: 'org',
+          accountType: "org",
           orgName: orgName.trim(),
           orgSlug,
           orgDomain: orgDomain.trim() || undefined,
         }),
-      })
+      });
       const data = await res.json()
       if (res.ok) {
+        await completeAuthFromResponse(data);
         onSuccess(data.redirect ?? '/ws')
       } else {
         setError(data.error || 'Registration failed')
@@ -1287,12 +1298,25 @@ function LoginFlow() {
   const [isResetFlow, setIsResetFlow] = useState(false)
 
   const isLoggedIn = useIsLoggedIn();
+
   useEffect(() => {
-     if (isLoggedIn) {
-      router.replace('/me');
-      return;
+    if (!isNativeApp()) return;
+    void restoreNativeSession().then(() => {
+      if (
+        document.cookie
+          .split(";")
+          .some((c) => c.trim().startsWith(`${en.constants.cookieUI}=`))
+      ) {
+        router.replace("/me");
+      }
+    });
+  }, [router]);
+
+  useEffect(() => {
+    if (isLoggedIn) {
+      router.replace("/me");
     }
-  },[isLoggedIn, router])
+  }, [isLoggedIn, router]);
 
   function handleSuccess(redirect: string) {
     const invite = searchParams.get('invite')

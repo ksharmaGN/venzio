@@ -14,7 +14,11 @@ import { collectDeviceInfo } from "@/lib/client/device-info";
 import { checkMockLocation, getDeviceFingerprint } from "@/lib/client/native-trust";
 import {
   cancelCheckoutReminders,
+  defaultScheduledCheckoutAt,
+  notifyCheckInConfirmed,
+  requestNativeNotificationPermission,
   scheduleCheckoutReminders,
+  syncCheckoutRemindersForOpenEvent,
 } from "@/lib/client/native-notifications";
 import { isNativeApp } from "@/lib/client/app-channel";
 
@@ -127,12 +131,53 @@ export default function CheckinButtons({
       navigator.serviceWorker.removeEventListener("message", handler);
   }, []);
 
-  async function requestNotificationPermission() {
-    if (typeof window === "undefined" || !("Notification" in window)) return;
+  async function requestNotificationPermission(): Promise<boolean> {
+    if (isNativeApp()) {
+      return requestNativeNotificationPermission();
+    }
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      return false;
+    }
     if (Notification.permission === "default") {
       await Notification.requestPermission();
     }
+    return Notification.permission === "granted";
   }
+
+  async function onCheckInSuccess(event: {
+    checkin_at: string;
+    scheduled_checkout_at?: string | null;
+  }) {
+    const granted = await requestNotificationPermission();
+    if (!granted || !event.checkin_at) return;
+    const scheduled =
+      event.scheduled_checkout_at ??
+      defaultScheduledCheckoutAt(event.checkin_at);
+    await notifyCheckInConfirmed(scheduled);
+    await scheduleCheckoutReminders(event.checkin_at, scheduled);
+  }
+
+  useEffect(() => {
+    if (
+      !isNativeApp() ||
+      !activeEvent?.checkin_at ||
+      activeEvent.checkout_at != null
+    ) {
+      return;
+    }
+    void (async () => {
+      await requestNativeNotificationPermission();
+      await syncCheckoutRemindersForOpenEvent(
+        activeEvent.checkin_at,
+        activeEvent.scheduled_checkout_at,
+      );
+    })();
+  }, [
+    activeEvent?.id,
+    activeEvent?.checkin_at,
+    activeEvent?.scheduled_checkout_at,
+    activeEvent?.checkout_at,
+  ]);
 
   function showToast(message: string, type: ToastType = "success") {
     setToast({ message, type });
@@ -224,10 +269,7 @@ export default function CheckinButtons({
       if (res.ok) {
         setState("checked_in");
         setActiveEvent(data.event);
-        await requestNotificationPermission();
-        if (data.event?.checkin_at) {
-          void scheduleCheckoutReminders(data.event.checkin_at);
-        }
+        await onCheckInSuccess(data.event);
         showToast("Checked in!", "success");
         router.refresh();
       } else if (res.status === 409) {
@@ -278,10 +320,7 @@ export default function CheckinButtons({
       if (res.ok) {
         setState("checked_in");
         setActiveEvent(data.event);
-        await requestNotificationPermission();
-        if (data.event?.checkin_at) {
-          void scheduleCheckoutReminders(data.event.checkin_at);
-        }
+        await onCheckInSuccess(data.event);
         showToast("Checked in remotely!", "success");
         router.refresh();
       } else if (res.status === 409) {

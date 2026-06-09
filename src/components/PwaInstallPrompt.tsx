@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { isNativeApp } from "@/lib/client/app-channel";
 
 interface BeforeInstallPromptEvent extends Event {
   prompt(): Promise<void>
@@ -15,6 +16,7 @@ export default function PwaInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null)
 
   useEffect(() => {
+    if (isNativeApp()) return;
     // Already installed as PWA - skip
     if (window.matchMedia('(display-mode: standalone)').matches) return
     // User dismissed before - skip

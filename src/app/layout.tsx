@@ -6,8 +6,11 @@ import type { Metadata, Viewport } from "next";
 
 import { en } from "@/locales/en";
 import SwRegister from "@/components/SwRegister";
+import NativeShellBootstrap from "@/components/NativeShellBootstrap";
 import TopProgressBar from "@/components/shared/TopProgressBar";
 import RippleProvider from "@/components/RippleProvider";
+import { headers } from "next/headers";
+import { isCapacitorUserAgent } from "@/lib/capacitor-detect";
 
 const siteUrl = new URL(
   process.env.NEXT_PUBLIC_APP_URL || `https://${en.brand.domain}`,
@@ -16,7 +19,7 @@ const siteName = `${en.brand.name} - ${en.brand.tagline}`;
 const siteDescription =
   "Venzio is a presence intelligence platform for verified office attendance, hybrid teams, and field force visit logs.";
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   metadataBase: siteUrl,
   applicationName: en.brand.name,
   title: {
@@ -39,9 +42,7 @@ export const metadata: Metadata = {
   },
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      { url: "/favicon-logo.png" },
-    ],
+    icon: [{ url: "/favicon-logo.png" }],
     apple: [
       { url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
     ],
@@ -73,6 +74,16 @@ export const metadata: Metadata = {
     images: ["/icon-512.png"],
   },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const ua = (await headers()).get("user-agent");
+  if (!isCapacitorUserAgent(ua)) return baseMetadata;
+  return {
+    ...baseMetadata,
+    manifest: undefined,
+    appleWebApp: undefined,
+  };
+}
 
 export const viewport: Viewport = {
   themeColor: "#1a1a2e",
@@ -109,6 +120,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <TopProgressBar />
+        <NativeShellBootstrap />
         <SwRegister />
         <RippleProvider />
         <script
