@@ -6,7 +6,7 @@ import type {
   EmploymentType,
   EmployeeStatus,
   SourceOfHire,
-} from '@/lib/employee-constants'
+} from '@/lib/constants/employees'
 
 export interface Employee {
   id: string
