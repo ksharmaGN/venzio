@@ -275,7 +275,6 @@ const ADDITIVE_MIGRATIONS = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_wlt_ws_name_active
    ON workspace_leave_types(workspace_id, name) WHERE deleted_at IS NULL`,
   `CREATE INDEX IF NOT EXISTS idx_wlt_workspace ON workspace_leave_types(workspace_id)`,
-  `ALTER TABLE workspace_leave_types ADD COLUMN credit_timing TEXT NOT NULL DEFAULT 'start'`,
 
   // leave_requests - employee leave submissions
   `CREATE TABLE IF NOT EXISTS leave_requests (
@@ -293,8 +292,6 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_leave_requests_ws_user
    ON leave_requests(workspace_id, user_id)`,
-  `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
-  `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
 
   // leave_cutover_date - workspace-level migration anchor date for opening balances
   `ALTER TABLE workspaces ADD COLUMN leave_cutover_date TEXT`,
@@ -313,53 +310,30 @@ const ADDITIVE_MIGRATIONS = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_lob_ws_user_type
    ON leave_opening_balances (workspace_id, user_id, leave_type_id)`,
 
-  // employees - HR employee records (Zoho People compatible)
+  // employees - core identity + contact (Zoho People compatible)
   `CREATE TABLE IF NOT EXISTS employees (
-  id                             TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  workspace_id                   TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id                        TEXT REFERENCES users(id),
-  first_name                     TEXT NOT NULL,
-  last_name                      TEXT NOT NULL,
-  gender                         TEXT CHECK(gender IN ('male','female','non_binary','prefer_not_to_say')),
-  date_of_birth                  TEXT,
-  marital_status                 TEXT CHECK(marital_status IN ('single','married','divorced','widowed','separated')),
-  number_of_children             INTEGER,
-  photo_url                      TEXT,
-  blood_group                    TEXT CHECK(blood_group IN ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
-  personal_email                 TEXT,
-  work_email                     TEXT NOT NULL,
-  phone                          TEXT,
-  alternate_phone                TEXT,
-  current_address                TEXT,
-  permanent_address              TEXT,
-  employee_id                    TEXT,
-  designation                    TEXT,
-  department                     TEXT,
-  work_location                  TEXT,
-  work_mode                      TEXT CHECK(work_mode IN ('office','remote','hybrid')),
-  reporting_manager_id           TEXT REFERENCES employees(id),
-  total_work_experience          REAL,
-  employment_type                TEXT NOT NULL CHECK(employment_type IN ('full_time','part_time','contract','intern','consultant')),
-  employee_status                TEXT NOT NULL DEFAULT 'active' CHECK(employee_status IN ('active','terminated','suspended','on_leave','notice_period')),
-  source_of_hire                 TEXT CHECK(source_of_hire IN ('direct','referral','job_portal','consultancy','campus')),
-  date_of_joining                TEXT,
-  confirmation_date              TEXT,
-  probation_end_date             TEXT,
-  exit_date                      TEXT,
-  exit_reason                    TEXT,
-  pan_encrypted                  TEXT,
-  aadhaar_encrypted              TEXT,
-  uan                            TEXT,
-  passport_number                TEXT,
-  bank_account_encrypted         TEXT,
-  bank_ifsc                      TEXT,
-  bank_name                      TEXT,
-  emergency_contact_name         TEXT,
-  emergency_contact_relationship TEXT,
-  emergency_contact_phone        TEXT,
-  deleted_at                     TEXT,
-  created_at                     TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at                     TEXT NOT NULL DEFAULT (datetime('now'))
+  id                TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id           TEXT REFERENCES users(id),
+  employee_id       TEXT,
+  first_name        TEXT NOT NULL,
+  last_name         TEXT NOT NULL,
+  gender            TEXT CHECK(gender IN ('male','female','non_binary','prefer_not_to_say')),
+  date_of_birth     TEXT,
+  marital_status    TEXT CHECK(marital_status IN ('single','married','divorced','widowed','separated')),
+  number_of_children INTEGER,
+  blood_group       TEXT CHECK(blood_group IN ('A+','A-','B+','B-','AB+','AB-','O+','O-')),
+  photo_url         TEXT,
+  personal_email    TEXT,
+  work_email        TEXT NOT NULL,
+  phone             TEXT,
+  alternate_phone   TEXT,
+  current_address   TEXT,
+  permanent_address TEXT,
+  employee_status   TEXT NOT NULL DEFAULT 'active' CHECK(employee_status IN ('active','terminated','suspended','on_leave','notice_period')),
+  deleted_at        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_ws_emp_id
    ON employees(workspace_id, employee_id)
@@ -367,15 +341,67 @@ const ADDITIVE_MIGRATIONS = [
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_ws_work_email
    ON employees(workspace_id, work_email)
    WHERE deleted_at IS NULL`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_workspace       ON employees(workspace_id, deleted_at)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_department      ON employees(workspace_id, department)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_work_location   ON employees(workspace_id, work_location)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_doj             ON employees(workspace_id, date_of_joining)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_exit_date       ON employees(workspace_id, exit_date)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_status          ON employees(workspace_id, employee_status)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_employment_type ON employees(workspace_id, employment_type)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_manager         ON employees(workspace_id, reporting_manager_id)`,
-  `CREATE INDEX IF NOT EXISTS idx_employees_user            ON employees(user_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_employees_workspace ON employees(workspace_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_employees_status    ON employees(workspace_id, employee_status)`,
+  `CREATE INDEX IF NOT EXISTS idx_employees_user      ON employees(user_id)`,
+
+  // employment_details - job/HR data (1:1 with employees, ready for history later)
+  `CREATE TABLE IF NOT EXISTS employment_details (
+  id                    TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  employee_id           TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+  workspace_id          TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  designation           TEXT,
+  department            TEXT,
+  work_location         TEXT,
+  work_mode             TEXT CHECK(work_mode IN ('office','remote','hybrid')),
+  reporting_manager_id  TEXT REFERENCES employees(id),
+  employment_type       TEXT CHECK(employment_type IN ('full_time','part_time','contract','intern','consultant')),
+  source_of_hire        TEXT CHECK(source_of_hire IN ('direct','referral','job_portal','consultancy','campus')),
+  total_work_experience REAL,
+  date_of_joining       TEXT,
+  confirmation_date     TEXT,
+  probation_end_date    TEXT,
+  exit_date             TEXT,
+  exit_reason           TEXT,
+  created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_employee ON employment_details(employee_id)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_dept     ON employment_details(workspace_id, department)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_location ON employment_details(workspace_id, work_location)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_doj      ON employment_details(workspace_id, date_of_joining)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_exit     ON employment_details(workspace_id, exit_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_type     ON employment_details(workspace_id, employment_type)`,
+  `CREATE INDEX IF NOT EXISTS idx_employment_details_manager  ON employment_details(workspace_id, reporting_manager_id)`,
+
+  // employee_sensitive - financial + statutory IDs, all AES-256-GCM encrypted (1:1 with employees)
+  `CREATE TABLE IF NOT EXISTS employee_sensitive (
+  id                     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  employee_id            TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+  workspace_id           TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  pan_encrypted          TEXT,
+  aadhaar_encrypted      TEXT,
+  uan                    TEXT,
+  passport_number        TEXT,
+  bank_account_encrypted TEXT,
+  bank_ifsc              TEXT,
+  bank_name              TEXT,
+  created_at             TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_employee_sensitive_employee ON employee_sensitive(employee_id)`,
+
+  // employee_emergency_contacts - M:1 with employees (multiple contacts per employee)
+  `CREATE TABLE IF NOT EXISTS employee_emergency_contacts (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  employee_id  TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,
+  relationship TEXT,
+  phone        TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_emp_emergency_contacts_employee ON employee_emergency_contacts(employee_id)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
@@ -416,7 +442,12 @@ function runSQLite() {
       ran++;
     } catch (err) {
       const msg = err.message ?? "";
-      if (msg.includes("duplicate column") || msg.includes("already exists")) {
+      const isDropColumn = stmt.trim().toUpperCase().includes('DROP COLUMN')
+      if (
+        msg.includes("duplicate column") ||
+        msg.includes("already exists") ||
+        (isDropColumn && msg.includes("no such column"))
+      ) {
         skipped++;
       } else {
         console.error(`Failed:\n${stmt}\n`, err);
@@ -452,7 +483,12 @@ async function runTurso() {
     try { await client.execute(stmt); ran++ }
     catch (err) {
       const msg = err.message ?? ''
-      if (msg.includes('duplicate column') || msg.includes('already exists')) { skipped++ }
+      const isDropColumn = stmt.trim().toUpperCase().includes('DROP COLUMN')
+      if (
+        msg.includes('duplicate column') ||
+        msg.includes('already exists') ||
+        (isDropColumn && msg.includes('no such column'))
+      ) { skipped++ }
       else { console.error(`Failed:\n${stmt}\n`, err); process.exit(1) }
     }
   }
