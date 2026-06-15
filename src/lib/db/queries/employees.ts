@@ -8,7 +8,7 @@ import type {
   EmployeePublic,
   CreateEmployeeInput,
   UpdateEmployeeInput,
-} from './employee-types'
+} from '@/lib/types/employees'
 
 export type {
   Employee,
@@ -18,7 +18,7 @@ export type {
   EmployeePublic,
   CreateEmployeeInput,
   UpdateEmployeeInput,
-} from './employee-types'
+} from '@/lib/types/employees'
 
 // ─── Internal raw DB types ────────────────────────────────────────────────────
 
