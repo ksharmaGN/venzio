@@ -2,50 +2,34 @@ import { randomBytes } from 'crypto'
 import { db } from '../index'
 import { encryptFieldOrNull, decryptFieldOrNull } from '@/lib/encryption'
 import type {
-  Gender,
-  MaritalStatus,
-  BloodGroup,
-  WorkMode,
-  EmploymentType,
-  EmployeeStatus,
-  SourceOfHire,
-} from '@/lib/employee-constants'
+  Employee,
+  EmergencyContact,
+  EmploymentInfo,
+  EmployeePublic,
+  CreateEmployeeInput,
+  UpdateEmployeeInput,
+} from './employee-types'
 
-// ─── Raw types ────────────────────────────────────────────────────────────────
+export type {
+  Employee,
+  EmergencyContact,
+  EmploymentInfo,
+  EmployeeSensitiveInfo,
+  EmployeePublic,
+  CreateEmployeeInput,
+  UpdateEmployeeInput,
+} from './employee-types'
 
-export interface Employee {
-  id: string
-  workspace_id: string
-  user_id: string | null
-  employee_id: string | null
-  first_name: string
-  last_name: string
-  gender: Gender | null
-  date_of_birth: string | null
-  marital_status: MaritalStatus | null
-  number_of_children: number | null
-  blood_group: BloodGroup | null
-  photo_url: string | null
-  personal_email: string | null
-  work_email: string
-  phone: string | null
-  alternate_phone: string | null
-  current_address: string | null
-  permanent_address: string | null
-  employee_status: EmployeeStatus
-  deleted_at: string | null
-  created_at: string
-  updated_at: string
-}
+// ─── Internal raw DB types ────────────────────────────────────────────────────
 
 interface EmploymentDetailsRow {
   designation: string | null
   department: string | null
   work_location: string | null
-  work_mode: WorkMode | null
+  work_mode: string | null
   reporting_manager_id: string | null
-  employment_type: EmploymentType | null
-  source_of_hire: SourceOfHire | null
+  employment_type: string | null
+  source_of_hire: string | null
   total_work_experience: number | null
   date_of_joining: string | null
   confirmation_date: string | null
@@ -65,46 +49,6 @@ interface EmployeeSensitiveRow {
 }
 
 type EmployeeRow = Employee & EmploymentDetailsRow & EmployeeSensitiveRow
-
-export interface EmergencyContact {
-  id: string
-  name: string
-  relationship: string | null
-  phone: string
-}
-
-export interface EmploymentInfo {
-  designation: string | null
-  department: string | null
-  work_location: string | null
-  work_mode: WorkMode | null
-  reporting_manager_id: string | null
-  employment_type: EmploymentType | null
-  source_of_hire: SourceOfHire | null
-  total_work_experience: number | null
-  date_of_joining: string | null
-  confirmation_date: string | null
-  probation_end_date: string | null
-  exit_date: string | null
-  exit_reason: string | null
-}
-
-export interface EmployeeSensitiveInfo {
-  pan: string | null
-  aadhaar: string | null
-  uan: string | null
-  passport_number: string | null
-  bank_account: string | null
-  bank_ifsc: string | null
-  bank_name: string | null
-}
-
-export interface EmployeePublic extends Employee {
-  employment: EmploymentInfo
-  sensitive: EmployeeSensitiveInfo | null  // null in list views (not fetched)
-  age: number | null
-  emergency_contacts: EmergencyContact[]
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -132,10 +76,10 @@ function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts:
       designation: row.designation ?? null,
       department: row.department ?? null,
       work_location: row.work_location ?? null,
-      work_mode: row.work_mode ?? null,
+      work_mode: row.work_mode as EmploymentInfo['work_mode'],
       reporting_manager_id: row.reporting_manager_id ?? null,
-      employment_type: row.employment_type ?? null,
-      source_of_hire: row.source_of_hire ?? null,
+      employment_type: row.employment_type as EmploymentInfo['employment_type'],
+      source_of_hire: row.source_of_hire as EmploymentInfo['source_of_hire'],
       total_work_experience: row.total_work_experience ?? null,
       date_of_joining: row.date_of_joining ?? null,
       confirmation_date: row.confirmation_date ?? null,
@@ -156,6 +100,50 @@ function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts:
     emergency_contacts: emergencyContacts,
   }
 }
+
+type FieldMap = Array<[key: string, col: string, transform?: (v: unknown) => unknown]>
+
+function buildSets(input: Record<string, unknown>, fields: FieldMap): { sets: string[]; params: unknown[] } {
+  const sets: string[] = []
+  const params: unknown[] = []
+  for (const [key, col, transform] of fields) {
+    if (key in input) {
+      sets.push(`${col} = ?`)
+      params.push(transform ? transform(input[key]) : input[key])
+    }
+  }
+  return { sets, params }
+}
+
+const EMPLOYEE_FIELDS: FieldMap = [
+  ['user_id', 'user_id'], ['employee_id', 'employee_id'],
+  ['first_name', 'first_name'], ['last_name', 'last_name'],
+  ['gender', 'gender'], ['date_of_birth', 'date_of_birth'],
+  ['marital_status', 'marital_status'], ['number_of_children', 'number_of_children'],
+  ['blood_group', 'blood_group'], ['photo_url', 'photo_url'],
+  ['personal_email', 'personal_email'], ['work_email', 'work_email'],
+  ['phone', 'phone'], ['alternate_phone', 'alternate_phone'],
+  ['current_address', 'current_address'], ['permanent_address', 'permanent_address'],
+  ['employee_status', 'employee_status'],
+]
+
+const EMPLOYMENT_FIELDS: FieldMap = [
+  ['designation', 'designation'], ['department', 'department'],
+  ['work_location', 'work_location'], ['work_mode', 'work_mode'],
+  ['reporting_manager_id', 'reporting_manager_id'], ['employment_type', 'employment_type'],
+  ['source_of_hire', 'source_of_hire'], ['total_work_experience', 'total_work_experience'],
+  ['date_of_joining', 'date_of_joining'], ['confirmation_date', 'confirmation_date'],
+  ['probation_end_date', 'probation_end_date'], ['exit_date', 'exit_date'],
+  ['exit_reason', 'exit_reason'],
+]
+
+const SENSITIVE_FIELDS: FieldMap = [
+  ['pan', 'pan_encrypted', v => encryptFieldOrNull(v as string | null)],
+  ['aadhaar', 'aadhaar_encrypted', v => encryptFieldOrNull(v as string | null)],
+  ['bank_account', 'bank_account_encrypted', v => encryptFieldOrNull(v as string | null)],
+  ['uan', 'uan'], ['passport_number', 'passport_number'],
+  ['bank_ifsc', 'bank_ifsc'], ['bank_name', 'bank_name'],
+]
 
 const EMPLOYMENT_JOIN = `
   LEFT JOIN employment_details ed ON ed.employee_id = e.id
@@ -239,48 +227,6 @@ export async function findEmployeeByWorkEmail(
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
-export interface CreateEmployeeInput {
-  workspace_id: string
-  user_id?: string | null
-  employee_id?: string | null
-  first_name: string
-  last_name: string
-  work_email: string
-  employee_status?: EmployeeStatus
-  gender?: Gender | null
-  date_of_birth?: string | null
-  marital_status?: MaritalStatus | null
-  number_of_children?: number | null
-  blood_group?: BloodGroup | null
-  photo_url?: string | null
-  personal_email?: string | null
-  phone?: string | null
-  alternate_phone?: string | null
-  current_address?: string | null
-  permanent_address?: string | null
-  designation?: string | null
-  department?: string | null
-  work_location?: string | null
-  work_mode?: WorkMode | null
-  reporting_manager_id?: string | null
-  employment_type?: EmploymentType | null
-  source_of_hire?: SourceOfHire | null
-  total_work_experience?: number | null
-  date_of_joining?: string | null
-  confirmation_date?: string | null
-  probation_end_date?: string | null
-  exit_date?: string | null
-  exit_reason?: string | null
-  pan?: string | null
-  aadhaar?: string | null
-  uan?: string | null
-  passport_number?: string | null
-  bank_account?: string | null
-  bank_ifsc?: string | null
-  bank_name?: string | null
-  emergency_contacts?: Array<{ name: string; relationship?: string | null; phone: string }>
-}
-
 export async function createEmployee(input: CreateEmployeeInput): Promise<EmployeePublic> {
   const id = randomBytes(16).toString('hex')
 
@@ -354,97 +300,42 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
 
 // ─── Update ───────────────────────────────────────────────────────────────────
 
-export type UpdateEmployeeInput = Partial<Omit<CreateEmployeeInput, 'workspace_id' | 'emergency_contacts'>>
-
 export async function updateEmployee(
   id: string,
   workspaceId: string,
   input: UpdateEmployeeInput,
 ): Promise<EmployeePublic | null> {
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19)
+  const raw = input as Record<string, unknown>
 
-  const eSets: string[] = []
-  const eParams: unknown[] = []
-  const eSet = (col: string, val: unknown) => { eSets.push(`${col} = ?`); eParams.push(val) }
+  const e = buildSets(raw, EMPLOYEE_FIELDS)
+  const d = buildSets(raw, EMPLOYMENT_FIELDS)
+  const s = buildSets(raw, SENSITIVE_FIELDS)
 
-  if (input.user_id !== undefined)            eSet('user_id', input.user_id)
-  if (input.employee_id !== undefined)        eSet('employee_id', input.employee_id)
-  if (input.first_name !== undefined)         eSet('first_name', input.first_name)
-  if (input.last_name !== undefined)          eSet('last_name', input.last_name)
-  if (input.gender !== undefined)             eSet('gender', input.gender)
-  if (input.date_of_birth !== undefined)      eSet('date_of_birth', input.date_of_birth)
-  if (input.marital_status !== undefined)     eSet('marital_status', input.marital_status)
-  if (input.number_of_children !== undefined) eSet('number_of_children', input.number_of_children)
-  if (input.blood_group !== undefined)        eSet('blood_group', input.blood_group)
-  if (input.photo_url !== undefined)          eSet('photo_url', input.photo_url)
-  if (input.personal_email !== undefined)     eSet('personal_email', input.personal_email)
-  if (input.work_email !== undefined)         eSet('work_email', input.work_email)
-  if (input.phone !== undefined)              eSet('phone', input.phone)
-  if (input.alternate_phone !== undefined)    eSet('alternate_phone', input.alternate_phone)
-  if (input.current_address !== undefined)    eSet('current_address', input.current_address)
-  if (input.permanent_address !== undefined)  eSet('permanent_address', input.permanent_address)
-  if (input.employee_status !== undefined)    eSet('employee_status', input.employee_status)
-
-  const dSets: string[] = []
-  const dParams: unknown[] = []
-  const dSet = (col: string, val: unknown) => { dSets.push(`${col} = ?`); dParams.push(val) }
-
-  if (input.designation !== undefined)            dSet('designation', input.designation)
-  if (input.department !== undefined)             dSet('department', input.department)
-  if (input.work_location !== undefined)          dSet('work_location', input.work_location)
-  if (input.work_mode !== undefined)              dSet('work_mode', input.work_mode)
-  if (input.reporting_manager_id !== undefined)   dSet('reporting_manager_id', input.reporting_manager_id)
-  if (input.employment_type !== undefined)        dSet('employment_type', input.employment_type)
-  if (input.source_of_hire !== undefined)         dSet('source_of_hire', input.source_of_hire)
-  if (input.total_work_experience !== undefined)  dSet('total_work_experience', input.total_work_experience)
-  if (input.date_of_joining !== undefined)        dSet('date_of_joining', input.date_of_joining)
-  if (input.confirmation_date !== undefined)      dSet('confirmation_date', input.confirmation_date)
-  if (input.probation_end_date !== undefined)     dSet('probation_end_date', input.probation_end_date)
-  if (input.exit_date !== undefined)              dSet('exit_date', input.exit_date)
-  if (input.exit_reason !== undefined)            dSet('exit_reason', input.exit_reason)
-
-  const sSets: string[] = []
-  const sParams: unknown[] = []
-  const sSet = (col: string, val: unknown) => { sSets.push(`${col} = ?`); sParams.push(val) }
-
-  if (input.pan !== undefined)              sSet('pan_encrypted', encryptFieldOrNull(input.pan))
-  if (input.aadhaar !== undefined)          sSet('aadhaar_encrypted', encryptFieldOrNull(input.aadhaar))
-  if (input.uan !== undefined)              sSet('uan', input.uan)
-  if (input.passport_number !== undefined)  sSet('passport_number', input.passport_number)
-  if (input.bank_account !== undefined)     sSet('bank_account_encrypted', encryptFieldOrNull(input.bank_account))
-  if (input.bank_ifsc !== undefined)        sSet('bank_ifsc', input.bank_ifsc)
-  if (input.bank_name !== undefined)        sSet('bank_name', input.bank_name)
-
-  if (eSets.length === 0 && dSets.length === 0 && sSets.length === 0) {
+  if (e.sets.length === 0 && d.sets.length === 0 && s.sets.length === 0) {
     return getEmployee(id, workspaceId)
   }
 
   await db.transaction(async (txDb) => {
-    if (eSets.length > 0) {
-      eSets.push('updated_at = ?')
-      eParams.push(now, id, workspaceId)
+    if (e.sets.length > 0) {
       await txDb.execute(
-        `UPDATE employees SET ${eSets.join(', ')}
+        `UPDATE employees SET ${[...e.sets, 'updated_at = ?'].join(', ')}
          WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
-        eParams,
+        [...e.params, now, id, workspaceId],
       )
     }
-    if (dSets.length > 0) {
-      dSets.push('updated_at = ?')
-      dParams.push(now, id, workspaceId)
+    if (d.sets.length > 0) {
       await txDb.execute(
-        `UPDATE employment_details SET ${dSets.join(', ')}
+        `UPDATE employment_details SET ${[...d.sets, 'updated_at = ?'].join(', ')}
          WHERE employee_id = ? AND workspace_id = ?`,
-        dParams,
+        [...d.params, now, id, workspaceId],
       )
     }
-    if (sSets.length > 0) {
-      sSets.push('updated_at = ?')
-      sParams.push(now, id, workspaceId)
+    if (s.sets.length > 0) {
       await txDb.execute(
-        `UPDATE employee_sensitive SET ${sSets.join(', ')}
+        `UPDATE employee_sensitive SET ${[...s.sets, 'updated_at = ?'].join(', ')}
          WHERE employee_id = ? AND workspace_id = ?`,
-        sParams,
+        [...s.params, now, id, workspaceId],
       )
     }
   })
