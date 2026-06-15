@@ -312,6 +312,23 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_lob_ws_user_type
    ON leave_opening_balances (workspace_id, user_id, leave_type_id)`,
+
+  // notifications - in-app notification feed
+  `CREATE TABLE IF NOT EXISTS notifications (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  type         TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  ref_id       TEXT,
+  ref_type     TEXT,
+  read_at      TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_user_list ON notifications(user_id, created_at DESC)`,
+  `CREATE INDEX IF NOT EXISTS idx_notifications_workspace ON notifications(workspace_id, created_at DESC)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
