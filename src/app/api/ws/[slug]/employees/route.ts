@@ -155,9 +155,11 @@ function buildOptionalFields(body: Record<string, unknown>): Partial<CreateEmplo
     aadhaar:               pick(body, 'aadhaar'),
     uan:                   pick(body, 'uan'),
     passport_number:       pick(body, 'passport_number'),
-    bank_account:          pick(body, 'bank_account'),
-    bank_ifsc:             pick(body, 'bank_ifsc'),
-    bank_name:             pick(body, 'bank_name'),
-    emergency_contacts:    pick(body, 'emergency_contacts'),
+    bank_account:                   pick(body, 'bank_account'),
+    bank_ifsc:                      pick(body, 'bank_ifsc'),
+    bank_name:                      pick(body, 'bank_name'),
+    emergency_contact_name:         pick(body, 'emergency_contact_name'),
+    emergency_contact_relationship: pick(body, 'emergency_contact_relationship'),
+    emergency_contact_phone:        pick(body, 'emergency_contact_phone'),
   }
 }

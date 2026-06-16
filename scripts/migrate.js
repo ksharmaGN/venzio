@@ -330,10 +330,13 @@ const ADDITIVE_MIGRATIONS = [
   alternate_phone   TEXT,
   current_address   TEXT,
   permanent_address TEXT,
-  employee_status   TEXT NOT NULL DEFAULT 'active' CHECK(employee_status IN ('active','terminated','suspended','on_leave','notice_period')),
-  deleted_at        TEXT,
-  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  employee_status              TEXT NOT NULL DEFAULT 'active' CHECK(employee_status IN ('active','terminated','suspended','on_leave','notice_period')),
+  emergency_contact_name       TEXT,
+  emergency_contact_relationship TEXT,
+  emergency_contact_phone      TEXT,
+  deleted_at                   TEXT,
+  created_at                   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at                   TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_ws_emp_id
    ON employees(workspace_id, employee_id)
@@ -391,17 +394,6 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_employee_sensitive_employee ON employee_sensitive(employee_id)`,
 
-  // employee_emergency_contacts - M:1 with employees (multiple contacts per employee)
-  `CREATE TABLE IF NOT EXISTS employee_emergency_contacts (
-  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  employee_id  TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
-  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  name         TEXT NOT NULL,
-  relationship TEXT,
-  phone        TEXT NOT NULL,
-  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
-)`,
-  `CREATE INDEX IF NOT EXISTS idx_emp_emergency_contacts_employee ON employee_emergency_contacts(employee_id)`,
   // notifications - in-app notification feed
   `CREATE TABLE IF NOT EXISTS notifications (
   id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

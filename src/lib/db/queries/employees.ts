@@ -3,7 +3,6 @@ import { db } from '../index'
 import { encryptFieldOrNull, decryptFieldOrNull } from '@/lib/encryption'
 import type {
   Employee,
-  EmergencyContact,
   EmploymentInfo,
   EmployeePublic,
   CreateEmployeeInput,
@@ -12,7 +11,6 @@ import type {
 
 export type {
   Employee,
-  EmergencyContact,
   EmploymentInfo,
   EmployeeSensitiveInfo,
   EmployeePublic,
@@ -66,7 +64,7 @@ function computeAge(dob: string | null): number | null {
   return age
 }
 
-export function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts: EmergencyContact[] = []): EmployeePublic {
+export function toPublic(row: EmployeeRow, includeSensitive = false): EmployeePublic {
   return {
     id: row.id, workspace_id: row.workspace_id, user_id: row.user_id,
     employee_id: row.employee_id, first_name: row.first_name, last_name: row.last_name,
@@ -75,6 +73,9 @@ export function toPublic(row: EmployeeRow, includeSensitive = false, emergencyCo
     photo_url: row.photo_url, personal_email: row.personal_email, work_email: row.work_email,
     phone: row.phone, alternate_phone: row.alternate_phone, current_address: row.current_address,
     permanent_address: row.permanent_address, employee_status: row.employee_status,
+    emergency_contact_name: row.emergency_contact_name ?? null,
+    emergency_contact_relationship: row.emergency_contact_relationship ?? null,
+    emergency_contact_phone: row.emergency_contact_phone ?? null,
     deleted_at: row.deleted_at, created_at: row.created_at, updated_at: row.updated_at,
     employment: {
       designation: row.designation ?? null,
@@ -101,7 +102,6 @@ export function toPublic(row: EmployeeRow, includeSensitive = false, emergencyCo
       bank_name: row.bank_name ?? null,
     } : null,
     age: computeAge(row.date_of_birth),
-    emergency_contacts: emergencyContacts,
   }
 }
 
@@ -129,6 +129,9 @@ const EMPLOYEE_FIELDS: FieldMap = [
   ['phone', 'phone'], ['alternate_phone', 'alternate_phone'],
   ['current_address', 'current_address'], ['permanent_address', 'permanent_address'],
   ['employee_status', 'employee_status'],
+  ['emergency_contact_name', 'emergency_contact_name'],
+  ['emergency_contact_relationship', 'emergency_contact_relationship'],
+  ['emergency_contact_phone', 'emergency_contact_phone'],
 ]
 
 const EMPLOYMENT_FIELDS: FieldMap = [
@@ -161,14 +164,6 @@ export const EMPLOYMENT_COLS = `
   es.pan_encrypted, es.aadhaar_encrypted, es.uan, es.passport_number,
   es.bank_account_encrypted, es.bank_ifsc, es.bank_name`
 
-export async function fetchEmergencyContacts(employeeId: string, workspaceId: string): Promise<EmergencyContact[]> {
-  return db.query<EmergencyContact>(
-    `SELECT id, name, relationship, phone FROM employee_emergency_contacts
-     WHERE employee_id = ? AND workspace_id = ?`,
-    [employeeId, workspaceId],
-  )
-}
-
 // ─── Reads ────────────────────────────────────────────────────────────────────
 
 export async function getEmployee(id: string, workspaceId: string): Promise<EmployeePublic | null> {
@@ -178,9 +173,7 @@ export async function getEmployee(id: string, workspaceId: string): Promise<Empl
      WHERE e.id = ? AND e.workspace_id = ? AND e.deleted_at IS NULL`,
     [id, workspaceId],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 export async function findEmployeeByEmployeeId(
@@ -193,9 +186,7 @@ export async function findEmployeeByEmployeeId(
      WHERE e.workspace_id = ? AND e.employee_id = ? AND e.deleted_at IS NULL`,
     [workspaceId, employeeId],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(row.id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 export async function findEmployeeByWorkEmail(
@@ -208,9 +199,7 @@ export async function findEmployeeByWorkEmail(
      WHERE e.workspace_id = ? AND e.work_email = ? AND e.deleted_at IS NULL`,
     [workspaceId, workEmail],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(row.id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
@@ -225,8 +214,9 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         first_name, last_name, gender, date_of_birth, marital_status,
         number_of_children, blood_group, photo_url,
         personal_email, work_email, phone, alternate_phone,
-        current_address, permanent_address, employee_status
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        current_address, permanent_address, employee_status,
+        emergency_contact_name, emergency_contact_relationship, emergency_contact_phone
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, input.workspace_id, input.user_id ?? null, input.employee_id ?? null,
         input.first_name, input.last_name, input.gender ?? null, input.date_of_birth ?? null,
@@ -236,6 +226,9 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         input.phone ?? null, input.alternate_phone ?? null,
         input.current_address ?? null, input.permanent_address ?? null,
         input.employee_status ?? 'active',
+        input.emergency_contact_name ?? null,
+        input.emergency_contact_relationship ?? null,
+        input.emergency_contact_phone ?? null,
       ],
     )
 
@@ -272,14 +265,6 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
       ],
     )
 
-    for (const ec of input.emergency_contacts ?? []) {
-      await txDb.execute(
-        `INSERT INTO employee_emergency_contacts
-         (id, employee_id, workspace_id, name, relationship, phone)
-         VALUES (?,?,?,?,?,?)`,
-        [generateId(), id, input.workspace_id, ec.name, ec.relationship ?? null, ec.phone],
-      )
-    }
   })
 
   const created = await getEmployee(id, input.workspace_id)
