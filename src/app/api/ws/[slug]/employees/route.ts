@@ -7,8 +7,7 @@ import {
 } from '@/lib/db/queries/employees'
 import { listEmployeesPaged } from '@/lib/db/queries/employees-list'
 import type { CreateEmployeeInput } from '@/lib/types/employees'
-import { EMPLOYEE_STATUS_VALUES } from '@/lib/constants/employees'
-import type { EmployeeStatus } from '@/lib/constants/employees'
+import { EmployeeStatus } from '@/lib/constants/employees'
 import { validateEmployeeFields } from './_validate'
 
 interface Props { params: Promise<{ slug: string }> }
@@ -26,7 +25,7 @@ export async function GET(req: NextRequest, { params }: Props) {
   const department = sp.get('department') ?? undefined
   const location   = sp.get('location') ?? undefined
   const statusParam = sp.get('status')
-  const status = statusParam && EMPLOYEE_STATUS_VALUES.includes(statusParam as EmployeeStatus)
+  const status = statusParam && (Object.values(EmployeeStatus) as string[]).includes(statusParam)
     ? (statusParam as EmployeeStatus)
     : undefined
   const include_archived = sp.get('include_archived') === 'true'

@@ -8,7 +8,7 @@ import {
   findEmployeeByWorkEmail,
 } from '@/lib/db/queries/employees'
 import type { UpdateEmployeeInput } from '@/lib/types/employees'
-import { validateEmployeeFields } from '../_validate'
+import { validateEmployeeFields, FieldErrorCode } from '../_validate'
 
 interface Props { params: Promise<{ slug: string; id: string }> }
 
@@ -120,14 +120,14 @@ export async function DELETE(req: NextRequest, { params }: Props) {
   const exitReason = typeof body.exit_reason === 'string' ? body.exit_reason.trim() : ''
 
   if (!exitDate) {
-    fieldErrors.exit_date = 'REQUIRED'
+    fieldErrors.exit_date = FieldErrorCode.REQUIRED
   } else if (!DATE_RE.test(exitDate)) {
-    fieldErrors.exit_date = 'INVALID_FORMAT'
+    fieldErrors.exit_date = FieldErrorCode.INVALID_FORMAT
   } else if (existing.employment.date_of_joining && exitDate < existing.employment.date_of_joining) {
-    fieldErrors.exit_date = 'MUST_BE_AFTER_DOJ'
+    fieldErrors.exit_date = FieldErrorCode.MUST_BE_AFTER_DOJ
   }
 
-  if (!exitReason) fieldErrors.exit_reason = 'REQUIRED'
+  if (!exitReason) fieldErrors.exit_reason = FieldErrorCode.REQUIRED
 
   if (Object.keys(fieldErrors).length > 0) {
     return NextResponse.json(

@@ -105,51 +105,50 @@ export function toPublic(row: EmployeeRow, includeSensitive = false): EmployeePu
   }
 }
 
-type FieldMap = Array<[key: string, col: string, transform?: (v: unknown) => unknown]>
+type FieldMap = Array<[key: string, col?: string, transform?: (v: unknown) => unknown]>
 
 function buildSets(input: Record<string, unknown>, fields: FieldMap): { sets: string[]; params: unknown[] } {
   const sets: string[] = []
   const params: unknown[] = []
   for (const [key, col, transform] of fields) {
-    if (key in input && input[key] !== undefined) {
-      sets.push(`${col} = ?`)
-      params.push(transform ? transform(input[key]) : input[key])
-    }
+    if (input[key] === undefined) continue
+    sets.push(`${col ?? key} = ?`)
+    params.push(transform ? transform(input[key]) : input[key])
   }
   return { sets, params }
 }
 
 const EMPLOYEE_FIELDS: FieldMap = [
-  ['user_id', 'user_id'], ['employee_id', 'employee_id'],
-  ['first_name', 'first_name'], ['last_name', 'last_name'],
-  ['gender', 'gender'], ['date_of_birth', 'date_of_birth'],
-  ['marital_status', 'marital_status'], ['number_of_children', 'number_of_children'],
-  ['blood_group', 'blood_group'], ['photo_url', 'photo_url'],
-  ['personal_email', 'personal_email'], ['work_email', 'work_email'],
-  ['phone', 'phone'], ['alternate_phone', 'alternate_phone'],
-  ['current_address', 'current_address'], ['permanent_address', 'permanent_address'],
-  ['employee_status', 'employee_status'],
-  ['emergency_contact_name', 'emergency_contact_name'],
-  ['emergency_contact_relationship', 'emergency_contact_relationship'],
-  ['emergency_contact_phone', 'emergency_contact_phone'],
+  ['user_id'], ['employee_id'],
+  ['first_name'], ['last_name'],
+  ['gender'], ['date_of_birth'],
+  ['marital_status'], ['number_of_children'],
+  ['blood_group'], ['photo_url'],
+  ['personal_email'], ['work_email'],
+  ['phone'], ['alternate_phone'],
+  ['current_address'], ['permanent_address'],
+  ['employee_status'],
+  ['emergency_contact_name'],
+  ['emergency_contact_relationship'],
+  ['emergency_contact_phone'],
 ]
 
 const EMPLOYMENT_FIELDS: FieldMap = [
-  ['designation', 'designation'], ['department', 'department'],
-  ['work_location', 'work_location'], ['work_mode', 'work_mode'],
-  ['reporting_manager_id', 'reporting_manager_id'], ['employment_type', 'employment_type'],
-  ['source_of_hire', 'source_of_hire'], ['total_work_experience', 'total_work_experience'],
-  ['date_of_joining', 'date_of_joining'], ['confirmation_date', 'confirmation_date'],
-  ['probation_end_date', 'probation_end_date'], ['exit_date', 'exit_date'],
-  ['exit_reason', 'exit_reason'],
+  ['designation'], ['department'],
+  ['work_location'], ['work_mode'],
+  ['reporting_manager_id'], ['employment_type'],
+  ['source_of_hire'], ['total_work_experience'],
+  ['date_of_joining'], ['confirmation_date'],
+  ['probation_end_date'], ['exit_date'],
+  ['exit_reason'],
 ]
 
 const SENSITIVE_FIELDS: FieldMap = [
   ['pan', 'pan_encrypted', v => encryptFieldOrNull(v as string | null)],
   ['aadhaar', 'aadhaar_encrypted', v => encryptFieldOrNull(v as string | null)],
   ['bank_account', 'bank_account_encrypted', v => encryptFieldOrNull(v as string | null)],
-  ['uan', 'uan'], ['passport_number', 'passport_number'],
-  ['bank_ifsc', 'bank_ifsc'], ['bank_name', 'bank_name'],
+  ['uan'], ['passport_number'],
+  ['bank_ifsc'], ['bank_name'],
 ]
 
 export const EMPLOYMENT_JOIN = `
