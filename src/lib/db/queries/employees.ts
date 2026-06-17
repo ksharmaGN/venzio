@@ -3,7 +3,6 @@ import { db } from '../index'
 import { encryptFieldOrNull, decryptFieldOrNull } from '@/lib/encryption'
 import type {
   Employee,
-  EmergencyContact,
   EmploymentInfo,
   EmployeePublic,
   CreateEmployeeInput,
@@ -12,7 +11,6 @@ import type {
 
 export type {
   Employee,
-  EmergencyContact,
   EmploymentInfo,
   EmployeeSensitiveInfo,
   EmployeePublic,
@@ -48,9 +46,13 @@ interface EmployeeSensitiveRow {
   bank_name: string | null
 }
 
-type EmployeeRow = Employee & EmploymentDetailsRow & EmployeeSensitiveRow
+export type EmployeeRow = Employee & EmploymentDetailsRow & EmployeeSensitiveRow
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function generateId(): string {
+  return randomBytes(16).toString('hex')
+}
 
 function computeAge(dob: string | null): number | null {
   if (!dob) return null
@@ -62,7 +64,7 @@ function computeAge(dob: string | null): number | null {
   return age
 }
 
-function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts: EmergencyContact[] = []): EmployeePublic {
+export function toPublic(row: EmployeeRow, includeSensitive = false): EmployeePublic {
   return {
     id: row.id, workspace_id: row.workspace_id, user_id: row.user_id,
     employee_id: row.employee_id, first_name: row.first_name, last_name: row.last_name,
@@ -71,6 +73,9 @@ function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts:
     photo_url: row.photo_url, personal_email: row.personal_email, work_email: row.work_email,
     phone: row.phone, alternate_phone: row.alternate_phone, current_address: row.current_address,
     permanent_address: row.permanent_address, employee_status: row.employee_status,
+    emergency_contact_name: row.emergency_contact_name ?? null,
+    emergency_contact_relationship: row.emergency_contact_relationship ?? null,
+    emergency_contact_phone: row.emergency_contact_phone ?? null,
     deleted_at: row.deleted_at, created_at: row.created_at, updated_at: row.updated_at,
     employment: {
       designation: row.designation ?? null,
@@ -97,59 +102,60 @@ function toPublic(row: EmployeeRow, includeSensitive = false, emergencyContacts:
       bank_name: row.bank_name ?? null,
     } : null,
     age: computeAge(row.date_of_birth),
-    emergency_contacts: emergencyContacts,
   }
 }
 
-type FieldMap = Array<[key: string, col: string, transform?: (v: unknown) => unknown]>
+type FieldMap = Array<[key: string, col?: string, transform?: (v: unknown) => unknown]>
 
 function buildSets(input: Record<string, unknown>, fields: FieldMap): { sets: string[]; params: unknown[] } {
   const sets: string[] = []
   const params: unknown[] = []
   for (const [key, col, transform] of fields) {
-    if (key in input) {
-      sets.push(`${col} = ?`)
-      params.push(transform ? transform(input[key]) : input[key])
-    }
+    if (input[key] === undefined) continue
+    sets.push(`${col ?? key} = ?`)
+    params.push(transform ? transform(input[key]) : input[key])
   }
   return { sets, params }
 }
 
 const EMPLOYEE_FIELDS: FieldMap = [
-  ['user_id', 'user_id'], ['employee_id', 'employee_id'],
-  ['first_name', 'first_name'], ['last_name', 'last_name'],
-  ['gender', 'gender'], ['date_of_birth', 'date_of_birth'],
-  ['marital_status', 'marital_status'], ['number_of_children', 'number_of_children'],
-  ['blood_group', 'blood_group'], ['photo_url', 'photo_url'],
-  ['personal_email', 'personal_email'], ['work_email', 'work_email'],
-  ['phone', 'phone'], ['alternate_phone', 'alternate_phone'],
-  ['current_address', 'current_address'], ['permanent_address', 'permanent_address'],
-  ['employee_status', 'employee_status'],
+  ['user_id'], ['employee_id'],
+  ['first_name'], ['last_name'],
+  ['gender'], ['date_of_birth'],
+  ['marital_status'], ['number_of_children'],
+  ['blood_group'], ['photo_url'],
+  ['personal_email'], ['work_email'],
+  ['phone'], ['alternate_phone'],
+  ['current_address'], ['permanent_address'],
+  ['employee_status'],
+  ['emergency_contact_name'],
+  ['emergency_contact_relationship'],
+  ['emergency_contact_phone'],
 ]
 
 const EMPLOYMENT_FIELDS: FieldMap = [
-  ['designation', 'designation'], ['department', 'department'],
-  ['work_location', 'work_location'], ['work_mode', 'work_mode'],
-  ['reporting_manager_id', 'reporting_manager_id'], ['employment_type', 'employment_type'],
-  ['source_of_hire', 'source_of_hire'], ['total_work_experience', 'total_work_experience'],
-  ['date_of_joining', 'date_of_joining'], ['confirmation_date', 'confirmation_date'],
-  ['probation_end_date', 'probation_end_date'], ['exit_date', 'exit_date'],
-  ['exit_reason', 'exit_reason'],
+  ['designation'], ['department'],
+  ['work_location'], ['work_mode'],
+  ['reporting_manager_id'], ['employment_type'],
+  ['source_of_hire'], ['total_work_experience'],
+  ['date_of_joining'], ['confirmation_date'],
+  ['probation_end_date'], ['exit_date'],
+  ['exit_reason'],
 ]
 
 const SENSITIVE_FIELDS: FieldMap = [
   ['pan', 'pan_encrypted', v => encryptFieldOrNull(v as string | null)],
   ['aadhaar', 'aadhaar_encrypted', v => encryptFieldOrNull(v as string | null)],
   ['bank_account', 'bank_account_encrypted', v => encryptFieldOrNull(v as string | null)],
-  ['uan', 'uan'], ['passport_number', 'passport_number'],
-  ['bank_ifsc', 'bank_ifsc'], ['bank_name', 'bank_name'],
+  ['uan'], ['passport_number'],
+  ['bank_ifsc'], ['bank_name'],
 ]
 
-const EMPLOYMENT_JOIN = `
+export const EMPLOYMENT_JOIN = `
   LEFT JOIN employment_details ed ON ed.employee_id = e.id
   LEFT JOIN employee_sensitive es ON es.employee_id = e.id`
 
-const EMPLOYMENT_COLS = `
+export const EMPLOYMENT_COLS = `
   ed.designation, ed.department, ed.work_location, ed.work_mode,
   ed.reporting_manager_id, ed.employment_type, ed.source_of_hire,
   ed.total_work_experience, ed.date_of_joining, ed.confirmation_date,
@@ -157,31 +163,7 @@ const EMPLOYMENT_COLS = `
   es.pan_encrypted, es.aadhaar_encrypted, es.uan, es.passport_number,
   es.bank_account_encrypted, es.bank_ifsc, es.bank_name`
 
-async function fetchEmergencyContacts(employeeId: string, workspaceId: string): Promise<EmergencyContact[]> {
-  return db.query<EmergencyContact>(
-    `SELECT id, name, relationship, phone FROM employee_emergency_contacts
-     WHERE employee_id = ? AND workspace_id = ?`,
-    [employeeId, workspaceId],
-  )
-}
-
 // ─── Reads ────────────────────────────────────────────────────────────────────
-
-export async function listEmployees(workspaceId: string): Promise<EmployeePublic[]> {
-  const rows = await db.query<EmployeeRow>(
-    `SELECT e.*,
-       ed.designation, ed.department, ed.work_location, ed.work_mode,
-       ed.reporting_manager_id, ed.employment_type, ed.source_of_hire,
-       ed.total_work_experience, ed.date_of_joining, ed.confirmation_date,
-       ed.probation_end_date, ed.exit_date, ed.exit_reason
-     FROM employees e
-     LEFT JOIN employment_details ed ON ed.employee_id = e.id
-     WHERE e.workspace_id = ? AND e.deleted_at IS NULL
-     ORDER BY e.last_name ASC, e.first_name ASC`,
-    [workspaceId],
-  )
-  return rows.map(row => toPublic(row))
-}
 
 export async function getEmployee(id: string, workspaceId: string): Promise<EmployeePublic | null> {
   const row = await db.queryOne<EmployeeRow>(
@@ -190,9 +172,7 @@ export async function getEmployee(id: string, workspaceId: string): Promise<Empl
      WHERE e.id = ? AND e.workspace_id = ? AND e.deleted_at IS NULL`,
     [id, workspaceId],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 export async function findEmployeeByEmployeeId(
@@ -205,9 +185,7 @@ export async function findEmployeeByEmployeeId(
      WHERE e.workspace_id = ? AND e.employee_id = ? AND e.deleted_at IS NULL`,
     [workspaceId, employeeId],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(row.id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 export async function findEmployeeByWorkEmail(
@@ -220,15 +198,13 @@ export async function findEmployeeByWorkEmail(
      WHERE e.workspace_id = ? AND e.work_email = ? AND e.deleted_at IS NULL`,
     [workspaceId, workEmail],
   )
-  if (!row) return null
-  const emergencyContacts = await fetchEmergencyContacts(row.id, workspaceId)
-  return toPublic(row, true, emergencyContacts)
+  return row ? toPublic(row, true) : null
 }
 
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createEmployee(input: CreateEmployeeInput): Promise<EmployeePublic> {
-  const id = randomBytes(16).toString('hex')
+  const id = generateId()
 
   await db.transaction(async (txDb) => {
     await txDb.execute(
@@ -237,8 +213,9 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         first_name, last_name, gender, date_of_birth, marital_status,
         number_of_children, blood_group, photo_url,
         personal_email, work_email, phone, alternate_phone,
-        current_address, permanent_address, employee_status
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        current_address, permanent_address, employee_status,
+        emergency_contact_name, emergency_contact_relationship, emergency_contact_phone
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id, input.workspace_id, input.user_id ?? null, input.employee_id ?? null,
         input.first_name, input.last_name, input.gender ?? null, input.date_of_birth ?? null,
@@ -248,6 +225,9 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         input.phone ?? null, input.alternate_phone ?? null,
         input.current_address ?? null, input.permanent_address ?? null,
         input.employee_status ?? 'active',
+        input.emergency_contact_name ?? null,
+        input.emergency_contact_relationship ?? null,
+        input.emergency_contact_phone ?? null,
       ],
     )
 
@@ -260,7 +240,7 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         probation_end_date, exit_date, exit_reason
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
-        randomBytes(16).toString('hex'), id, input.workspace_id,
+        generateId(), id, input.workspace_id,
         input.designation ?? null, input.department ?? null,
         input.work_location ?? null, input.work_mode ?? null,
         input.reporting_manager_id ?? null, input.employment_type ?? null,
@@ -277,25 +257,18 @@ export async function createEmployee(input: CreateEmployeeInput): Promise<Employ
         bank_account_encrypted, bank_ifsc, bank_name
       ) VALUES (?,?,?,?,?,?,?,?,?,?)`,
       [
-        randomBytes(16).toString('hex'), id, input.workspace_id,
+        generateId(), id, input.workspace_id,
         encryptFieldOrNull(input.pan), encryptFieldOrNull(input.aadhaar),
         input.uan ?? null, input.passport_number ?? null,
         encryptFieldOrNull(input.bank_account), input.bank_ifsc ?? null, input.bank_name ?? null,
       ],
     )
 
-    for (const ec of input.emergency_contacts ?? []) {
-      await txDb.execute(
-        `INSERT INTO employee_emergency_contacts
-         (id, employee_id, workspace_id, name, relationship, phone)
-         VALUES (?,?,?,?,?,?)`,
-        [randomBytes(16).toString('hex'), id, input.workspace_id, ec.name, ec.relationship ?? null, ec.phone],
-      )
-    }
   })
 
   const created = await getEmployee(id, input.workspace_id)
-  return created!
+  if (!created) throw new Error(`createEmployee: failed to re-fetch employee ${id}`)
+  return created
 }
 
 // ─── Update ───────────────────────────────────────────────────────────────────
@@ -355,27 +328,88 @@ export async function softDeleteEmployee(id: string, workspaceId: string): Promi
   return result.changes > 0
 }
 
-// ─── Emergency contacts ───────────────────────────────────────────────────────
+// ─── Archive / Restore ────────────────────────────────────────────────────────
 
-export async function addEmergencyContact(
-  employeeId: string,
+export async function archiveEmployee(
+  id: string,
   workspaceId: string,
-  contact: { name: string; relationship?: string | null; phone: string },
-): Promise<EmergencyContact> {
-  const id = randomBytes(16).toString('hex')
-  await db.execute(
-    `INSERT INTO employee_emergency_contacts
-     (id, employee_id, workspace_id, name, relationship, phone)
-     VALUES (?,?,?,?,?,?)`,
-    [id, employeeId, workspaceId, contact.name, contact.relationship ?? null, contact.phone],
-  )
-  return { id, name: contact.name, relationship: contact.relationship ?? null, phone: contact.phone }
+  exitDate: string,
+  exitReason: string,
+): Promise<boolean> {
+  let archived = false
+
+  await db.transaction(async (txDb) => {
+    const emp = await txDb.queryOne<Pick<Employee, 'user_id' | 'deleted_at'>>(
+      `SELECT user_id, deleted_at FROM employees WHERE id = ? AND workspace_id = ?`,
+      [id, workspaceId],
+    )
+    if (!emp || emp.deleted_at !== null) return
+
+    const result = await txDb.execute(
+      `UPDATE employees
+       SET deleted_at = datetime('now'), employee_status = 'terminated', updated_at = datetime('now')
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+      [id, workspaceId],
+    )
+    if (result.changes === 0) return
+    archived = true
+
+    await txDb.execute(
+      `UPDATE employment_details
+       SET exit_date = ?, exit_reason = ?, updated_at = datetime('now')
+       WHERE employee_id = ? AND workspace_id = ?`,
+      [exitDate, exitReason, id, workspaceId],
+    )
+
+    if (emp.user_id) {
+      await txDb.execute(
+        `UPDATE workspace_members SET status = 'inactive'
+         WHERE workspace_id = ? AND user_id = ?`,
+        [workspaceId, emp.user_id],
+      )
+    }
+  })
+
+  return archived
 }
 
-export async function removeEmergencyContact(id: string, workspaceId: string): Promise<boolean> {
-  const result = await db.execute(
-    `DELETE FROM employee_emergency_contacts WHERE id = ? AND workspace_id = ?`,
-    [id, workspaceId],
-  )
-  return result.changes > 0
+export async function restoreEmployee(
+  id: string,
+  workspaceId: string,
+): Promise<boolean> {
+  let restored = false
+
+  await db.transaction(async (txDb) => {
+    const emp = await txDb.queryOne<Pick<Employee, 'user_id' | 'deleted_at'>>(
+      `SELECT user_id, deleted_at FROM employees WHERE id = ? AND workspace_id = ?`,
+      [id, workspaceId],
+    )
+    if (!emp || emp.deleted_at === null) return
+
+    const result = await txDb.execute(
+      `UPDATE employees
+       SET deleted_at = NULL, employee_status = 'active', updated_at = datetime('now')
+       WHERE id = ? AND workspace_id = ? AND deleted_at IS NOT NULL`,
+      [id, workspaceId],
+    )
+    if (result.changes === 0) return
+    restored = true
+
+    await txDb.execute(
+      `UPDATE employment_details
+       SET exit_date = NULL, exit_reason = NULL, updated_at = datetime('now')
+       WHERE employee_id = ? AND workspace_id = ?`,
+      [id, workspaceId],
+    )
+
+    if (emp.user_id) {
+      await txDb.execute(
+        `UPDATE workspace_members SET status = 'active'
+         WHERE workspace_id = ? AND user_id = ?`,
+        [workspaceId, emp.user_id],
+      )
+    }
+  })
+
+  return restored
 }

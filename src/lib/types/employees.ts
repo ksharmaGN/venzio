@@ -28,16 +28,12 @@ export interface Employee {
   current_address: string | null
   permanent_address: string | null
   employee_status: EmployeeStatus
+  emergency_contact_name: string | null
+  emergency_contact_relationship: string | null
+  emergency_contact_phone: string | null
   deleted_at: string | null
   created_at: string
   updated_at: string
-}
-
-export interface EmergencyContact {
-  id: string
-  name: string
-  relationship: string | null
-  phone: string
 }
 
 export interface EmploymentInfo {
@@ -70,10 +66,9 @@ export interface EmployeePublic extends Employee {
   employment: EmploymentInfo
   sensitive: EmployeeSensitiveInfo | null
   age: number | null
-  emergency_contacts: EmergencyContact[]
 }
 
-export interface CreateEmployeeInput {
+export interface CreateEmployeeInput extends Partial<EmployeeSensitiveInfo> {
   workspace_id: string
   user_id?: string | null
   employee_id?: string | null
@@ -105,14 +100,9 @@ export interface CreateEmployeeInput {
   probation_end_date?: string | null
   exit_date?: string | null
   exit_reason?: string | null
-  pan?: string | null
-  aadhaar?: string | null
-  uan?: string | null
-  passport_number?: string | null
-  bank_account?: string | null
-  bank_ifsc?: string | null
-  bank_name?: string | null
-  emergency_contacts?: Array<{ name: string; relationship?: string | null; phone: string }>
+  emergency_contact_name?: string | null
+  emergency_contact_relationship?: string | null
+  emergency_contact_phone?: string | null
 }
 
-export type UpdateEmployeeInput = Partial<Omit<CreateEmployeeInput, 'workspace_id' | 'emergency_contacts'>>
+export type UpdateEmployeeInput = Partial<Omit<CreateEmployeeInput, 'workspace_id'>>
