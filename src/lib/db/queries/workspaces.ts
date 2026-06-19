@@ -552,9 +552,11 @@ const MEMBER_EMPLOYEE_JOIN = `
 
 const MEMBER_EMPLOYEE_COLS = `, e.id as employee_record_id, e.employee_id, ed.designation, ed.department, ed.work_mode, ed.date_of_joining, ed.probation_end_date`
 
+const FULL_NAME_EXPR = `COALESCE(NULLIF(TRIM(COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')), ''), u.full_name)`
+
 export async function getAllMembersWithDetails(workspaceId: string): Promise<MemberWithUserFull[]> {
   return db.query<MemberWithUserFull>(
-    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, u.full_name${MEMBER_EMPLOYEE_COLS}
+    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, ${FULL_NAME_EXPR} as full_name${MEMBER_EMPLOYEE_COLS}
      FROM workspace_members wm
      LEFT JOIN users u ON u.id = wm.user_id AND u.deleted_at IS NULL
      ${MEMBER_EMPLOYEE_JOIN}
@@ -573,7 +575,7 @@ export async function getAllMembersWithDetailsPaged(params: {
   const q = (params.search ?? "").trim().toLowerCase();
   const hasSearch = q.length > 0;
   const where = hasSearch
-    ? `WHERE wm.workspace_id = ? AND (lower(wm.email) LIKE ? OR lower(COALESCE(u.full_name,'')) LIKE ?)`
+    ? `WHERE wm.workspace_id = ? AND (lower(wm.email) LIKE ? OR lower(COALESCE(${FULL_NAME_EXPR},'')) LIKE ?)`
     : `WHERE wm.workspace_id = ?`;
   const args = hasSearch
     ? [params.workspaceId, `%${q}%`, `%${q}%`]
@@ -589,7 +591,7 @@ export async function getAllMembersWithDetailsPaged(params: {
   );
   const total = totalRow?.total ?? 0;
   const members = await db.query<MemberWithUserFull>(
-    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, u.full_name${MEMBER_EMPLOYEE_COLS}
+    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, ${FULL_NAME_EXPR} as full_name${MEMBER_EMPLOYEE_COLS}
      FROM workspace_members wm
      LEFT JOIN users u ON u.id = wm.user_id AND u.deleted_at IS NULL
      ${MEMBER_EMPLOYEE_JOIN}
