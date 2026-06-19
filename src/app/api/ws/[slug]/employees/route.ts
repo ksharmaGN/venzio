@@ -70,7 +70,7 @@ export async function POST(req: NextRequest, { params }: Props) {
     fieldErrors.work_email = 'REQUIRED'
   }
 
-  const optErrors = validateEmployeeFields(body, { requireDoj: true })
+  const optErrors = validateEmployeeFields(body)
   Object.assign(fieldErrors, optErrors)
 
   if (Object.keys(fieldErrors).length > 0) {
