@@ -60,8 +60,8 @@ export function validateEmployeeFields(
   const today = new Date().toISOString().slice(0, 10)
 
   // ── employee_id: alphanumeric, no spaces ──────────────────────────────────
-  if (body.employee_id !== undefined && body.employee_id !== null) {
-    const v = typeof body.employee_id === 'string' ? body.employee_id.trim() : ''
+  if (body.employee_id != null) {
+    const v = String(body.employee_id).trim()
     if (!v) {
       fields.employee_id = FieldErrorCode.REQUIRED
     } else if (!EMPLOYEE_ID_RE.test(v)) {
@@ -70,13 +70,13 @@ export function validateEmployeeFields(
   }
 
   // ── first_name / last_name: alphabets + space ─────────────────────────────
-  if (body.first_name !== undefined) {
-    const v = typeof body.first_name === 'string' ? body.first_name.trim() : ''
+  if (body.first_name) {
+    const v = String(body.first_name).trim()
     if (!v) fields.first_name = FieldErrorCode.REQUIRED
     else if (!NAME_RE.test(v)) fields.first_name = FieldErrorCode.INVALID_NAME
   }
-  if (body.last_name !== undefined) {
-    const v = typeof body.last_name === 'string' ? body.last_name.trim() : ''
+  if (body.last_name) {
+    const v = String(body.last_name).trim()
     if (!v) fields.last_name = FieldErrorCode.REQUIRED
     else if (!NAME_RE.test(v)) fields.last_name = FieldErrorCode.INVALID_NAME
   }
