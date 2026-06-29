@@ -52,14 +52,20 @@ const PASSPORT_RE_C  = /^[A-Z][0-9]{7}$/
 const BANK_ACCT_RE_C = /^\d{9,18}$/
 
 const ERR_MSG: Record<string, string> = {
-  REQUIRED:             'This field is required',
-  INVALID_EMAIL:        'Enter a valid email address',
-  INVALID_FORMAT:       'Invalid format',
-  INVALID_NAME:         'Only letters and spaces allowed',
-  INVALID_PHONE:        'Must be 10 digits starting with 6, 7, 8, or 9',
-  MUST_BE_BEFORE_TODAY: 'Date must be in the past',
-  MUST_BE_NON_NEGATIVE: 'Must be 0 or more',
-  MUST_BE_18_OR_OLDER:  'Employee must be at least 18 years old',
+  REQUIRED:                  'This field is required',
+  INVALID_EMAIL:             'Enter a valid email address',
+  INVALID_FORMAT:            'Invalid format',
+  INVALID_NAME:              'Only letters and spaces allowed',
+  INVALID_PHONE:             'Must be 10 digits starting with 6, 7, 8, or 9',
+  MUST_BE_BEFORE_TODAY:      'Date must be in the past',
+  MUST_BE_NON_NEGATIVE:      'Must be 0 or more',
+  MUST_BE_18_OR_OLDER:       'Employee must be at least 18 years old',
+  INVALID_EMPLOYEE_ID:       'Only letters and numbers, no spaces',
+  INVALID_PAN:               'Must be 10 chars: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)',
+  INVALID_AADHAAR:           'Must be exactly 12 digits',
+  INVALID_UAN:               'Must be exactly 12 digits',
+  INVALID_PASSPORT:          'Format: 1 letter followed by 7 digits (e.g. A1234567)',
+  INVALID_BANK_ACCOUNT:      'Must be 9–18 digits, numbers only',
 }
 
 // ─── Shared field components ─────────────────────────────────────────────────
@@ -100,22 +106,22 @@ function Field({ label, required, error, children }: {
   )
 }
 
-function Inp({ value, onChange, type = 'text', placeholder, required, maxLength }: {
+function FormInput({ value, onChange, type = 'text', placeholder, required, maxLength }: {
   value: string; onChange: (v: string) => void
   type?: string; placeholder?: string; required?: boolean; maxLength?: number
 }) {
   return <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} maxLength={maxLength} style={iStyle} />
 }
 
-function Sel({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
+function FormSelect({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
   return <select value={value} onChange={e => onChange(e.target.value)} style={iStyle}>{children}</select>
 }
 
-function Tex({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+function FormTextarea({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
   return <textarea value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} style={taStyle} />
 }
 
-function SensitiveInp({ value, onChange, placeholder, maxLength }: {
+function SensitiveFormInput({ value, onChange, placeholder, maxLength }: {
   value: string; onChange: (v: string) => void; placeholder?: string; maxLength?: number
 }) {
   const [reveal, setReveal] = useState(false)
@@ -301,7 +307,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
     if (step === 1) {
       // Employee ID — optional, alphanumeric no spaces
       if (form.employee_id.trim() && !EMPLOYEE_ID_RE_C.test(form.employee_id.trim()))
-        errs.employee_id = 'Only letters and numbers, no spaces'
+        errs.employee_id = ERR_MSG.INVALID_EMPLOYEE_ID
 
       if (form.date_of_joining && !DATE_RE_C.test(form.date_of_joining))
         errs.date_of_joining = ERR_MSG.INVALID_FORMAT
@@ -324,25 +330,25 @@ export default function DetailsClient({ slug, member, employee }: Props) {
       // PAN — force uppercase, then validate format
       const pan = form.pan.trim().toUpperCase()
       if (pan && !PAN_RE_C.test(pan))
-        errs.pan = 'Must be 10 chars: 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F)'
+        errs.pan = ERR_MSG.INVALID_PAN
 
       // Aadhaar — 12 digits (server will also run Verhoeff checksum)
       const aadhaar = form.aadhaar.replace(/[\s-]/g, '')
       if (aadhaar && !AADHAAR_RE_C.test(aadhaar))
-        errs.aadhaar = 'Must be exactly 12 digits'
+        errs.aadhaar = ERR_MSG.INVALID_AADHAAR
 
       // UAN — 12 digits
       if (form.uan.trim() && !UAN_RE_C.test(form.uan.trim()))
-        errs.uan = 'Must be exactly 12 digits'
+        errs.uan = ERR_MSG.INVALID_UAN
 
       // Passport
       const passport = form.passport_number.trim().toUpperCase()
       if (passport && !PASSPORT_RE_C.test(passport))
-        errs.passport_number = 'Format: 1 letter followed by 7 digits (e.g. A1234567)'
+        errs.passport_number = ERR_MSG.INVALID_PASSPORT
 
       // Bank account — numeric, 9–18 digits
       if (form.bank_account.trim() && !BANK_ACCT_RE_C.test(form.bank_account.trim()))
-        errs.bank_account = 'Must be 9–18 digits, numbers only'
+        errs.bank_account = ERR_MSG.INVALID_BANK_ACCOUNT
     }
 
     if (step === 3) {
@@ -410,102 +416,102 @@ export default function DetailsClient({ slug, member, employee }: Props) {
       case 0: return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={g2}>
-            <Field label="First name" required error={fieldErrors.first_name}><Inp value={form.first_name} onChange={set('first_name')} required /></Field>
-            <Field label="Last name" required error={fieldErrors.last_name}><Inp value={form.last_name} onChange={set('last_name')} required /></Field>
+            <Field label="First name" required error={fieldErrors.first_name}><FormInput value={form.first_name} onChange={set('first_name')} required /></Field>
+            <Field label="Last name" required error={fieldErrors.last_name}><FormInput value={form.last_name} onChange={set('last_name')} required /></Field>
           </div>
           <div style={g2}>
-            <Field label="Work email" required error={fieldErrors.work_email}><Inp type="email" value={form.work_email} onChange={set('work_email')} placeholder="name@company.in" required /></Field>
-            <Field label="Personal email" error={fieldErrors.personal_email}><Inp type="email" value={form.personal_email} onChange={set('personal_email')} /></Field>
+            <Field label="Work email" required error={fieldErrors.work_email}><FormInput type="email" value={form.work_email} onChange={set('work_email')} placeholder="name@company.in" required /></Field>
+            <Field label="Personal email" error={fieldErrors.personal_email}><FormInput type="email" value={form.personal_email} onChange={set('personal_email')} /></Field>
           </div>
           <div style={g2}>
-            <Field label="Phone" error={fieldErrors.phone}><Inp type="tel" value={form.phone} onChange={set('phone')} placeholder="+91" maxLength={10} /></Field>
-            <Field label="Alternate phone" error={fieldErrors.alternate_phone}><Inp type="tel" value={form.alternate_phone} onChange={set('alternate_phone')} maxLength={10} /></Field>
+            <Field label="Phone" error={fieldErrors.phone}><FormInput type="tel" value={form.phone} onChange={set('phone')} placeholder="+91" maxLength={10} /></Field>
+            <Field label="Alternate phone" error={fieldErrors.alternate_phone}><FormInput type="tel" value={form.alternate_phone} onChange={set('alternate_phone')} maxLength={10} /></Field>
           </div>
           <div style={g2}>
             <Field label="Gender">
-              <Sel value={form.gender} onChange={set('gender')}>
-                <option value="">Select</option>
+              <FormSelect value={form.gender} onChange={set('gender')}>
+                <option value="">FormSelectect</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
                 <option value="non_binary">Non-binary</option>
                 <option value="prefer_not_to_say">Prefer not to say</option>
-              </Sel>
+              </FormSelect>
             </Field>
-            <Field label="Date of birth" error={fieldErrors.date_of_birth}><Inp type="date" value={form.date_of_birth} onChange={set('date_of_birth')} /></Field>
+            <Field label="Date of birth" error={fieldErrors.date_of_birth}><FormInput type="date" value={form.date_of_birth} onChange={set('date_of_birth')} /></Field>
           </div>
           <div style={g2}>
             <Field label="Marital status">
-              <Sel value={form.marital_status} onChange={set('marital_status')}>
-                <option value="">Select</option>
+              <FormSelect value={form.marital_status} onChange={set('marital_status')}>
+                <option value="">FormSelectect</option>
                 <option value="single">Single</option>
                 <option value="married">Married</option>
                 <option value="divorced">Divorced</option>
                 <option value="widowed">Widowed</option>
                 <option value="separated">Separated</option>
-              </Sel>
+              </FormSelect>
             </Field>
-            <Field label="No. of children" error={fieldErrors.number_of_children}><Inp type="number" value={form.number_of_children} onChange={set('number_of_children')} placeholder="0" /></Field>
+            <Field label="No. of children" error={fieldErrors.number_of_children}><FormInput type="number" value={form.number_of_children} onChange={set('number_of_children')} placeholder="0" /></Field>
           </div>
           <Field label="Blood group">
-            <Sel value={form.blood_group} onChange={set('blood_group')}>
-              <option value="">Select</option>
+            <FormSelect value={form.blood_group} onChange={set('blood_group')}>
+              <option value="">FormSelectect</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => <option key={g} value={g}>{g}</option>)}
-            </Sel>
+            </FormSelect>
           </Field>
-          <Field label="Current address"><Tex value={form.current_address} onChange={set('current_address')} placeholder="Street, City, State, PIN" /></Field>
-          <Field label="Permanent address"><Tex value={form.permanent_address} onChange={set('permanent_address')} placeholder="Same as current or different" /></Field>
+          <Field label="Current address"><FormTextarea value={form.current_address} onChange={set('current_address')} placeholder="Street, City, State, PIN" /></Field>
+          <Field label="Permanent address"><FormTextarea value={form.permanent_address} onChange={set('permanent_address')} placeholder="Same as current or different" /></Field>
         </div>
       )
 
       case 1: return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={g2}>
-            <Field label="Employee ID"><Inp value={form.employee_id} onChange={set('employee_id')} placeholder="e.g. EMP-001" /></Field>
-            <Field label="Designation"><Inp value={form.designation} onChange={set('designation')} placeholder="e.g. Software Engineer" /></Field>
+            <Field label="Employee ID"><FormInput value={form.employee_id} onChange={set('employee_id')} placeholder="e.g. EMP-001" /></Field>
+            <Field label="Designation"><FormInput value={form.designation} onChange={set('designation')} placeholder="e.g. Software Engineer" /></Field>
           </div>
           <div style={g2}>
-            <Field label="Department"><Inp value={form.department} onChange={set('department')} placeholder="e.g. Engineering" /></Field>
+            <Field label="Department"><FormInput value={form.department} onChange={set('department')} placeholder="e.g. Engineering" /></Field>
             <Field label="Employment type">
-              <Sel value={form.employment_type} onChange={set('employment_type')}>
-                <option value="">Select</option>
+              <FormSelect value={form.employment_type} onChange={set('employment_type')}>
+                <option value="">FormSelectect</option>
                 <option value="full_time">Full-time</option>
                 <option value="part_time">Part-time</option>
                 <option value="contract">Contract</option>
                 <option value="intern">Intern</option>
                 <option value="consultant">Consultant</option>
-              </Sel>
+              </FormSelect>
             </Field>
           </div>
           <div style={g2}>
             <Field label="Work mode">
-              <Sel value={form.work_mode} onChange={set('work_mode')}>
-                <option value="">Select</option>
+              <FormSelect value={form.work_mode} onChange={set('work_mode')}>
+                <option value="">FormSelectect</option>
                 <option value="office">Office</option>
                 <option value="remote">Remote</option>
                 <option value="hybrid">Hybrid</option>
-              </Sel>
+              </FormSelect>
             </Field>
-            <Field label="Work location"><Inp value={form.work_location} onChange={set('work_location')} placeholder="e.g. Mumbai HQ" /></Field>
+            <Field label="Work location"><FormInput value={form.work_location} onChange={set('work_location')} placeholder="e.g. Mumbai HQ" /></Field>
           </div>
           <div style={g2}>
-            <Field label="Date of joining" error={fieldErrors.date_of_joining}><Inp type="date" value={form.date_of_joining} onChange={set('date_of_joining')} /></Field>
-            <Field label="Confirmation date" error={fieldErrors.confirmation_date}><Inp type="date" value={form.confirmation_date} onChange={set('confirmation_date')} /></Field>
+            <Field label="Date of joining" error={fieldErrors.date_of_joining}><FormInput type="date" value={form.date_of_joining} onChange={set('date_of_joining')} /></Field>
+            <Field label="Confirmation date" error={fieldErrors.confirmation_date}><FormInput type="date" value={form.confirmation_date} onChange={set('confirmation_date')} /></Field>
           </div>
           <div style={g2}>
-            <Field label="Probation end date" error={fieldErrors.probation_end_date}><Inp type="date" value={form.probation_end_date} onChange={set('probation_end_date')} /></Field>
+            <Field label="Probation end date" error={fieldErrors.probation_end_date}><FormInput type="date" value={form.probation_end_date} onChange={set('probation_end_date')} /></Field>
             <Field label="Source of hire">
-              <Sel value={form.source_of_hire} onChange={set('source_of_hire')}>
-                <option value="">Select</option>
+              <FormSelect value={form.source_of_hire} onChange={set('source_of_hire')}>
+                <option value="">FormSelectect</option>
                 <option value="direct">Direct</option>
                 <option value="referral">Referral</option>
                 <option value="job_portal">Job portal</option>
                 <option value="consultancy">Consultancy</option>
                 <option value="campus">Campus</option>
-              </Sel>
+              </FormSelect>
             </Field>
           </div>
           <div style={g2}>
-            <Field label="Total experience (years)" error={fieldErrors.total_work_experience}><Inp type="number" value={form.total_work_experience} onChange={set('total_work_experience')} placeholder="0" /></Field>
+            <Field label="Total experience (years)" error={fieldErrors.total_work_experience}><FormInput type="number" value={form.total_work_experience} onChange={set('total_work_experience')} placeholder="0" /></Field>
           </div>
         </div>
       )
@@ -513,27 +519,27 @@ export default function DetailsClient({ slug, member, employee }: Props) {
       case 2: return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           <div style={g2}>
-            <Field label="PAN" error={fieldErrors.pan}><SensitiveInp value={form.pan} onChange={set('pan')} placeholder="ABCDE1234F" /></Field>
-            <Field label="Aadhaar" error={fieldErrors.aadhaar}><SensitiveInp value={form.aadhaar} onChange={set('aadhaar')} placeholder="12-digit number" /></Field>
+            <Field label="PAN" error={fieldErrors.pan}><SensitiveFormInput value={form.pan} onChange={set('pan')} placeholder="ABCDE1234F" /></Field>
+            <Field label="Aadhaar" error={fieldErrors.aadhaar}><SensitiveFormInput value={form.aadhaar} onChange={set('aadhaar')} placeholder="12-digit number" /></Field>
           </div>
           <div style={g2}>
-            <Field label="UAN" error={fieldErrors.uan}><SensitiveInp value={form.uan} onChange={set('uan')} placeholder="Universal Account Number" /></Field>
-            <Field label="Passport number" error={fieldErrors.passport_number}><SensitiveInp value={form.passport_number} onChange={set('passport_number')} placeholder="A1234567" /></Field>
+            <Field label="UAN" error={fieldErrors.uan}><SensitiveFormInput value={form.uan} onChange={set('uan')} placeholder="Universal Account Number" /></Field>
+            <Field label="Passport number" error={fieldErrors.passport_number}><SensitiveFormInput value={form.passport_number} onChange={set('passport_number')} placeholder="A1234567" /></Field>
           </div>
-          <Field label="Bank account number" error={fieldErrors.bank_account}><SensitiveInp value={form.bank_account} onChange={set('bank_account')} placeholder="Account number" /></Field>
+          <Field label="Bank account number" error={fieldErrors.bank_account}><SensitiveFormInput value={form.bank_account} onChange={set('bank_account')} placeholder="Account number" /></Field>
           <div style={g2}>
-            <Field label="Bank IFSC" error={fieldErrors.bank_ifsc}><SensitiveInp value={form.bank_ifsc} onChange={set('bank_ifsc')} placeholder="IFSC code" /></Field>
-            <Field label="Bank name" error={fieldErrors.bank_name}><SensitiveInp value={form.bank_name} onChange={set('bank_name')} placeholder="e.g. HDFC Bank" /></Field>
+            <Field label="Bank IFSC" error={fieldErrors.bank_ifsc}><SensitiveFormInput value={form.bank_ifsc} onChange={set('bank_ifsc')} placeholder="IFSC code" /></Field>
+            <Field label="Bank name" error={fieldErrors.bank_name}><SensitiveFormInput value={form.bank_name} onChange={set('bank_name')} placeholder="e.g. HDFC Bank" /></Field>
           </div>
         </div>
       )
 
       case 3: return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          <Field label="Contact name"><Inp value={form.emergency_contact_name} onChange={set('emergency_contact_name')} placeholder="Full name" /></Field>
+          <Field label="Contact name"><FormInput value={form.emergency_contact_name} onChange={set('emergency_contact_name')} placeholder="Full name" /></Field>
           <div style={g2}>
-            <Field label="Relationship"><Inp value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} placeholder="e.g. Spouse, Parent" /></Field>
-            <Field label="Phone" error={fieldErrors.emergency_contact_phone}><Inp type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} placeholder="10-digit mobile number" maxLength={10} /></Field>
+            <Field label="Relationship"><FormInput value={form.emergency_contact_relationship} onChange={set('emergency_contact_relationship')} placeholder="e.g. Spouse, Parent" /></Field>
+            <Field label="Phone" error={fieldErrors.emergency_contact_phone}><FormInput type="tel" value={form.emergency_contact_phone} onChange={set('emergency_contact_phone')} placeholder="10-digit mobile number" maxLength={10} /></Field>
           </div>
         </div>
       )

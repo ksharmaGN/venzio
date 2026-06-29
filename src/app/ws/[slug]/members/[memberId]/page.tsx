@@ -834,7 +834,8 @@ export default function MemberDetailPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("timeline");
-  const [employee, setEmployee] = useState<EmployeeProfile | null | undefined>(undefined);
+  const [employee, setEmployee] = useState<EmployeeProfile | null>(null);
+  const [employeeFetched, setEmployeeFetched] = useState(false);
   const [loadingEmployee, setLoadingEmployee] = useState(false);
 
   const load = useCallback(
@@ -887,6 +888,7 @@ export default function MemberDetailPage() {
       }
     } finally {
       setLoadingEmployee(false);
+      setEmployeeFetched(true);
     }
   }, [slug, memberId]);
 
@@ -899,10 +901,10 @@ export default function MemberDetailPage() {
   }, [load]);
 
   useEffect(() => {
-    if (activeTab === "profile" && employee === undefined) {
+    if (activeTab === "profile" && !employeeFetched) {
       loadEmployee();
     }
-  }, [activeTab, employee, loadEmployee]);
+  }, [activeTab, employeeFetched, loadEmployee]);
 
   if (!member && loading)
     return (

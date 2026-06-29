@@ -21,15 +21,17 @@ const UAN_RE         = /^\d{12}$/
 const PASSPORT_RE    = /^[A-Z][0-9]{7}$/        // e.g. A1234567
 const BANK_ACCT_RE   = /^\d{9,18}$/             // 9–18 numeric digits
 
-function validateEmail(v: unknown, skipIfEmpty = false): string | null {
-  if (typeof v !== 'string' || !v.trim()) return skipIfEmpty ? null : FieldErrorCode.INVALID_EMAIL
-  return EMAIL_RE.test(v.trim()) ? null : FieldErrorCode.INVALID_EMAIL
+const PHONE_FIELDS = ['phone', 'alternate_phone', 'emergency_contact_phone'] as const
+
+function validateEmail(value: unknown, skipIfEmpty = false): string | null {
+  if (typeof value !== 'string' || !value.trim()) return skipIfEmpty ? null : FieldErrorCode.INVALID_EMAIL
+  return EMAIL_RE.test(value.trim()) ? null : FieldErrorCode.INVALID_EMAIL
 }
 
-function validatePhone(v: unknown, skipIfEmpty = false): string | null {
-  const n = typeof v === 'string' ? v.replace(/\s+/g, '') : ''
-  if (!n) return skipIfEmpty ? null : FieldErrorCode.REQUIRED
-  return PHONE_RE.test(n) ? null : FieldErrorCode.INVALID_PHONE
+function validatePhone(value: unknown, skipIfEmpty = false): string | null {
+  const digits = typeof value === 'string' ? value.replace(/\s+/g, '') : ''
+  if (!digits) return skipIfEmpty ? null : FieldErrorCode.REQUIRED
+  return PHONE_RE.test(digits) ? null : FieldErrorCode.INVALID_PHONE
 }
 
 
@@ -61,42 +63,42 @@ export function validateEmployeeFields(
 
   // ── employee_id: alphanumeric, no spaces ──────────────────────────────────
   if (body.employee_id != null) {
-    const v = String(body.employee_id).trim()
-    if (!v) {
+    const trimmed = String(body.employee_id).trim()
+    if (!trimmed) {
       fields.employee_id = FieldErrorCode.REQUIRED
-    } else if (!EMPLOYEE_ID_RE.test(v)) {
+    } else if (!EMPLOYEE_ID_RE.test(trimmed)) {
       fields.employee_id = FieldErrorCode.INVALID_FORMAT
     }
   }
 
   // ── first_name / last_name: alphabets + space ─────────────────────────────
   if (body.first_name) {
-    const v = String(body.first_name).trim()
-    if (!v) fields.first_name = FieldErrorCode.REQUIRED
-    else if (!NAME_RE.test(v)) fields.first_name = FieldErrorCode.INVALID_NAME
+    const trimmed = String(body.first_name).trim()
+    if (!trimmed) fields.first_name = FieldErrorCode.REQUIRED
+    else if (!NAME_RE.test(trimmed)) fields.first_name = FieldErrorCode.INVALID_NAME
   }
   if (body.last_name) {
-    const v = String(body.last_name).trim()
-    if (!v) fields.last_name = FieldErrorCode.REQUIRED
-    else if (!NAME_RE.test(v)) fields.last_name = FieldErrorCode.INVALID_NAME
+    const trimmed = String(body.last_name).trim()
+    if (!trimmed) fields.last_name = FieldErrorCode.REQUIRED
+    else if (!NAME_RE.test(trimmed)) fields.last_name = FieldErrorCode.INVALID_NAME
   }
 
   // ── date_of_birth: past date, age ≥ 18 ───────────────────────────────────
   if (body.date_of_birth !== undefined && body.date_of_birth !== null) {
-    const v = body.date_of_birth
-    if (typeof v !== 'string' || !DATE_RE.test(v)) {
+    const dob = body.date_of_birth
+    if (typeof dob !== 'string' || !DATE_RE.test(dob)) {
       fields.date_of_birth = FieldErrorCode.INVALID_FORMAT
-    } else if (v >= today) {
+    } else if (dob >= today) {
       fields.date_of_birth = FieldErrorCode.MUST_BE_BEFORE_TODAY
     } else {
       const cutoff = new Date()
       cutoff.setFullYear(cutoff.getFullYear() - 18)
-      if (new Date(v) > cutoff) fields.date_of_birth = FieldErrorCode.MUST_BE_18_OR_OLDER
+      if (new Date(dob) > cutoff) fields.date_of_birth = FieldErrorCode.MUST_BE_18_OR_OLDER
     }
   }
 
   // ── phone fields: 10 digits, starts 6–9 ─────────────────────────────────
-  for (const key of ['phone', 'alternate_phone', 'emergency_contact_phone']) {
+  for (const key of PHONE_FIELDS) {
     const val = body[key]
     if (val !== undefined && val !== null) {
       const err = validatePhone(val, true)
@@ -116,32 +118,32 @@ export function validateEmployeeFields(
 
   // ── date_of_joining ───────────────────────────────────────────────────────
   if (body.date_of_joining !== undefined) {
-    const v = body.date_of_joining
-    if (typeof v !== 'string' || !DATE_RE.test(v)) {
+    const doj = body.date_of_joining
+    if (typeof doj !== 'string' || !DATE_RE.test(doj)) {
       fields.date_of_joining = FieldErrorCode.INVALID_FORMAT
-    } else if (v > today) {
+    } else if (doj > today) {
       fields.date_of_joining = FieldErrorCode.MUST_BE_BEFORE_TODAY
     }
   }
 
   // ── exit_date: compare against body doj first, then existing doj ──────────
   if (body.exit_date !== undefined && body.exit_date !== null) {
-    const v = body.exit_date
-    if (typeof v !== 'string' || !DATE_RE.test(v)) {
+    const exitDate = body.exit_date
+    if (typeof exitDate !== 'string' || !DATE_RE.test(exitDate)) {
       fields.exit_date = FieldErrorCode.INVALID_FORMAT
     } else {
       const doj =
         typeof body.date_of_joining === 'string' && DATE_RE.test(body.date_of_joining)
           ? body.date_of_joining
           : (opts.existingDoj ?? null)
-      if (doj && v < doj) fields.exit_date = FieldErrorCode.MUST_BE_AFTER_DOJ
+      if (doj && exitDate < doj) fields.exit_date = FieldErrorCode.MUST_BE_AFTER_DOJ
     }
   }
 
   // ── PAN: AAAAA9999A, normalize to uppercase ───────────────────────────────
   if (body.pan !== undefined && body.pan !== null) {
-    const v = typeof body.pan === 'string' ? body.pan.trim().toUpperCase() : ''
-    if (v && !PAN_RE.test(v)) fields.pan = FieldErrorCode.INVALID_FORMAT
+    const normalized = typeof body.pan === 'string' ? body.pan.trim().toUpperCase() : ''
+    if (normalized && !PAN_RE.test(normalized)) fields.pan = FieldErrorCode.INVALID_FORMAT
   }
 
   // ── Aadhaar: 12 numeric digits ───────────────────────────────────────────
@@ -159,14 +161,14 @@ export function validateEmployeeFields(
 
   // ── Passport: A1234567 ────────────────────────────────────────────────────
   if (body.passport_number !== undefined && body.passport_number !== null) {
-    const v = typeof body.passport_number === 'string' ? body.passport_number.trim().toUpperCase() : ''
-    if (v && !PASSPORT_RE.test(v)) fields.passport_number = FieldErrorCode.INVALID_FORMAT
+    const normalized = typeof body.passport_number === 'string' ? body.passport_number.trim().toUpperCase() : ''
+    if (normalized && !PASSPORT_RE.test(normalized)) fields.passport_number = FieldErrorCode.INVALID_FORMAT
   }
 
   // ── Bank account: numeric, 9–18 digits ───────────────────────────────────
   if (body.bank_account !== undefined && body.bank_account !== null) {
-    const v = typeof body.bank_account === 'string' ? body.bank_account.trim() : ''
-    if (v && !BANK_ACCT_RE.test(v)) fields.bank_account = FieldErrorCode.INVALID_FORMAT
+    const trimmed = typeof body.bank_account === 'string' ? body.bank_account.trim() : ''
+    if (trimmed && !BANK_ACCT_RE.test(trimmed)) fields.bank_account = FieldErrorCode.INVALID_FORMAT
   }
 
   // ── total_work_experience ─────────────────────────────────────────────────
@@ -178,8 +180,8 @@ export function validateEmployeeFields(
 
   // ── Enum fields ───────────────────────────────────────────────────────────
   const enumCheck = <T extends readonly string[]>(key: string, allowed: T) => {
-    const v = body[key]
-    if (v !== undefined && v !== null && !allowed.includes(v as string)) {
+    const value = body[key]
+    if (value !== undefined && value !== null && !allowed.includes(value as string)) {
       fields[key] = FieldErrorCode.INVALID_ENUM
     }
   }

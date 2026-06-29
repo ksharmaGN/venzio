@@ -37,7 +37,7 @@ function empStatus(doj: string | null, probEnd: string | null) {
   return { label: 'Active', color: 'var(--teal)', bg: 'color-mix(in srgb, var(--teal) 12%, transparent)' }
 }
 
-function fmtDoj(d: string | null) {
+function formatDateOfJoining(d: string | null) {
   if (!d) return '—'
   return new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
 }
@@ -547,7 +547,7 @@ export default function PeopleClient({ slug }: Props) {
                       {/* Work mode */}
                       <td style={{ padding: '12px 16px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)' }}>{m.work_mode ? (WM_LABEL[m.work_mode] ?? m.work_mode) : '—'}</td>
                       {/* Joined */}
-                      <td style={{ padding: '12px 16px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)' }}>{fmtDoj(m.date_of_joining)}</td>
+                      <td style={{ padding: '12px 16px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)' }}>{formatDateOfJoining(m.date_of_joining)}</td>
                       {/* Status */}
                       <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500, color: st.color, background: st.bg, border: `1px solid ${st.color}`, borderRadius: '4px', padding: '2px 8px' }}>

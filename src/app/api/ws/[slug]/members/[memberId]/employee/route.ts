@@ -154,7 +154,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     }
   }
 
-  if (body.work_email !== undefined) {
+  if (body.work_email) {
     const normalizedEmail = (body.work_email as string).trim().toLowerCase()
     if (normalizedEmail !== existing.work_email) {
       const dup = await findEmployeeByWorkEmail(ctx.workspace.id, normalizedEmail)
