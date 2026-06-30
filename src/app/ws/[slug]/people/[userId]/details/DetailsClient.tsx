@@ -430,7 +430,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           <div style={g2}>
             <Field label="Gender">
               <FormSelect value={form.gender} onChange={set('gender')}>
-                <option value="">FormSelectect</option>
+                <option value="">Select</option>
                 <option value="male">Male</option>
                 <option value="female">Female</option>
                 <option value="non_binary">Non-binary</option>
@@ -442,7 +442,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           <div style={g2}>
             <Field label="Marital status">
               <FormSelect value={form.marital_status} onChange={set('marital_status')}>
-                <option value="">FormSelectect</option>
+                <option value="">Select</option>
                 <option value="single">Single</option>
                 <option value="married">Married</option>
                 <option value="divorced">Divorced</option>
@@ -454,7 +454,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           </div>
           <Field label="Blood group">
             <FormSelect value={form.blood_group} onChange={set('blood_group')}>
-              <option value="">FormSelectect</option>
+              <option value="">Select</option>
               {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map(g => <option key={g} value={g}>{g}</option>)}
             </FormSelect>
           </Field>
@@ -473,7 +473,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
             <Field label="Department"><FormInput value={form.department} onChange={set('department')} placeholder="e.g. Engineering" /></Field>
             <Field label="Employment type">
               <FormSelect value={form.employment_type} onChange={set('employment_type')}>
-                <option value="">FormSelectect</option>
+                <option value="">Select</option>
                 <option value="full_time">Full-time</option>
                 <option value="part_time">Part-time</option>
                 <option value="contract">Contract</option>
@@ -485,7 +485,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           <div style={g2}>
             <Field label="Work mode">
               <FormSelect value={form.work_mode} onChange={set('work_mode')}>
-                <option value="">FormSelectect</option>
+                <option value="">Select</option>
                 <option value="office">Office</option>
                 <option value="remote">Remote</option>
                 <option value="hybrid">Hybrid</option>
@@ -501,7 +501,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
             <Field label="Probation end date" error={fieldErrors.probation_end_date}><FormInput type="date" value={form.probation_end_date} onChange={set('probation_end_date')} /></Field>
             <Field label="Source of hire">
               <FormSelect value={form.source_of_hire} onChange={set('source_of_hire')}>
-                <option value="">FormSelectect</option>
+                <option value="">Select</option>
                 <option value="direct">Direct</option>
                 <option value="referral">Referral</option>
                 <option value="job_portal">Job portal</option>
