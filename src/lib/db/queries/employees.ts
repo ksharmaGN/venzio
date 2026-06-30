@@ -201,6 +201,20 @@ export async function findEmployeeByWorkEmail(
   return row ? toPublic(row, true) : null
 }
 
+export async function findEmployeeByUserId(
+  workspaceId: string,
+  userId: string,
+): Promise<EmployeePublic | null> {
+  const row = await db.queryOne<EmployeeRow>(
+    `SELECT e.*, ${EMPLOYMENT_COLS}
+     FROM employees e ${EMPLOYMENT_JOIN}
+     WHERE e.workspace_id = ? AND e.user_id = ? AND e.deleted_at IS NULL
+     LIMIT 1`,
+    [workspaceId, userId],
+  )
+  return row ? toPublic(row, true) : null
+}
+
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 export async function createEmployee(input: CreateEmployeeInput): Promise<EmployeePublic> {
@@ -290,6 +304,12 @@ export async function updateEmployee(
   }
 
   await db.transaction(async (txDb) => {
+    const exists = await txDb.queryOne<{ id: string }>(
+      `SELECT id FROM employees WHERE id = ? AND workspace_id = ? AND deleted_at IS NULL`,
+      [id, workspaceId],
+    )
+    if (!exists) return
+
     if (e.sets.length > 0) {
       await txDb.execute(
         `UPDATE employees SET ${[...e.sets, 'updated_at = ?'].join(', ')}
