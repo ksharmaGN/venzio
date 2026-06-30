@@ -292,6 +292,8 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_leave_requests_ws_user
    ON leave_requests(workspace_id, user_id)`,
+  `ALTER TABLE leave_requests ADD COLUMN rejection_reason TEXT`,
+  `ALTER TABLE leave_requests ADD COLUMN actioned_by_user_id TEXT REFERENCES users(id)`,
 
   // leave_cutover_date - workspace-level migration anchor date for opening balances
   `ALTER TABLE workspaces ADD COLUMN leave_cutover_date TEXT`,
