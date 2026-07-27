@@ -40,10 +40,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       {children}
       {toast && (
         <div
+          role={toast.kind === 'error' ? 'alert' : 'status'}
+          aria-live={toast.kind === 'error' ? 'assertive' : 'polite'}
           style={{
             position: 'fixed', bottom: '24px', right: '24px', zIndex: 2000,
             display: 'flex', alignItems: 'center', gap: '10px',
-            background: '#0d2118', border: '1px solid rgba(255,255,255,0.1)',
+            background: 'var(--header-bg)', border: '1px solid rgba(255,255,255,0.1)',
             borderRadius: '11px', padding: '13px 18px',
             boxShadow: '0 12px 40px rgba(10,35,24,0.4)',
             animation: 'vzToastIn 0.28s cubic-bezier(0.22,1,0.36,1) both',
@@ -56,7 +58,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
               boxShadow: `0 0 0 3px color-mix(in srgb, ${KIND_COLOR[toast.kind]} 30%, transparent)`,
             }}
           />
-          <span style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', fontWeight: 600, color: '#fff' }}>
+          <span style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', fontWeight: 600, color: 'var(--venzio-text)' }}>
             {toast.message}
           </span>
         </div>
