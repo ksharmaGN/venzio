@@ -357,7 +357,7 @@ export default function PricingPage() {
         >
           <h2
             style={{
-              fontFamily: "Syne, sans-serif",
+              fontFamily: "Playfair Display, serif",
               fontSize: "24px",
               fontWeight: 700,
               color: "var(--navy)",

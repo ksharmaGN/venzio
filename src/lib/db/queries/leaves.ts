@@ -358,6 +358,34 @@ export async function getPendingLeaveCount(workspaceId: string): Promise<number>
   return row?.cnt ?? 0
 }
 
+export interface PendingLeaveRequestEntry {
+  id: string
+  user_id: string
+  user_full_name: string | null
+  user_email: string
+  leave_type_name: string
+  start_date: string
+  end_date: string
+}
+
+/** Oldest-first pending leave requests, capped, for the Overview "Pending approvals" widget. */
+export async function getPendingLeaveRequests(
+  workspaceId: string,
+  limit = 6,
+): Promise<PendingLeaveRequestEntry[]> {
+  return db.query<PendingLeaveRequestEntry>(
+    `SELECT lr.id, lr.user_id, u.full_name AS user_full_name, u.email AS user_email,
+            wlt.name AS leave_type_name, lr.start_date, lr.end_date
+     FROM leave_requests lr
+     JOIN workspace_leave_types wlt ON wlt.id = lr.leave_type_id
+     JOIN users u ON u.id = lr.user_id
+     WHERE lr.workspace_id = ? AND lr.status = 'pending'
+     ORDER BY lr.created_at ASC
+     LIMIT ?`,
+    [workspaceId, limit],
+  )
+}
+
 export async function getLeaveRequestsInRange(
   workspaceId: string,
   startDate: string,

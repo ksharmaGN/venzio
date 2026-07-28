@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import type { InsightInterval, InsightBucket, InsightsResponse } from '@/app/api/ws/[slug]/insights/route'
+import type { MemberStatsResponse, StatsInterval } from '@/app/api/ws/[slug]/member-stats/route'
+import type { RealtimeResponse } from '@/app/api/ws/[slug]/realtime/route'
 import { fmtHours } from '@/lib/client/format-time'
+import { MemberStatsTable } from './MemberStatsTable'
+import { RealtimeWidget } from './RealtimeWidget'
 
 interface Props { slug: string; workspaceCreatedAt: string }
 
@@ -204,6 +208,16 @@ export default function InsightsClient({ slug, workspaceCreatedAt }: Props) {
   const [data, setData] = useState<InsightsResponse | null>(null)
   const [loading, setLoading] = useState(true)
 
+  // Relocated from Overview (TodayClient): Realtime widget state + poll
+  const [realtimeData, setRealtimeData] = useState<RealtimeResponse | null>(null)
+  const [realtimeLoading, setRealtimeLoading] = useState(true)
+
+  // Relocated from Overview (TodayClient): Member stats table state
+  const [statsInterval, setStatsInterval] = useState<StatsInterval>('month')
+  const [statsData, setStatsData] = useState<MemberStatsResponse | null>(null)
+  const [statsLoading, setStatsLoading] = useState(true)
+  const [customRange, setCustomRange] = useState({ start: '', end: '' })
+
   const fetchData = useCallback(async (iv: InsightInterval, from?: string, to?: string) => {
     setLoading(true)
     try {
@@ -225,6 +239,42 @@ export default function InsightsClient({ slug, workspaceCreatedAt }: Props) {
     }
     fetchData(interval)
   }, [fetchData, interval, customFrom, customTo])
+
+  const fetchStats = useCallback(async (iv: StatsInterval, custom?: { start: string; end: string }) => {
+    setStatsLoading(true)
+    try {
+      let url = `/api/ws/${slug}/member-stats?interval=${iv}`
+      if (iv === 'custom' && custom?.start && custom?.end) {
+        url += `&start=${custom.start}&end=${custom.end}`
+      }
+      const res = await fetch(url)
+      if (res.ok) setStatsData(await res.json())
+    } finally {
+      setStatsLoading(false)
+    }
+  }, [slug])
+
+  useEffect(() => {
+    if (statsInterval !== 'custom') fetchStats(statsInterval)
+  }, [fetchStats, statsInterval])
+
+  useEffect(() => {
+    async function fetchRealtime() {
+      setRealtimeLoading(true)
+      try {
+        const res = await fetch(`/api/ws/${slug}/realtime`)
+        if (res.ok) setRealtimeData(await res.json())
+      } finally {
+        setRealtimeLoading(false)
+      }
+    }
+    fetchRealtime()
+    // Use window.setInterval/clearInterval explicitly: this component's local
+    // `interval`/`setInterval` state (the insights date-range filter) shadows
+    // the global timer functions of the same name.
+    const id = window.setInterval(fetchRealtime, 60000)
+    return () => window.clearInterval(id)
+  }, [slug])
 
   // Derived stats
   const totalCheckins = data?.total_checkins ?? 0
@@ -605,6 +655,27 @@ export default function InsightsClient({ slug, workspaceCreatedAt }: Props) {
           </div>
         </>
       )}
+
+      {/* ── Realtime + Attendance (relocated from Overview) ── */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "24px", marginTop: "24px" }}>
+        <RealtimeWidget
+          data={realtimeData}
+          loading={realtimeLoading}
+        />
+        <MemberStatsTable
+          slug={slug}
+          statsData={statsData}
+          loading={statsLoading}
+          interval={statsInterval}
+          onIntervalChange={setStatsInterval}
+          customRange={customRange}
+          onCustomApply={(range) => {
+            setCustomRange(range)
+            fetchStats('custom', range)
+          }}
+          minDate={workspaceCreatedAt}
+        />
+      </div>
     </div>
   );
 }

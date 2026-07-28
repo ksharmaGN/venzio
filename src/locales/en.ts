@@ -141,6 +141,9 @@ export const en = {
     approving: "Approving…",
     rejecting: "Rejecting…",
     searchPlaceholder: "Search by name or email…",
+    approveToast: "Request approved",
+    declineToast: "Request declined",
+    actionErrorToast: "Couldn't update the request. Try again.",
   },
 
   /** Workspace admin opening balances (migration from another system) */

@@ -6,6 +6,39 @@ import type { PresenceEventWithMatch, MatchedBy } from '@/lib/signals'
 import type { MemberWithUser } from '@/lib/db/queries/workspaces'
 import { todayInTz, localMidnightToUtc } from '@/lib/timezone'
 import { isOfficeMatched } from '@/lib/attendance-summary'
+import {
+  getDepartmentHeadcounts,
+  getUpcomingCelebrations,
+  type DepartmentHeadcount,
+  type CelebrationItem,
+} from '@/lib/db/queries/employees-list'
+import { getHolidaysInRange } from '@/lib/db/queries/holidays'
+import {
+  getPendingLeaveCount,
+  getPendingLeaveRequests,
+  getMembersOnLeaveToday,
+  type PendingLeaveRequestEntry,
+  type MemberOnLeaveToday,
+} from '@/lib/db/queries/leaves'
+
+/** Max rows shown in the "This week" celebrations widget (mockup shows ~4; a few extra as buffer). */
+const CELEBRATIONS_LIMIT = 6
+
+export interface CelebrationEntry {
+  type: CelebrationItem['type'] | 'holiday'
+  name: string
+  date: string
+  label: string
+}
+
+export interface PendingApprovalEntry {
+  id: string
+  user_id: string
+  name: string
+  leave_type_name: string
+  start_date: string
+  end_date: string
+}
 
 export interface DashboardMember {
   member_id: string
@@ -28,6 +61,7 @@ export interface DashboardMember {
     checkout_location_mismatch: number | null
   } | null
   event_count: number
+  on_leave: boolean
 }
 
 export interface DashboardResponse {
@@ -36,14 +70,24 @@ export interface DashboardResponse {
   total: number
   page: number
   limit: number
-  counts: { present: number; visited: number; notIn: number; total: number; office: number; remote: number }
+  counts: { present: number; visited: number; notIn: number; total: number; office: number; remote: number; onLeave: number }
   location_counts: { label: string; count: number }[]
   workspace_name: string
+  department_headcounts: DepartmentHeadcount[]
+  celebrations: CelebrationEntry[]
+  pending_approvals: PendingApprovalEntry[]
+  pending_approvals_total: number
 }
 
 function nextDayStr(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const date = new Date(Date.UTC(y, m - 1, d + 1))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
+}
+
+function addDaysStr(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const date = new Date(Date.UTC(y, m - 1, d + days))
   return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`
 }
 
@@ -83,11 +127,36 @@ export async function GET(
   const startUtc = localMidnightToUtc(todayStr, tz)
   const endUtc = localMidnightToUtc(nextDayStr(todayStr), tz)
 
-  // Fetch events + members in parallel
-  const [events, members] = await Promise.all([
+  // Fetch events + members + department/celebrations/approvals widgets in parallel
+  const weekAheadStr = addDaysStr(todayStr, 7)
+  const [events, members, departmentHeadcounts, celebrationItems, upcomingHolidays, pendingLeaveRequests, pendingApprovalsTotal, membersOnLeaveToday] = await Promise.all([
     queryWorkspaceEvents(workspace.id, workspace.plan, { startDate: startUtc, endDate: endUtc }),
     getActiveMembersWithDetails(workspace.id),
+    getDepartmentHeadcounts(workspace.id),
+    getUpcomingCelebrations(workspace.id, todayStr),
+    getHolidaysInRange(workspace.id, todayStr, weekAheadStr),
+    workspace.leaves_enabled ? getPendingLeaveRequests(workspace.id) : Promise.resolve([] as PendingLeaveRequestEntry[]),
+    workspace.leaves_enabled ? getPendingLeaveCount(workspace.id) : Promise.resolve(0),
+    workspace.leaves_enabled ? getMembersOnLeaveToday(workspace.id, todayStr) : Promise.resolve([] as MemberOnLeaveToday[]),
   ])
+  const onLeaveUserIds = new Set(membersOnLeaveToday.map((m) => m.user_id))
+
+  // Merge employee-based celebrations with upcoming holidays, soonest first, capped.
+  const celebrations: CelebrationEntry[] = [
+    ...celebrationItems,
+    ...upcomingHolidays.map((h) => ({ type: 'holiday' as const, name: h.name, date: h.date, label: h.name })),
+  ]
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, CELEBRATIONS_LIMIT)
+
+  const pendingApprovals: PendingApprovalEntry[] = pendingLeaveRequests.map((r) => ({
+    id: r.id,
+    user_id: r.user_id,
+    name: r.user_full_name ?? r.user_email,
+    leave_type_name: r.leave_type_name,
+    start_date: r.start_date,
+    end_date: r.end_date,
+  }))
 
   // Group events by user_id
   const eventsByUser = new Map<string, PresenceEventWithMatch[]>()
@@ -135,6 +204,7 @@ export async function GET(
           }
         : null,
       event_count: userEvents.length,
+      on_leave: onLeaveUserIds.has(member.user_id),
     }
   })
 
@@ -146,6 +216,7 @@ export async function GET(
     total: allMembers.length,
     office: allMembers.filter(isPresentOffice).length,
     remote: allMembers.filter(isPresentRemote).length,
+    onLeave: allMembers.filter((m) => m.on_leave).length,
   }
 
   // Apply filters
@@ -212,5 +283,18 @@ export async function GET(
   const offset = (page - 1) * limit
   const paged = filtered.slice(offset, offset + limit)
 
-  return NextResponse.json({ members: paged, all_members: allMembers, total, page, limit, counts, location_counts, workspace_name: workspace.name } satisfies DashboardResponse)
+  return NextResponse.json({
+    members: paged,
+    all_members: allMembers,
+    total,
+    page,
+    limit,
+    counts,
+    location_counts,
+    workspace_name: workspace.name,
+    department_headcounts: departmentHeadcounts,
+    celebrations,
+    pending_approvals: pendingApprovals,
+    pending_approvals_total: pendingApprovalsTotal,
+  } satisfies DashboardResponse)
 }

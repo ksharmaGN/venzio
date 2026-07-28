@@ -41,7 +41,7 @@ export default function NotificationsClient() {
   return (
     <div style={{ maxWidth: '480px', margin: '0 auto', paddingBottom: '24px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 16px 12px', borderBottom: '1px solid var(--border)' }}>
-        <h1 style={{ margin: 0, fontFamily: 'Syne, sans-serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)' }}>{en.notifications.bellAriaLabel}</h1>
+        <h1 style={{ margin: 0, fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)' }}>{en.notifications.bellAriaLabel}</h1>
         {unreadCount > 0 && (
           <button type="button" onClick={markAll} style={{ background: 'none', border: 'none', color: 'var(--brand)', fontSize: '13px', fontFamily: 'DM Sans, sans-serif', cursor: 'pointer', padding: 0, fontWeight: 500 }}>
             {en.notifications.markAllRead}

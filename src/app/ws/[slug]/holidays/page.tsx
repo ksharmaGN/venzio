@@ -153,7 +153,7 @@ export default function HolidaysPage() {
 
       {/* ── Title ── */}
       <div style={{ padding: '20px 0 12px' }}>
-        <h1 style={{ fontFamily: 'Syne, sans-serif', fontSize: '22px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>
+        <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '22px', fontWeight: 700, color: 'var(--navy)', margin: 0 }}>
           Holidays Calendar
         </h1>
       </div>

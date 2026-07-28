@@ -26,7 +26,7 @@ export function DeleteModal({ holiday, onConfirm, onCancel }: {
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
-        <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', margin: '0 0 8px' }}>
+        <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', margin: '0 0 8px' }}>
           Delete holiday
         </h2>
         <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 24px' }}>
@@ -76,7 +76,7 @@ export function BulkDeleteModal({ count, onConfirm, onCancel, deleting }: {
   return (
     <div style={overlayStyle}>
       <div style={cardStyle}>
-        <h2 style={{ fontFamily: 'Syne, sans-serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', margin: '0 0 8px' }}>
+        <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', margin: '0 0 8px' }}>
           Delete {count} holiday{count !== 1 ? 's' : ''}
         </h2>
         <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 24px' }}>

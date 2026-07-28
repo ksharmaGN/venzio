@@ -613,7 +613,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
 
         {/* Page heading */}
         <h1 style={{
-          fontFamily: 'Syne, sans-serif', fontSize: '22px', fontWeight: 700,
+          fontFamily: 'Playfair Display, serif', fontSize: '22px', fontWeight: 700,
           color: 'var(--navy)', marginBottom: '4px',
         }}>
           {isEdit ? 'Edit employee profile' : 'Set up employee profile'}
@@ -633,7 +633,7 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           {/* Step bar */}
           <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
             <p style={{
-              fontFamily: 'Syne, sans-serif', fontSize: '16px', fontWeight: 700,
+              fontFamily: 'Playfair Display, serif', fontSize: '16px', fontWeight: 700,
               color: 'var(--navy)', marginBottom: '2px',
             }}>{STEPS[step].label}</p>
             <p style={{

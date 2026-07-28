@@ -247,8 +247,9 @@ export default function WsSidebar({ slug, leavesEnabled, pendingLeaveCount, user
                   textDecoration: 'none',
                   transition: 'background 0.15s, color 0.15s',
                   borderLeft: isActive && !collapsed ? '3px solid #00D4AA' : '3px solid transparent',
+                  borderTop: 'none', borderRight: 'none', borderBottom: 'none',
                   whiteSpace: 'nowrap', overflow: 'hidden',
-                  border: 'none', cursor: 'pointer', textAlign: 'left',
+                  cursor: 'pointer', textAlign: 'left',
                 }
 
                 if (hasSubItems) {
