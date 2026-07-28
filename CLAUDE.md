@@ -6,7 +6,9 @@ Venzio is a **presence intelligence platform**. Two PWA surfaces:
 - `/me/*` - mobile-first, individuals record their own presence
 - `/ws/:slug/*` - desktop-first, org admins query presence data
 
-**Core USP:** Multi-signal presence verification (AND, not OR). When a workspace has GPS + WiFi + IP signals configured, ALL must match for a check-in to count as verified. This makes faking presence extremely difficult.
+**Core USP:** Multi-signal presence verification (AND, not OR). When a workspace has multiple signals configured, ALL must match for a check-in to count as verified. This makes faking presence extremely difficult.
+
+> ⚠️ **Live signal types today: GPS and Network only.** WiFi is **not implemented** — no SSID is collected by the check-in client, no matching code exists for it. "Network" (internally `signal_type: 'ip'`) is not a literal per-request IP string match: an admin registers a signal once from the office network, which geolocates their *current public IP* via ip-api.com and stores that as a fixed lat/lng; check-in events are matched by Haversine proximity (default 500m) between the event's geolocated IP and that stored point — not by comparing IP strings, which would break on every DHCP lease renewal. Treat any WiFi-signal claim in older docs, the pitch deck, or `docs/product/` as roadmap, not shipped.
 
 **Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On **`/me/timeline`**, the default **All workspaces** view uses `GET /api/events` (global history, no per-workspace `matched_by`). Selecting a workspace uses `GET /api/me/ws/[slug]/events`, which calls `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics.
 
@@ -36,20 +38,21 @@ Every query that touches workspace data must include `AND workspace_id = ?`. No 
 
 ## Signal Matching - Core Logic
 
-**AND semantics, not OR.** If a workspace has configured multiple signal types, an event is considered "verified" only if it matches ALL configured signal types.
+**AND semantics, not OR.** If a workspace has configured multiple signal types, an event is considered "verified" only if it matches ALL configured signal types. Implemented types today: `gps`, `ip` (see `src/lib/signals.ts`). `wifi` is not a valid `signal_type` in the matching engine — do not build features that assume it exists until it ships.
 
 ```
-Signal types: GPS, WiFi, IP
-If workspace has [GPS, WiFi] configured:
-  → event must match GPS AND WiFi to be verified
-  → matching only GPS = unverified
-  → matching nothing = not counted at all
+Signal types implemented today: GPS, Network (ip)
+If workspace has [GPS, Network] configured:
+  → event must match GPS AND Network to be verified
+  → matching only GPS = partial (unverified)
+  → matching nothing = 'none'
 
 Config-light mode (no signals configured):
-  → all events from active members pass through
+  → all events from active members pass through as matched_by='verified'
+  → (NOT 'none' - see queryWorkspaceEvents(), the config-light branch marks them verified so config-light orgs aren't shown as unverified by default)
 ```
 
-`MatchedBy` values: `'verified'` (all configured signals matched) | `'partial'` (some matched) | `'none'` (no signals matched) | `'override'` (admin override bypassed matching)
+`MatchedBy` values: `'verified'` (all configured signals matched, or config-light mode) | `'partial'` (some matched) | `'none'` (no signals matched) | `'override'` (admin override bypassed matching)
 
 Admin overrides (`admin_overrides` table) bypass signal matching entirely. Never apply signal logic to overridden events.
 
@@ -61,9 +64,10 @@ Attendance stats are day-level, not event-level. Use `src/lib/attendance-summary
 
 ### Trust signals (collected on both check-in AND checkout)
 1. GPS (lat/lng + accuracy)
-2. WiFi SSID (bcrypt-hashed - never store raw SSID)
-3. IP geolocation (ip-api.com)
-4. Device info + timezone
+2. Network / IP geolocation (ip-api.com) — geolocates the request's public IP; matched by proximity to an admin-registered reference point, not by comparing IP strings
+3. Device info + timezone
+
+> ⚠️ WiFi SSID collection/hashing is **not implemented** — `bcrypt`-hashing raw SSIDs was the original design (still true if/when it ships, never store raw SSID), but no client currently captures `navigator.connection`/SSID and no `wifi_ssid_hash` comparison runs in `signals.ts`. DB columns and an admin API stub may exist as scaffolding only.
 
 ---
 
@@ -166,7 +170,7 @@ Run: `npm run migrate`.
 - `getServerUser()` reads `x-user-id` / `x-user-email` headers set by proxy
 
 Password: bcryptjs cost 12, minimum 8 chars. Never store plaintext.
-WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
+WiFi SSID hashing (bcryptjs, raw SSID never persisted) is the intended design for when WiFi signal matching ships - not active today, see Signal Matching section.
 
 ---
 
@@ -206,21 +210,24 @@ CSS variables in `src/app/globals.css`:
 
 | Variable | Value | Use |
 |----------|-------|-----|
-| `--brand` | `#1B4DFF` | Primary buttons, links |
-| `--navy` | `#0D1B2A` | Headings, dark text |
-| `--teal` | `#00D4AA` | Present/verified status |
-| `--amber` | `#F59E0B` | Warnings, IP signal |
+| `--brand` / `--green` | `#1d9e75` | Primary buttons, links, verified/status emerald |
+| `--navy` | `#0a2318` | Headings, dark text (light theme) |
+| `--teal` | `#00D4AA` | Legacy verified accent, still used in some status chips |
+| `--amber` | `#F59E0B` | Warnings, Network(IP) signal badge |
 | `--danger` | `#EF4444` | Errors, destructive |
-| `--surface-0` | `#FFFFFF` | Card backgrounds |
-| `--surface-1` | `#F8FAFC` | Page backgrounds |
-| `--surface-2` | `#F1F5F9` | Input backgrounds |
-| `--border` | `#E2E8F0` | All borders |
+| `--surface-0` | `#FFFFFF` | Card backgrounds (light) |
+| `--surface-1` | `#f0faf5` | Page backgrounds (light) |
+| `--surface-2` | `#e4f5ec` | Input backgrounds (light) |
+| `--border` | `rgba(29,158,117,0.18)` | All borders |
+| `--bg-dark` / `--bg-card` | `#06100d` / `#0c1e17` | Dark-theme surfaces (`.vz-dark` class - defined in CSS but not yet applied anywhere in the app as of this writing) |
 
-Fonts: Syne (headings), DM Sans (body), JetBrains Mono (code/timestamps).
+> ⚠️ This table previously listed `#1B4DFF` blue as brand and Syne/DM Sans as the typeface pair - that was the pre-rebrand palette and is stale. The values above are what `src/app/globals.css` actually ships.
+
+Fonts: **Playfair Display** (headings, serif), **Plus Jakarta Sans** (body), **JetBrains Mono** (code/timestamps).
 
 Rules:
-- No drop shadows - borders only
-- No gradients - flat fills
+- Flat surfaces by default - no gradient fills on cards/backgrounds/nav
+- Subtle shadows/glows are allowed for interactive and status/motion emphasis (e.g. hover elevation, verified-state glow) - already shipped in `globals.css` (`.ws-card-link:hover`); don't use them as a substitute for real spacing/hierarchy, and never use them to fake 3D depth on static surfaces
 - Minimum touch target: 44px height
 - Skeleton loaders for async, never spinners
 - Tailwind CSS v4, utility-only - no component libraries
@@ -246,7 +253,7 @@ Enforce in `queryWorkspaceEvents()` - plan gate applied before signal matching.
 3. **OTP registration** - `cm_otp_ok` cookie must be present + valid before account creation
 4. **Consent validation** - 3 checks: status=pending_consent, token not expired, logged-in email matches invited email
 5. **Location labels** - set asynchronously post-check-in via Nominatim. May be NULL - that's acceptable, not a bug
-6. **Checkout signals** - GPS/WiFi/IP collected at checkout too. Both check-in AND checkout signals stored
+6. **Checkout signals** - GPS/Network(IP) collected at checkout too (WiFi not implemented, see Signal Matching). Both check-in AND checkout signals stored
 7. **Admin overrides** - stored in `admin_overrides` table, never modify original `presence_events` row
 8. **Rate limiting** - `rate_limit_log` table: IP-keyed for login (10 attempts per 15 min), user-keyed for checkin (10 per hr). Use `getRateLimitCount` + `recordRateLimitHit` from `lib/db/queries/users.ts`.
 9. **API token O(1) lookup** - `token_prefix` column stores first 8 chars of the raw token. Always use prefix lookup in `POST /api/v1/checkin`. Never skip it.
@@ -260,7 +267,8 @@ Enforce in `queryWorkspaceEvents()` - plan gate applied before signal matching.
 - Never delete presence_events rows
 - Never store raw WiFi SSIDs
 - Never skip `requireWsAdmin()` for workspace admin routes
-- Never add drop shadows or gradients to UI
+- Never add gradient fills to static surfaces, or shadows that fake 3D depth - glows/shadows are fine for interactive and status/motion emphasis only
+- Never claim WiFi signal matching works in copy, docs, or demos - it isn't implemented (GPS + Network only)
 - Never trust `otpVerified: true` from client
 - Never use spinners - use skeleton loaders
 

@@ -49,3 +49,4 @@ ios/
 next-env.d.ts
 
 superpowers/
+.superpowers/
