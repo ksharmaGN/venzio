@@ -313,6 +313,18 @@ export const en = {
     loadingMore: "Loading more…",
   },
 
+  /** Workspace admin Today dashboard widgets (CelebrationsCard, DepartmentHeadcountCard) */
+  wsDashboard: {
+    celebrationsTitle: "This week",
+    celebrationsEmpty: "Nothing to celebrate this week.",
+    celebrationIconLabel: {
+      birthday: "Birthday",
+      anniversary: "Work anniversary",
+      new_joiner: "New joiner",
+      holiday: "Holiday",
+    } as Record<'birthday' | 'anniversary' | 'new_joiner' | 'holiday', string>,
+  },
+
   /** /ws/:slug/members/:userId member timeline */
   wsMemberTimeline: {
     viewMore: "View more",

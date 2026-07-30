@@ -1,6 +1,7 @@
 'use client'
 
 import type { CelebrationEntry } from '@/app/api/ws/[slug]/dashboard/route'
+import { en } from '@/locales/en'
 import { WidgetCard } from './WidgetCard'
 import { fmtShortDate } from './TodayHelpers'
 
@@ -18,7 +19,7 @@ export function CelebrationsCard({ data, loading }: { data: CelebrationEntry[]; 
   }
 
   return (
-    <WidgetCard title="This week">
+    <WidgetCard title={en.wsDashboard.celebrationsTitle}>
       {loading ? (
         [1, 2, 3].map((i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
@@ -31,7 +32,7 @@ export function CelebrationsCard({ data, loading }: { data: CelebrationEntry[]; 
         ))
       ) : data.length === 0 ? (
         <div style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', textAlign: 'center', padding: '16px 0' }}>
-          Nothing to celebrate this week.
+          {en.wsDashboard.celebrationsEmpty}
         </div>
       ) : (
         data.map((c, i) => (
@@ -43,11 +44,15 @@ export function CelebrationsCard({ data, loading }: { data: CelebrationEntry[]; 
               borderBottom: i < data.length - 1 ? '1px solid var(--border)' : 'none',
             }}
           >
-            <span style={{
-              width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
-              background: 'var(--surface-2)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px',
-            }}>
+            <span
+              role="img"
+              aria-label={en.wsDashboard.celebrationIconLabel[c.type]}
+              style={{
+                width: '26px', height: '26px', borderRadius: '50%', flexShrink: 0,
+                background: 'var(--surface-2)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '13px',
+              }}
+            >
               {CELEBRATION_ICON[c.type]}
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
