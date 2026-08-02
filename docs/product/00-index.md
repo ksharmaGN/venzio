@@ -51,7 +51,7 @@ Aggregated from every ⚠️ **Status check** callout across the ten documents a
   → [04-prd.md](./04-prd.md#data-retention-policy), [04-prd.md](./04-prd.md#non-functional-requirements)
 
 ### Leave & holiday features shipped ahead of roadmap
-- The Vision doc and Roadmap both place a full leave tracker and holiday calendar in **v3 / Year 2 / 100+ customers**. Both are already live today, in simpler form: leave requests (`workspace_leave_types`, `leave_requests`) are auto-approved instantly with no approval workflow and no accrual carry-over; a per-workspace holiday calendar (`workspace_holidays`) supports CSV/XLSX bulk import.
+- The Vision doc and Roadmap both place a full leave tracker and holiday calendar in **v3 / Year 2 / 100+ customers**. Both are already live today, in simpler form: leave requests (`workspace_leave_types`, `leave_requests`) go through a real single-level pending → admin approve/reject workflow (no accrual carry-over, no *multi-level* approval yet); a per-workspace holiday calendar (`workspace_holidays`) supports CSV/XLSX bulk import.
   → [01-vision-mission.md](./01-vision-mission.md#product-scope--v1-to-long-term), [06-product-roadmap.md](./06-product-roadmap.md#next--v2-months-38-the-calculation-layer), [06-product-roadmap.md](./06-product-roadmap.md#later--v3-year-2-the-platform-layer)
 
 ### Pricing
@@ -71,6 +71,10 @@ Aggregated from every ⚠️ **Status check** callout across the ten documents a
   → [10-design-spec.md](./10-design-spec.md#brand)
 - **Bottom nav has 4 items, not 3** — Design Spec caps mobile bottom navigation at 3 items (Home, Timeline, Orgs). The live `BottomNav.tsx` has 4 (adds Settings).
   → [10-design-spec.md](./10-design-spec.md#mobile-first-layout-rules)
+
+### Pitch demo shows features ahead of the codebase (the reverse of the drift above)
+- Unlike every other entry in this list — where an old doc overclaims and the code has since fallen behind — `docs/product/demo/venzio-pitch-demo.html` deliberately shows three near-term product directions that **do not exist in `src/` yet**: a three-tier Owner/Admin/Member role model (today's schema is a flat `admin`/`member`), an employee document upload + admin verification flow (today PAN/Aadhaar/bank are text-only, no file storage), and employee-submitted regularization requests (today corrections are entirely admin-initiated via the Alerts page). These are forward-looking design work, approved as the intended direction, not a documentation error — see `11-current-state.md`'s "Pitch demo" section and `06-product-roadmap.md`'s v2 table for the fuller treatment, and `docs/product/demo/codex-implementation-plan.md` for how to actually build them.
+  → [11-current-state.md](./11-current-state.md#pitch-demo--forward-looking-features-not-yet-shipped), [06-product-roadmap.md](./06-product-roadmap.md#next--v2-months-38-the-calculation-layer)
 
 ### Not yet built (confirmed absent, no drift — expectations already correctly labeled "future" by the source docs)
 - Payroll data pipe / Razorpay integration, allowance auto-calculation, org-wide analytics dashboard (Growth v2), user productivity layer (focus sessions, habit tracking, the `/me/space` Notes/To-dos/Pomodoro concept from `VENZIO_RENAME_AND_SPACE.md`), Google Calendar sync, native iOS/Android app (Capacitor), SSO/enterprise plan, Form 16 export, leave accrual carry-over, and multi-level leave approval workflows.

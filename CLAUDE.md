@@ -95,18 +95,20 @@ Rows with a missing/invalid name or date are skipped and returned in the `errors
 
 ## Leave System
 
-Workspace admins configure per-workspace leave types (`workspace_leave_types` table). Employees submit leave requests (`leave_requests` table) from `/me/ws/[slug]`. Submissions are instantly `approved` — no approval workflow.
+Workspace admins configure per-workspace leave types (`workspace_leave_types` table). Employees submit leave requests (`leave_requests` table) from `/me/ws/[slug]`. Submissions start `pending` and go through a real admin approve/reject workflow via `actionLeaveRequest()` — this corrects an earlier version of this file which claimed instant auto-approval with no review step.
 
 ### Tables
 - `workspace_leave_types`: `id, workspace_id, name, accrual_frequency ('monthly'|'quarterly'), accrual_credits, created_at, deleted_at` — soft-deleted, unique `(workspace_id, name) WHERE deleted_at IS NULL`
-- `leave_requests`: `id, workspace_id, user_id, leave_type_id, start_date, end_date, reason, status DEFAULT 'approved', created_at` — immutable after insert
+- `leave_requests`: `id, workspace_id, user_id, leave_type_id, start_date, end_date, reason, status DEFAULT 'pending', created_at` — immutable after insert; status moves to `approved`/`rejected` only via `actionLeaveRequest()`
 
 ### Balance computation (no stored balance — always computed)
 ```
-periods_elapsed = complete calendar months (or quarter-groups) since member.added_at
-total_accrued   = periods_elapsed × accrual_credits
-used_days       = SUM(end_date − start_date + 1) for approved requests of this type
-available_days  = max(0, total_accrued − used_days)
+opening_balance = from leave_opening_balances (manual carry-over, workspace/user/leave-type scoped)
+accrual_start   = leave_cutover_date if set and later than member.added_at, else member.added_at
+periods_elapsed = complete calendar months (or quarter-groups) since accrual_start
+total_accrued   = pro-rata first-period credits + full periods since accrual_start
+used_days       = SUM(end_date − start_date + 1) for status='approved' requests of this type only
+available_days  = max(0, opening_balance + total_accrued − used_days)
 ```
 Logic lives in `lib/db/queries/leaves.ts → getLeaveTypesWithBalance()`. Uses calendar month arithmetic (not day approximations).
 
@@ -115,9 +117,12 @@ Logic lives in `lib/db/queries/leaves.ts → getLeaveTypesWithBalance()`. Uses c
 - `POST` JSON `{ name, accrual_frequency, accrual_credits }` — create
 - `DELETE /[id]` — soft-delete; existing requests unaffected
 
+### Admin approve/reject (`/ws/[slug]/leaves`)
+- Admin-side page + route action leave requests via `actionLeaveRequest()` (`LeaveAction.APPROVE`/`REJECT`) in `lib/db/queries/leaves.ts`
+
 ### Employee API
 - `GET /api/me/ws/[slug]/leave-types` — list types with `available_days` for current user
-- `POST /api/me/ws/[slug]/leave` JSON `{ leave_type_id, start_date, end_date, reason? }` — submit; returns `400 INSUFFICIENT_BALANCE` if requested days exceed balance
+- `POST /api/me/ws/[slug]/leave` JSON `{ leave_type_id, start_date, end_date, reason? }` — submit; creates a `pending` request; returns `400 INSUFFICIENT_BALANCE` if requested days exceed balance
 
 ### Leave requests are immutable
 Never modify or delete `leave_requests` rows. Same principle as `presence_events`.

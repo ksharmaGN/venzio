@@ -1,0 +1,2749 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Venzio — Presence Intelligence (Pitch Demo)</title>
+<style>
+@import url("https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&family=Playfair+Display:ital,wght@0,700;0,900;1,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap");
+
+/* ============================= tokens ============================= */
+:root{
+  --brand:#1d9e75; --brand-hover:#157a56;
+  --navy:#0a2318;
+  --teal:#00D4AA; --amber:#F59E0B; --danger:#EF4444; --info:#2563EB;
+  --surface-0:#FFFFFF; --surface-1:#f0faf5; --surface-2:#e4f5ec;
+  --text-primary:#0a2318; --text-secondary:#3d6b52; --text-muted:#7aab92;
+  --border:rgba(29,158,117,0.18);
+  --radius-sm:6px; --radius-md:10px; --radius-lg:16px; --radius-xl:22px;
+  --shadow-sm:0 1px 2px rgba(10,35,24,0.06);
+  --shadow-md:0 4px 16px rgba(10,35,24,0.08);
+  --green-glow:rgba(29,158,117,0.28);
+  --ease-out:cubic-bezier(0.23,1,0.32,1);
+  --ease-inout:cubic-bezier(0.77,0,0.175,1);
+  --ease-spring:cubic-bezier(0.34,1.56,0.64,1);
+  --ease-drawer:cubic-bezier(0.32,0.72,0,1);
+  --font-head:'Playfair Display',Georgia,serif;
+  --font-body:'Plus Jakarta Sans',-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-mono:'JetBrains Mono','SF Mono',Consolas,monospace;
+}
+.theme-me{
+  --surface-0:#0c1e17; --surface-1:#06100d; --surface-2:#0f2419;
+  --text-primary:#e8f5ef; --text-secondary:#8fbba3; --text-muted:#587e6b;
+  --border:rgba(29,158,117,0.22);
+  --navy:#e8f5ef;
+  --shadow-sm:0 1px 2px rgba(0,0,0,0.3);
+  --shadow-md:0 8px 28px rgba(0,0,0,0.45);
+  --green-glow:rgba(45,212,150,0.38);
+  color-scheme:dark;
+}
+
+/* ============================= base ============================= */
+*{box-sizing:border-box;min-width:0;}
+html,body{height:100%;}
+body{
+  margin:0; background:var(--surface-1); color:var(--text-primary);
+  font-family:var(--font-body); font-size:15px; line-height:1.55;
+  -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
+  transition:background 320ms var(--ease-inout), color 320ms var(--ease-inout);
+  overflow-x:hidden;
+}
+h1,h2,h3,h4{ font-family:var(--font-head); margin:0; color:var(--navy); letter-spacing:-0.01em; }
+p{margin:0;}
+button{font-family:inherit;}
+a{color:inherit;}
+.mono{font-family:var(--font-mono);}
+::selection{ background:var(--green-glow); }
+
+::-webkit-scrollbar{width:8px;height:8px;}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:8px;}
+::-webkit-scrollbar-track{background:transparent;}
+
+/* ============================= press / interactive ============================= */
+button, .pressable, .navitem, .rowlink{
+  -webkit-tap-highlight-color:transparent;
+  transition:transform 140ms var(--ease-out), background 160ms var(--ease-out), border-color 160ms var(--ease-out), box-shadow 160ms var(--ease-out), opacity 160ms var(--ease-out);
+}
+button:active:not(:disabled), .pressable:active, .navitem:active, .rowlink:active{
+  transform:scale(0.97);
+}
+button:disabled{ opacity:0.5; cursor:not-allowed; }
+button{ cursor:pointer; border:none; background:none; }
+
+@media (hover:hover) and (pointer:fine){
+  .hoverlift:hover{ border-color:var(--brand); box-shadow:0 2px 14px var(--green-glow); }
+  .navitem:hover{ background:var(--surface-2); }
+  .rowlink:hover{ background:var(--surface-2); }
+}
+
+/* ============================= layout shells ============================= */
+#app{min-height:100vh;}
+.shell-ws{display:flex; min-height:100vh;}
+.sidebar{
+  width:228px; flex-shrink:0; background:var(--surface-0); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; padding:20px 14px; gap:4px; position:sticky; top:0; height:100vh;
+}
+.sidebar-brand{ display:flex; align-items:center; gap:10px; padding:6px 10px 22px; }
+.brand-mark{ width:30px;height:30px;border-radius:9px;background:var(--brand);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:800;font-family:var(--font-head);font-size:15px;flex-shrink:0; }
+.brand-name{ font-family:var(--font-head); font-weight:700; font-size:17px; color:var(--navy); }
+.navitem{
+  display:flex; align-items:center; gap:11px; padding:10px 12px; border-radius:var(--radius-md);
+  color:var(--text-secondary); font-size:13.5px; font-weight:500; cursor:pointer; text-decoration:none;
+}
+.navitem .ic{ width:18px;height:18px;flex-shrink:0;opacity:0.85; }
+.navitem.active{ background:color-mix(in srgb, var(--brand) 12%, transparent); color:var(--brand); font-weight:700; }
+.sidebar-foot{ margin-top:auto; padding-top:14px; border-top:1px solid var(--border); position:relative; }
+.ws-main{ flex:1; min-width:0; display:flex; flex-direction:column; }
+.ws-topbar{
+  height:64px; flex-shrink:0; display:flex; align-items:center; justify-content:space-between;
+  padding:0 28px; border-bottom:1px solid var(--border); background:var(--surface-0);
+  position:sticky; top:0; z-index:5; backdrop-filter:blur(14px); background:color-mix(in srgb, var(--surface-0) 88%, transparent);
+}
+.ws-content{ padding:28px; max-width:1180px; width:100%; margin:0 auto; }
+
+.shell-me{ max-width:460px; margin:0 auto; min-height:100vh; display:flex; flex-direction:column; position:relative; }
+.me-topbar{ padding:20px 20px 6px; }
+.me-content{ flex:1; padding:6px 20px 100px; }
+.me-bottomnav{
+  position:fixed; bottom:0; left:50%; transform:translateX(-50%); width:100%; max-width:460px;
+  display:flex; background:color-mix(in srgb, var(--surface-0) 85%, transparent); backdrop-filter:blur(18px);
+  border-top:1px solid var(--border); padding:8px 6px calc(8px + env(safe-area-inset-bottom));
+  z-index:10;
+}
+.me-navitem{
+  flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; padding:7px 4px;
+  border-radius:var(--radius-md); color:var(--text-muted); font-size:10.5px; font-weight:600; cursor:pointer;
+}
+.me-navitem .ic{width:20px;height:20px;}
+.me-navitem.active{ color:var(--brand); }
+
+/* ============================= typography scale ============================= */
+.t-display{ font-size:clamp(1.9rem,4vw,2.6rem); line-height:1.05; letter-spacing:-0.025em; font-weight:700; }
+.t-h1{ font-size:21px; font-weight:700; }
+.t-h2{ font-size:16px; font-weight:700; }
+.t-eyebrow{ font-size:11px; font-weight:700; letter-spacing:0.05em; text-transform:uppercase; color:var(--text-muted); }
+.t-secondary{ color:var(--text-secondary); font-size:13.5px; }
+.t-muted{ color:var(--text-muted); font-size:12.5px; }
+.stat-num{ font-family:var(--font-mono); font-weight:700; font-size:30px; letter-spacing:-0.02em; color:var(--navy); }
+
+/* ============================= components ============================= */
+.card{ background:var(--surface-0); border:1px solid var(--border); border-radius:var(--radius-lg); padding:20px; }
+.card + .card{ margin-top:14px; }
+.rowlink{ cursor:pointer; border-radius:var(--radius-md); }
+
+.btn{ height:42px; padding:0 18px; border-radius:var(--radius-md); font-size:13.5px; font-weight:600; display:inline-flex; align-items:center; justify-content:center; gap:8px; }
+.btn-primary{ background:var(--brand); color:#fff; }
+.btn-primary:not(:disabled):hover{ background:var(--brand-hover); }
+.btn-secondary{ background:var(--surface-2); color:var(--text-primary); border:1px solid var(--border); }
+.btn-ghost{ background:transparent; color:var(--text-secondary); }
+.btn-danger{ background:transparent; color:var(--danger); border:1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+.btn-sm{ height:34px; padding:0 13px; font-size:12.5px; }
+.btn-block{ width:100%; }
+
+.chip{ display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap; }
+.chip-verified{ background:color-mix(in srgb, var(--brand) 14%, transparent); color:var(--brand); }
+.chip-partial{ background:color-mix(in srgb, var(--amber) 16%, transparent); color:#9a6200; }
+.chip-none{ background:color-mix(in srgb, var(--danger) 14%, transparent); color:var(--danger); }
+.chip-override{ background:color-mix(in srgb, var(--info) 14%, transparent); color:var(--info); }
+.chip-owner{ background:color-mix(in srgb, var(--navy) 14%, transparent); color:var(--navy); }
+.chip-leave{ background:var(--surface-2); color:var(--text-secondary); }
+.chip-roadmap{ background:var(--surface-2); color:var(--text-muted); font-weight:600; }
+.theme-me .chip-partial{ color:#e2b04a; }
+
+.avatar{ width:34px;height:34px;border-radius:50%; background:color-mix(in srgb, var(--brand) 16%, transparent); color:var(--brand); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12.5px; flex-shrink:0; }
+
+.field-label{ display:block; font-size:11.5px; font-weight:600; color:var(--text-secondary); margin-bottom:5px; }
+.input, select.input, textarea.input{
+  width:100%; height:42px; padding:0 12px; border:1px solid var(--border); border-radius:var(--radius-md);
+  background:var(--surface-2); color:var(--text-primary); font-size:13.5px; font-family:inherit; outline:none;
+}
+textarea.input{ height:auto; padding:10px 12px; resize:vertical; }
+.input:focus{ border-color:var(--brand); box-shadow:0 0 0 3px var(--green-glow); }
+
+.divider{ height:1px; background:var(--border); margin:16px 0; }
+.skeleton{ background:linear-gradient(90deg, var(--surface-2) 25%, var(--border) 50%, var(--surface-2) 75%); background-size:400% 100%; animation:shimmer 1.6s ease infinite; border-radius:var(--radius-sm); }
+@keyframes shimmer{ 0%{background-position:100% 0;} 100%{background-position:-100% 0;} }
+
+.empty{ text-align:center; padding:40px 20px; color:var(--text-muted); }
+
+table.datatable{ width:100%; border-collapse:collapse; font-size:13px; }
+table.datatable th{ text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--text-muted); font-weight:700; padding:0 12px 10px; }
+table.datatable td{ padding:12px; border-top:1px solid var(--border); }
+table.datatable tr:last-child td{ }
+
+/* ============================= motion tiers ============================= */
+/* tier A - snappy, high frequency */
+.fx-snap{ animation:fxSnap 150ms var(--ease-out) both; }
+@keyframes fxSnap{ from{opacity:0; transform:scale(0.96);} to{opacity:1; transform:scale(1);} }
+
+/* tier B - spring, everyday feedback */
+.fx-spring{ animation:fxSpring 480ms var(--ease-spring) both; }
+@keyframes fxSpring{
+  0%{ opacity:0; transform:scale(0.82) translateY(6px); }
+  60%{ opacity:1; transform:scale(1.035) translateY(0); }
+  100%{ transform:scale(1) translateY(0); }
+}
+.fx-spring-stagger > *{ animation:fxSpring 420ms var(--ease-spring) both; }
+.fx-spring-stagger > *:nth-child(1){animation-delay:0ms;}
+.fx-spring-stagger > *:nth-child(2){animation-delay:40ms;}
+.fx-spring-stagger > *:nth-child(3){animation-delay:80ms;}
+.fx-spring-stagger > *:nth-child(4){animation-delay:120ms;}
+.fx-spring-stagger > *:nth-child(5){animation-delay:160ms;}
+.fx-spring-stagger > *:nth-child(6){animation-delay:200ms;}
+.fx-spring-stagger > *:nth-child(7){animation-delay:240ms;}
+.fx-spring-stagger > *:nth-child(8){animation-delay:280ms;}
+.fx-spring-stagger > *:nth-child(n+9){animation-delay:320ms;}
+
+/* tier C - celebratory, reserved for reward moments */
+.ci-stage{ position:relative; width:100%; height:180px; display:flex; align-items:center; justify-content:center; }
+.ci-ring{ position:absolute; width:96px;height:96px;border-radius:50%; border:2px solid var(--brand); opacity:0; }
+.ci-ring.play{ animation:ciRing 900ms var(--ease-inout) forwards; }
+.ci-ring.play.r2{ animation:ciRing2 1100ms var(--ease-inout) 120ms forwards; }
+@keyframes ciRing{ 0%{opacity:0.75; transform:scale(0.7);} 100%{opacity:0; transform:scale(2.1);} }
+@keyframes ciRing2{ 0%{opacity:0.45; transform:scale(0.7);} 100%{opacity:0; transform:scale(2.6);} }
+.ci-badge{ position:relative; width:88px;height:88px;border-radius:50%; background:color-mix(in srgb, var(--brand) 18%, transparent); border:2.5px solid var(--brand); display:flex; align-items:center; justify-content:center; color:var(--brand); font-size:38px; opacity:0; z-index:2; }
+.ci-badge.play{ animation:ciBadge 640ms var(--ease-spring) forwards; }
+@keyframes ciBadge{
+  0%{ opacity:0; transform:scale(0.4) rotate(-10deg); }
+  55%{ opacity:1; transform:scale(1.22) rotate(4deg); }
+  78%{ transform:scale(0.94) rotate(-2deg); }
+  100%{ opacity:1; transform:scale(1) rotate(0); }
+}
+.ci-dot{ position:absolute; width:6px;height:6px;border-radius:50%; background:var(--brand); opacity:1; z-index:1; }
+.ci-dot.play{ animation:ciDot 750ms var(--ease-out) 280ms forwards; }
+@keyframes ciDot{ to{ opacity:0; transform:translate(var(--dx),var(--dy)) scale(0.3); } }
+
+/* tier D - targeted content swap (no remount, no keyframe replay) */
+.ci-fade-target{ transition:opacity 220ms var(--ease-out), transform 220ms var(--ease-out); }
+.ci-fade-target:not(.ci-fade-in){ opacity:0; transform:translateY(4px); }
+
+@media (prefers-reduced-motion: reduce){
+  .fx-snap,.fx-spring,.fx-spring-stagger>*,.ci-ring,.ci-badge,.ci-dot,.ci-fade-target{ animation:none !important; transition:none !important; opacity:1 !important; transform:none !important; }
+}
+
+/* ============================= misc screen bits ============================= */
+.checkin-btn{
+  width:168px;height:168px;border-radius:50%; margin:14px auto 6px; display:flex; flex-direction:column;
+  align-items:center; justify-content:center; gap:6px; background:var(--brand); color:#fff; border:none;
+  box-shadow:0 0 0 8px color-mix(in srgb, var(--brand) 14%, transparent);
+}
+.checkin-btn:active{ transform:scale(0.96); }
+.checkin-btn .ic-big{ font-size:34px; }
+.signal-row{ display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius-md); background:var(--surface-2); }
+.signal-row .dot{ width:8px;height:8px;border-radius:50%; background:var(--text-muted); flex-shrink:0; }
+.signal-row.ok .dot{ background:var(--brand); box-shadow:0 0 0 4px var(--green-glow); }
+.signal-row.pulse .dot{ animation:pulseDot 1s ease-in-out infinite; }
+@keyframes pulseDot{ 0%,100%{opacity:1;transform:scale(1);} 50%{opacity:0.4;transform:scale(0.7);} }
+
+.bar-wrap{ display:flex; align-items:flex-end; gap:5px; height:110px; }
+.bar{ flex:1; background:color-mix(in srgb, var(--brand) 65%, transparent); border-radius:4px 4px 0 0; min-height:3px; transition:height 500ms var(--ease-out); }
+.bar.weekend{ background:var(--border); }
+
+.livedot{ width:7px;height:7px;border-radius:50%; background:var(--brand); display:inline-block; animation:pulseDot 1.8s ease-in-out infinite; }
+
+.slideover{ position:fixed; inset:0; z-index:50; display:flex; justify-content:flex-end; }
+.slideover .scrim{ position:absolute; inset:0; background:rgba(6,16,13,0.4); animation:fadeIn 220ms var(--ease-out) both; }
+.slideover .panel{ position:relative; width:380px; max-width:92vw; background:var(--surface-0); height:100%; box-shadow:-8px 0 32px rgba(0,0,0,0.18); padding:24px; overflow-y:auto; animation:slideIn 280ms var(--ease-spring) both; }
+@keyframes fadeIn{ from{opacity:0;} to{opacity:1;} }
+@keyframes slideIn{ from{ transform:translateX(24px); opacity:0; } to{ transform:translateX(0); opacity:1; } }
+
+.toast{ position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--navy); color:var(--surface-0); padding:12px 20px; border-radius:var(--radius-md); font-size:13px; font-weight:600; z-index:200; box-shadow:var(--shadow-md); animation:toastIn 320ms var(--ease-spring) both; }
+.theme-me .toast{ background:var(--brand); color:#06231c; }
+@keyframes toastIn{ from{ opacity:0; transform:translate(-50%,10px); } to{ opacity:1; transform:translate(-50%,0); } }
+
+/* ============================= me: profile bottom sheet ============================= */
+.me-sheet{ position:fixed; inset:0; z-index:60; display:flex; align-items:flex-end; justify-content:center; }
+.me-sheet .scrim{ position:absolute; inset:0; background:rgba(6,16,13,0.45); animation:fadeIn 220ms var(--ease-out) both; }
+.me-sheet .panel{
+  position:relative; width:100%; max-width:460px; background:var(--surface-0);
+  border-radius:var(--radius-xl) var(--radius-xl) 0 0; padding:10px 20px calc(20px + env(safe-area-inset-bottom));
+  box-shadow:0 -8px 32px rgba(0,0,0,0.18); max-height:80vh; overflow-y:auto;
+  animation:sheetIn 340ms var(--ease-drawer) both;
+}
+.me-sheet .handle{ width:36px;height:4px;border-radius:999px;background:var(--border); margin:0 auto 16px; }
+@keyframes sheetIn{ from{ transform:translateY(100%); } to{ transform:translateY(0); } }
+
+/* ============================= confirm modal (logout) ============================= */
+.modal{ position:fixed; inset:0; z-index:120; display:flex; align-items:center; justify-content:center; padding:20px; }
+.modal .scrim{ position:absolute; inset:0; background:rgba(6,16,13,0.5); animation:fadeIn 220ms var(--ease-out) both; }
+.modal .panel{ position:relative; width:100%; max-width:360px; background:var(--surface-0); border-radius:var(--radius-xl); padding:24px; box-shadow:var(--shadow-md); animation:fxSpring 320ms var(--ease-spring) both; }
+
+/* ============================= workspace switcher pill + admin menu ============================= */
+.ws-pill{ display:inline-flex; align-items:center; gap:7px; padding:6px 11px 6px 6px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); font-size:12.5px; font-weight:700; color:var(--text-primary); }
+.ws-pill .swatch{ width:22px;height:22px;border-radius:50%; display:flex; align-items:center; justify-content:center; color:#fff; font-size:9.5px; font-weight:800; flex-shrink:0; }
+.dropdown-menu{ position:absolute; bottom:calc(100% + 8px); left:8px; right:8px; background:var(--surface-0); border:1px solid var(--border); border-radius:var(--radius-md); box-shadow:var(--shadow-md); padding:6px; z-index:30; animation:fxSnap 150ms var(--ease-out) both; }
+.dropdown-menu .rowlink{ display:block; padding:9px 10px; font-size:13px; font-weight:600; }
+.dropdown-menu.below{ bottom:auto; top:calc(100% + 8px); left:auto; right:0; width:180px; }
+.topbar-account{ position:relative; display:none; } /* fallback account menu — shown only where .sidebar-foot is hidden, see the max-width:860px rule below */
+/* ============================= admin surface extensions ============================= */
+.navbadge{ margin-left:auto; background:var(--danger); color:#fff; font-size:10px; font-weight:800; min-width:17px; height:17px; border-radius:999px; display:flex; align-items:center; justify-content:center; padding:0 5px; }
+.navitem.active .navbadge{ background:var(--danger); }
+
+.tabbar{ display:inline-flex; gap:4px; padding:4px; background:var(--surface-2); border-radius:12px; flex-wrap:wrap; }
+.tabbar button{ height:32px; padding:0 14px; border-radius:9px; font-size:12.5px; font-weight:600; color:var(--text-secondary); }
+.tabbar button.active{ background:var(--surface-0); color:var(--brand); box-shadow:var(--shadow-sm); }
+
+.progress{ height:7px; background:var(--surface-2); border-radius:4px; overflow:hidden; }
+.progress > div{ height:100%; border-radius:4px; background:var(--brand); transform-origin:left; animation:barGrow 560ms var(--ease-out) both; }
+@keyframes barGrow{ from{ transform:scaleX(0); } to{ transform:scaleX(1); } }
+
+.split-bar{ display:flex; height:8px; border-radius:4px; overflow:hidden; background:var(--surface-2); }
+
+/* Monthly Activity Gantt/heatmap — colors match src/app/ws/[slug]/monthly/MonthlyClient.tsx exactly */
+.gantt-row{ display:grid; gap:2px; align-items:center; margin-bottom:2px; }
+.gantt-cell{ height:28px; border-radius:5px; display:flex; align-items:center; justify-content:center;
+  font-family:var(--font-mono); font-size:10px; color:var(--text-primary); border:1px solid transparent; }
+.gantt-office{ background:color-mix(in srgb, var(--teal) 25%, transparent); border-color:color-mix(in srgb, var(--teal) 50%, transparent); font-weight:600; }
+.gantt-remote{ background:color-mix(in srgb, var(--amber) 25%, transparent); border-color:color-mix(in srgb, var(--amber) 50%, transparent); }
+.gantt-absent{ background:color-mix(in srgb, var(--danger) 15%, transparent); border-color:color-mix(in srgb, var(--danger) 35%, transparent); }
+.gantt-leave{ background:color-mix(in srgb, #0EA5E9 15%, transparent); border-color:color-mix(in srgb, #0EA5E9 35%, transparent); }
+.gantt-holiday{ background:color-mix(in srgb, #8B5CF6 15%, transparent); border-color:color-mix(in srgb, #8B5CF6 35%, transparent); }
+.gantt-weekend{ background:var(--surface-2); opacity:0.4; }
+.gantt-future{ background:transparent; color:var(--text-muted); }
+.gantt-pre-join{ background:var(--surface-1); border:1px dashed var(--border); opacity:0.45; }
+
+.card-fixed-h{ display:flex; flex-direction:column; min-height:340px; max-height:420px; }
+.card-fixed-h .scroll-body{ flex:1; overflow-y:auto; }
+
+.toggle{ width:42px; height:25px; border-radius:999px; background:var(--surface-2); border:1px solid var(--border); position:relative; flex-shrink:0; padding:0; }
+.toggle .knob{ width:19px; height:19px; border-radius:50%; background:#fff; position:absolute; top:2px; left:2px; transition:transform 220ms var(--ease-spring); box-shadow:0 1px 3px rgba(0,0,0,0.22); }
+.toggle.on{ background:var(--brand); border-color:var(--brand); }
+.toggle.on .knob{ transform:translateX(17px); }
+
+.wizard-steps{ display:flex; align-items:center; }
+.wizard-step-dot{ width:26px; height:26px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; background:var(--surface-2); color:var(--text-muted); border:1.5px solid var(--border); transition:background 220ms var(--ease-out), color 220ms var(--ease-out), border-color 220ms var(--ease-out), box-shadow 220ms var(--ease-out); }
+.wizard-step-dot.done{ background:var(--brand); color:#fff; border-color:var(--brand); }
+.wizard-step-dot.current{ border-color:var(--brand); color:var(--brand); background:var(--surface-0); box-shadow:0 0 0 4px var(--green-glow); }
+.wizard-connector{ flex:1; height:2px; background:var(--border); margin:0 4px; min-width:12px; }
+.wizard-connector.done{ background:var(--brand); }
+
+.stage-dot{ width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--surface-2);color:var(--text-muted);border:1.5px solid var(--border);flex-shrink:0;font-size:10px; }
+.stage-dot.done{ background:var(--brand); color:#fff; border-color:var(--brand); }
+.stage-dot.current{ border-color:var(--brand); box-shadow:0 0 0 3px var(--green-glow); color:var(--brand); }
+.stage-connector{ flex:1; height:2px; background:var(--border); min-width:16px; }
+.stage-connector.done{ background:var(--brand); }
+
+.dropzone{ display:flex; align-items:center; justify-content:center; gap:8px; height:64px; border:2px dashed var(--border); border-radius:var(--radius-md); background:var(--surface-2); color:var(--text-secondary); font-size:13px; font-weight:600; cursor:pointer; text-align:center; }
+.dropzone:hover{ border-color:var(--brand); color:var(--brand); }
+
+.report-card{ display:flex; flex-direction:column; gap:12px; }
+.report-card.disabled{ opacity:0.5; }
+.report-card.disabled button{ cursor:not-allowed !important; }
+
+.bal-input{ width:100%; height:36px; padding:0 8px; border:1px solid var(--border); border-radius:var(--radius-sm); background:var(--surface-2); color:var(--text-primary); font-family:var(--font-mono); font-size:12.5px; text-align:center; outline:none; }
+.bal-input:focus{ border-color:var(--brand); box-shadow:0 0 0 2px var(--green-glow); }
+
+.icon-btn{ width:32px; height:32px; border-radius:var(--radius-sm); display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+.icon-btn-approve{ background:var(--brand); color:#fff; }
+.icon-btn-decline{ background:transparent; color:var(--danger); border:1px solid color-mix(in srgb, var(--danger) 35%, transparent); }
+
+@media (max-width:860px){
+  .shell-ws{flex-direction:column; padding-top:54px;}
+  .sidebar{ width:100%; height:auto; position:static; flex-direction:row; align-items:center; overflow-x:auto; padding:10px 12px; border-right:none; border-bottom:1px solid var(--border); gap:2px; }
+  .sidebar-brand{padding:4px 12px 4px 2px; flex-shrink:0;}
+  .navitem{ flex-shrink:0; white-space:nowrap; }
+  .sidebar-foot{display:none;}
+  .topbar-account{ display:block;}
+  .ws-content{padding:18px;}
+}
+</style>
+</head>
+<body class="theme-me">
+<div id="app"></div>
+
+<script>
+/* ============================================================
+   DEMO DATA — fictional company, all values invented for the pitch
+   ============================================================ */
+const DEMO_TODAY = new Date(2026, 6, 28); // fixed demo "today" — Jul 28, 2026 — single source, was previously hardcoded 3 separate ways
+function demoTodayIso(){ const d=DEMO_TODAY; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+const WORKSPACE = { name:'Loopwork', slug:'loopwork', plan:'growth', tz:'Asia/Kolkata', office:'Indiranagar, Bengaluru', totalMembers:42 };
+const ADMIN = { name:'Priya Nair', role:'Head of People Ops', initials:'PN' };
+const ME = { name:'Rahul Verma', role:'Senior Engineer', initials:'RV', streak:5 };
+
+const SIGNALS_CONFIG = [
+  { type:'gps', label:'Loopwork HQ · Indiranagar, Bengaluru', detail:'300m radius', status:'live' },
+  { type:'network', label:'Registered office network', detail:'500m proximity match', status:'live' },
+  { type:'wifi', label:'WiFi SSID matching', detail:'Not yet built', status:'roadmap' },
+];
+
+function initials(name){ return name.split(' ').map(s=>s[0]).slice(0,2).join('').toUpperCase(); }
+
+const PEOPLE = [
+  { id:1, name:'Rahul Verma', role:'Senior Engineer', status:'verified', time:'9:02 AM', gps:true, network:true },
+  { id:2, name:'Ananya Rao', role:'Product Designer', status:'verified', time:'9:14 AM', gps:true, network:true },
+  { id:3, name:'Karan Mehta', role:'Sales Lead', status:'partial', time:'9:20 AM', gps:false, network:true },
+  { id:4, name:"Sofia D'Souza", role:'Customer Success', status:'verified', time:'8:55 AM', gps:true, network:true },
+  { id:5, name:'Vikram Iyer', role:'Backend Engineer', status:'verified', time:'9:05 AM', gps:true, network:true },
+  { id:6, name:'Neha Kapoor', role:'Marketing Manager', status:'none', time:'9:40 AM', gps:false, network:false, note:'Checked in from home, no office signals matched' },
+  { id:7, name:'Arjun Nair', role:'DevOps Engineer', status:'verified', time:'8:47 AM', gps:true, network:true },
+  { id:8, name:'Meera Pillai', role:'HR Associate', status:'verified', time:'9:10 AM', gps:true, network:true },
+  { id:9, name:'Rohan Gupta', role:'Sales Associate', status:'leave', time:'—' },
+  { id:10, name:'Divya Menon', role:'QA Engineer', status:'partial', time:'9:30 AM', gps:true, network:false },
+  { id:11, name:'Aditya Kulkarni', role:'Frontend Engineer', status:'verified', time:'9:00 AM', gps:true, network:true },
+  { id:12, name:'Ishita Bose', role:'Finance Analyst', status:'leave', time:'—' },
+  { id:13, name:'Sanjay Reddy', role:'Support Engineer', status:'none', time:'9:52 AM', gps:false, network:false, note:'Signals did not match any registered signal' },
+  { id:14, name:'Priya Nair', role:'Head of People Ops', status:'verified', time:'8:40 AM', gps:true, network:true },
+].map(p=>({ ...p, initials:initials(p.name), overridden:false }));
+
+/* Small standalone rosters for the other two demo workspaces — ids in non-colliding ranges
+   since these people are NOT part of EMPLOYEES/findEmployee(), only the me-surface workspace
+   roster reads them (see activeWorkspace().people). Admin surface stays Loopwork-only. */
+const NORTHSTAR_PEOPLE = [
+  { id:101, name:'Wei Lin', role:'Product Manager', status:'verified', time:'9:12 AM', gps:true, network:true },
+  { id:102, name:'Fatima Sheikh', role:'Data Analyst', status:'verified', time:'9:03 AM', gps:true, network:true },
+  { id:103, name:'Carlos Mendes', role:'Backend Engineer', status:'partial', time:'9:25 AM', gps:false, network:true },
+  { id:104, name:'Aoi Tanaka', role:'UX Designer', status:'none', time:'9:48 AM', gps:false, network:false, note:'Checked in from home, no office signals matched' },
+  { id:105, name:'Liam O\'Connor', role:'Sales Executive', status:'leave', time:'—' },
+  { id:106, name:'Priyanka Das', role:'QA Engineer', status:'verified', time:'8:58 AM', gps:true, network:true },
+].map(p=>({ ...p, initials:initials(p.name), overridden:false }));
+
+const BRIGHTPATH_PEOPLE = [
+  { id:201, name:'Marcus Webb', role:'Engineering Lead', status:'verified', time:'9:00 AM', gps:true, network:true },
+  { id:202, name:'Ines Rocha', role:'Marketing Lead', status:'verified', time:'9:08 AM', gps:true, network:true },
+  { id:203, name:'Devika Menon', role:'Finance Manager', status:'partial', time:'9:33 AM', gps:true, network:false },
+  { id:204, name:'Tomasz Nowak', role:'Support Engineer', status:'none', time:'9:55 AM', gps:false, network:false, note:'Signals did not match any registered signal' },
+  { id:205, name:'Grace Kim', role:'Recruiter', status:'leave', time:'—' },
+].map(p=>({ ...p, initials:initials(p.name), overridden:false }));
+
+/* Multi-workspace membership — one account, independent role per workspace (planned near-term
+   product direction). Loopwork's roster (PEOPLE/EMPLOYEES) backs the admin surface everywhere;
+   Northstar/BrightPath additionally get their own small rosters here so the me-surface workspace
+   screen shows real, workspace-specific data when the switcher changes the active workspace —
+   the admin surface is NOT made multi-tenant by this (it stays Loopwork-only throughout). */
+const MY_WORKSPACES = [
+  { slug:'loopwork',   name:'Loopwork',            role:'owner',  color:'#1d9e75', initials:'LW', office:WORKSPACE.office, plan:WORKSPACE.plan, people:PEOPLE },
+  { slug:'northstar',  name:'Northstar Labs',      role:'member', color:'#0EA5E9', initials:'NL', office:'Koramangala, Bengaluru', plan:'starter', people:NORTHSTAR_PEOPLE },
+  { slug:'brightpath', name:'BrightPath Ventures', role:'admin',  color:'#8B5CF6', initials:'BP', office:'Remote-first · Pune HQ', plan:'growth', people:BRIGHTPATH_PEOPLE },
+];
+function activeWorkspace(){ return MY_WORKSPACES.find(w=>w.slug===state.activeWorkspaceSlug) || MY_WORKSPACES[0]; }
+
+const TREND_14D = [30,31,3,29,32,28,2,31,33,29,30,31,4,32]; // last 14 days, WFO count, weekend dips
+
+/* Office Presence hourly line graph — mirrors the real app's OfficePresenceGraph
+   (src/app/ws/[slug]/TodayClient.tsx): a smooth bezier line + filled area over hourly buckets. */
+const OFFICE_PRESENCE_HOURLY = [2,7,16,25,31,34,32,30,33,29,22,12,4]; // 8AM..8PM, bell curve
+const PRESENCE_HOURS = [8,9,10,11,12,13,14,15,16,17,18,19,20];
+function smoothLinePath(points){
+  if (points.length < 2) return '';
+  const d = [`M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`];
+  for (let i = 0; i < points.length - 1; i++){
+    const p0 = points[Math.max(i - 1, 0)], p1 = points[i], p2 = points[i + 1], p3 = points[Math.min(i + 2, points.length - 1)];
+    const cp1x = p1.x + (p2.x - p0.x) / 6, cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6, cp2y = p2.y - (p3.y - p1.y) / 6;
+    d.push(`C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`);
+  }
+  return d.join(' ');
+}
+const PRESENCE_GRAPH = { W:600, H:190, padL:36, padR:16, padT:16, padB:40 };
+function presenceGraphPoints(){
+  const { W, H, padL, padR, padT, padB } = PRESENCE_GRAPH;
+  const chartW = W - padL - padR, chartH = H - padT - padB;
+  const yMax = Math.max(Math.max(...OFFICE_PRESENCE_HOURLY), 4);
+  return OFFICE_PRESENCE_HOURLY.map((v, i) => {
+    const x = padL + (i / (OFFICE_PRESENCE_HOURLY.length - 1)) * chartW;
+    const y = padT + chartH - (v / yMax) * chartH;
+    const h = PRESENCE_HOURS[i], ampm = h < 12 ? 'AM' : 'PM', h12 = h > 12 ? h - 12 : h;
+    return { x, y, v, label:`${h12}${ampm}`, showLabel: i % 2 === 0 };
+  });
+}
+function presenceGraphGridlines(){
+  const { H, padL, padR, padT, padB } = PRESENCE_GRAPH;
+  const chartH = H - padT - padB;
+  const yMax = Math.max(Math.max(...OFFICE_PRESENCE_HOURLY), 4);
+  const tickStep = Math.ceil(yMax / 4);
+  return Array.from({ length: 5 }, (_, i) => {
+    const val = tickStep * i;
+    const y = padT + chartH - (val / yMax) * chartH;
+    return { y, val };
+  });
+}
+function renderPresenceGraphCard(){
+  const pts = presenceGraphPoints();
+  const { W, H, padL, padR, padT, padB } = PRESENCE_GRAPH;
+  const linePath = smoothLinePath(pts);
+  const areaPath = `${linePath} L ${pts[pts.length - 1].x.toFixed(1)} ${H - padB} L ${pts[0].x.toFixed(1)} ${H - padB} Z`;
+  const gridlines = presenceGraphGridlines();
+  return `
+  <div class="card fx-spring" style="margin-top:14px;">
+    <p class="t-h2">Office Presence</p>
+    <p class="t-muted" style="margin-top:2px;">people in office by hour · today</p>
+    <svg id="presence-graph-svg" viewBox="0 0 ${W} ${H}" style="width:100%;display:block;margin-top:10px;cursor:crosshair;" onmousemove="handlePresenceHover(event)" onmouseleave="hidePresenceHover()">
+      ${gridlines.map(g => `
+        <line x1="${padL}" y1="${g.y.toFixed(1)}" x2="${W - padR}" y2="${g.y.toFixed(1)}" stroke="var(--border)" stroke-width="1" stroke-dasharray="4 3"/>
+        <text x="${padL - 8}" y="${(g.y + 3).toFixed(1)}" text-anchor="end" font-size="10" font-family="var(--font-mono)" fill="var(--text-muted)">${g.val}</text>
+      `).join('')}
+      <path d="${areaPath}" fill="color-mix(in srgb, var(--brand) 10%, transparent)" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+      ${pts.filter(p => p.showLabel).map(p => `<text x="${p.x.toFixed(1)}" y="${H - padB + 20}" text-anchor="middle" font-size="10" font-family="var(--font-mono)" fill="var(--text-muted)">${p.label}</text>`).join('')}
+      <g id="presence-hover-layer"></g>
+    </svg>
+  </div>`;
+}
+function handlePresenceHover(evt){
+  const svg = document.getElementById('presence-graph-svg');
+  const rect = svg.getBoundingClientRect();
+  const svgX = ((evt.clientX - rect.left) / rect.width) * PRESENCE_GRAPH.W;
+  const pts = presenceGraphPoints();
+  const nearest = pts.reduce((a, b) => Math.abs(b.x - svgX) < Math.abs(a.x - svgX) ? b : a);
+  document.getElementById('presence-hover-layer').innerHTML = `
+    <line x1="${nearest.x.toFixed(1)}" y1="${PRESENCE_GRAPH.padT}" x2="${nearest.x.toFixed(1)}" y2="${PRESENCE_GRAPH.H - PRESENCE_GRAPH.padB}" stroke="var(--brand)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+    <circle cx="${nearest.x.toFixed(1)}" cy="${nearest.y.toFixed(1)}" r="5" fill="var(--brand)" stroke="var(--surface-0)" stroke-width="2"/>
+    <rect x="${(nearest.x - 28).toFixed(1)}" y="${(nearest.y - 34).toFixed(1)}" width="56" height="22" rx="5" fill="var(--navy)" opacity="0.9"/>
+    <text x="${nearest.x.toFixed(1)}" y="${(nearest.y - 18).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="#fff">${nearest.v} ${nearest.v === 1 ? 'person' : 'people'}</text>`;
+}
+function hidePresenceHover(){ const el = document.getElementById('presence-hover-layer'); if (el) el.innerHTML = ''; }
+const TREND_LABELS = (()=>{ const out=[]; const d=new Date(); d.setDate(d.getDate()-13); for(let i=0;i<14;i++){ out.push(new Date(d)); d.setDate(d.getDate()+1);} return out; })();
+
+const MONTHLY_REPORT = [
+  { name:'Rahul Verma', wfo:15, wfh:2, leave:1 },
+  { name:'Ananya Rao', wfo:16, wfh:1, leave:1 },
+  { name:'Karan Mehta', wfo:10, wfh:6, leave:1 },
+  { name:"Sofia D'Souza", wfo:17, wfh:1, leave:0 },
+  { name:'Vikram Iyer', wfo:14, wfh:3, leave:1 },
+  { name:'Neha Kapoor', wfo:8, wfh:9, leave:1 },
+  { name:'Arjun Nair', wfo:16, wfh:2, leave:0 },
+  { name:'Meera Pillai', wfo:15, wfh:2, leave:1 },
+];
+
+const LEAVE_TYPES = [
+  { id:1, name:'Paid Leave', freq:'monthly', credits:1.5, accrued:9, used:2 },
+  { id:2, name:'Sick Leave', freq:'monthly', credits:1, accrued:6, used:1 },
+  { id:3, name:'Casual Leave', freq:'quarterly', credits:3, accrued:6, used:0 },
+];
+function myMonthlyStats(){
+  const row = MONTHLY_REPORT.find(r=>r.name===ME.name) || { wfo:0, wfh:0, leave:0 };
+  const leaveRemaining = LEAVE_TYPES.reduce((sum,t)=>sum+(t.accrued-t.used), 0);
+  return { wfo:row.wfo, wfh:row.wfh, leave:row.leave, leaveRemaining };
+}
+    let HOLIDAYS = [
+      { id: 1, name: 'Independence Day', date: '2026-08-15' },
+      { id: 2, name: 'Gandhi Jayanti', date: '2026-10-02' },
+      { id: 3, name: 'Diwali', date: '2026-11-08' },
+      { id: 4, name: 'Christmas', date: '2026-12-25' },
+    ];
+    let holidayIdSeq = HOLIDAYS.length;
+
+    /* ============================================================
+       ADMIN (ws) DEMO DATA — HR roster, leave workflow, attendance
+       ============================================================ */
+    const DEPARTMENTS = ['Engineering', 'Design', 'Product', 'Sales', 'Marketing', 'Finance', 'Operations'];
+
+    function avatarColor(name) {
+      const AV = ['#4F46E5', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#06B6D4'];
+      let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+      return AV[Math.abs(h) % AV.length];
+    }
+
+    const EMP_EXTRA = {
+      1: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2022-03-11', location: 'Bengaluru' },
+      2: { dept: 'Design', employmentType: 'Full-time', workMode: 'Hybrid', empStatus: 'active', joined: '2022-07-19', location: 'Bengaluru' },
+      3: { dept: 'Sales', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2023-01-05', location: 'Mumbai' },
+      4: { dept: 'Operations', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2021-11-22', location: 'Bengaluru' },
+      5: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Hybrid', empStatus: 'active', joined: '2023-04-02', location: 'Bengaluru' },
+      6: { dept: 'Marketing', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2024-01-15', location: 'Bengaluru' },
+      7: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2022-09-08', location: 'Bengaluru' },
+      8: { dept: 'Operations', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2023-06-30', location: 'Bengaluru' },
+      9: { dept: 'Sales', employmentType: 'Contract', workMode: 'Office', empStatus: 'active', joined: '2024-03-11', location: 'Mumbai' },
+      10: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Hybrid', empStatus: 'active', joined: '2023-02-20', location: 'Bengaluru' },
+      11: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2024-06-01', location: 'Bengaluru' },
+      12: { dept: 'Finance', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2025-01-10', location: 'Bengaluru' },
+      13: { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Remote', empStatus: 'notice', joined: '2021-08-04', location: 'Remote' },
+      14: { dept: 'Operations', employmentType: 'Full-time', workMode: 'Office', empStatus: 'active', joined: '2020-06-01', location: 'Bengaluru' },
+    };
+
+    /* ── Org role tier (Owner / Admin / Member) — planned near-term product direction, see docs/product/11-current-state.md.
+       Distinct from `role`/`e.role`, which is a job title (e.g. "Senior Engineer"), not a permission tier. ── */
+    const ORG_ROLES = { 14: 'owner', 8: 'admin' }; // Priya Nair = Owner, Meera Pillai = the one non-owner Admin
+    const ROLE_LABEL = { owner: 'Owner', admin: 'Admin', member: 'Member' };
+    function roleBadge(r) { const cls = r === 'owner' ? 'chip-owner' : r === 'admin' ? 'chip-verified' : 'chip-leave'; return `<span class="chip ${cls}">${ROLE_LABEL[r] || r}</span>`; }
+    function canAdminister(r) { return r === 'owner' || r === 'admin'; }
+
+    /* Full profile fields (all WIZARD_STEPS keys) so the read-only Employee Detail view and the
+       edit wizard always share one source of truth — deterministic-but-plausible fake values,
+       not blank, since editing a real employee should show their existing data, not an empty form. */
+    function seedProfile(p, top) {
+      const [first, ...rest] = p.name.split(' ');
+      const bloodGroups = ['A+', 'B+', 'O+', 'AB+', 'A-'];
+      return {
+        firstName: first, lastName: rest.join(' '),
+        workEmail: top.email, personalEmail: `${first.toLowerCase()}.personal@gmail.com`,
+        phone: top.phone, gender: p.id % 2 === 0 ? 'Female' : 'Male',
+        dob: `19${88 + (p.id % 10)}-0${1 + (p.id % 9)}-1${p.id % 9}`,
+        maritalStatus: p.id % 2 === 0 ? 'Married' : 'Single', bloodGroup: bloodGroups[p.id % bloodGroups.length],
+        address: `${100 + p.id}, ${top.location} Layout, ${top.location}, India`,
+        employeeId: top.employeeId, designation: top.role, dept: top.dept, employmentType: top.employmentType,
+        workMode: top.workMode, location: top.location, joined: top.joined, manager: top.manager,
+        pan: `${p.name.replace(/[^A-Za-z]/g, '').toUpperCase().padEnd(5, 'X').slice(0, 5)}${1000 + p.id * 37}${String.fromCharCode(65 + (p.id % 26))}`,
+        aadhaar: String(200000000000 + p.id * 93171111).slice(0, 12),
+        uan: String(100000000000 + p.id * 81212121).slice(0, 12),
+        bankAccount: String(50000000000 + p.id * 1234567).slice(0, 14),
+        bankIfsc: `HDFC000${String(1000 + p.id).slice(-4)}`,
+        bankName: 'HDFC Bank',
+        emName: p.id % 2 === 0 ? 'Family contact' : 'Emergency contact',
+        emRelation: p.id % 2 === 0 ? 'Spouse' : 'Parent',
+        emPhone: '+91 90' + String(10000000 + p.id * 271).slice(0, 8),
+      };
+    }
+    const EMPLOYEES = PEOPLE.map(p => {
+      const extra = EMP_EXTRA[p.id] || {};
+      const emp = {
+        id: p.id, name: p.name, role: p.role, initials: p.initials, avatarColor: avatarColor(p.name),
+        orgRole: ORG_ROLES[p.id] || 'member',
+        email: p.name.toLowerCase().replace(/[^a-z ]/g, '').trim().split(/\s+/).join('.') + '@loopwork.io',
+        employeeId: 'LW-' + (100 + p.id),
+        dept: extra.dept || 'Operations',
+        employmentType: extra.employmentType || 'Full-time',
+        workMode: extra.workMode || 'Office',
+        empStatus: extra.empStatus || 'active',
+        joined: extra.joined || '2023-01-01',
+        location: extra.location || 'Bengaluru',
+        manager: p.id === 14 ? '—' : p.id === 1 ? 'Priya Nair' : 'Rahul Verma',
+        phone: '+91 98' + String(10000000 + p.id * 137).slice(0, 8),
+        leaveBalance: [
+          { label: 'Paid Leave', used: 2, total: 18, color: '#0EA5E9' },
+          { label: 'Sick Leave', used: 1, total: 12, color: '#EC4899' },
+          { label: 'Casual Leave', used: 0, total: 6, color: '#10B981' },
+        ],
+        documents: [
+          { key: 'offer', name: 'Offer letter', status: 'verified', fileName: 'offer-letter.pdf', uploadedAt: '2023-01-01', rejectReason: null },
+          { key: 'pan', name: 'PAN card', status: 'verified', fileName: 'pan-card.pdf', uploadedAt: '2023-01-01', rejectReason: null },
+          { key: 'aadhaar', name: 'Aadhaar card', status: p.id % 3 === 0 ? 'pending' : 'verified', fileName: p.id % 3 === 0 ? 'aadhaar.pdf' : 'aadhaar-card.pdf', uploadedAt: '2023-01-02', rejectReason: null },
+          { key: 'bank', name: 'Bank proof', status: p.id % 4 === 0 ? 'missing' : 'verified', fileName: p.id % 4 === 0 ? null : 'bank-proof.pdf', uploadedAt: p.id % 4 === 0 ? null : '2023-01-03', rejectReason: null },
+        ],
+      };
+      emp.profile = seedProfile(p, emp);
+      return emp;
+    });
+    function findEmployee(id) { return EMPLOYEES.find(e => e.id === Number(id)); }
+    const EMP_STATUS_CHIP = { active: ['chip-verified', 'Active'], probation: ['chip-partial', 'Probation'], notice: ['chip-none', 'Notice period'], onleave: ['chip-leave', 'On leave'], onboarding: ['chip-override', 'Onboarding'] };
+    function empStatusChip(status) { const [cls, label] = EMP_STATUS_CHIP[status] || EMP_STATUS_CHIP.active; return `<span class="chip ${cls}">${label}</span>`; }
+
+    let WS_LEAVE_REQUESTS = [
+      { id: 1, empId: 6, type: 'Sick Leave', typeColor: '#EC4899', start: '2026-08-03', end: '2026-08-04', days: 2, reason: 'Fever, resting at home', status: 'pending', submitted: '2026-07-27' },
+      { id: 2, empId: 10, type: 'Casual Leave', typeColor: '#10B981', start: '2026-08-10', end: '2026-08-10', days: 1, reason: 'Personal errand', status: 'pending', submitted: '2026-07-26' },
+      { id: 3, empId: 3, type: 'Paid Leave', typeColor: '#0EA5E9', start: '2026-08-14', end: '2026-08-15', days: 2, reason: 'Family function', status: 'pending', submitted: '2026-07-25' },
+      { id: 4, empId: 1, type: 'Paid Leave', typeColor: '#0EA5E9', start: '2026-06-12', end: '2026-06-13', days: 2, reason: 'Wedding', status: 'approved', submitted: '2026-06-01' },
+      { id: 5, empId: 8, type: 'Sick Leave', typeColor: '#EC4899', start: '2026-07-02', end: '2026-07-02', days: 1, reason: 'Flu', status: 'approved', submitted: '2026-06-30' },
+      { id: 6, empId: 2, type: 'Casual Leave', typeColor: '#10B981', start: '2026-07-18', end: '2026-07-18', days: 1, reason: 'Moving apartments', status: 'rejected', submitted: '2026-07-15' },
+      { id: 7, empId: 11, type: 'Paid Leave', typeColor: '#0EA5E9', start: '2026-05-20', end: '2026-05-22', days: 3, reason: 'Travel', status: 'approved', submitted: '2026-05-10' },
+  ];
+    let wsLeaveIdSeq = WS_LEAVE_REQUESTS.length;
+    function myLeaveRequests() { return WS_LEAVE_REQUESTS.filter(l => l.empId === 1); } // ME = Rahul Verma, id 1
+
+    let REGULARIZATIONS = [
+      { id: 1, empId: 13, reason: 'Forgot to check in — was on-site all day', date: 'Jul 24, 2026', change: 'Mark WFO 9:05 AM – 6:10 PM', status: 'pending' },
+      { id: 2, empId: 4, reason: 'GPS failed indoors, office network matched', date: 'Jul 25, 2026', change: 'Mark verified (network only)', status: 'pending' },
+      { id: 3, empId: 9, reason: 'Approved WFH day mis-logged as absent', date: 'Jul 23, 2026', change: 'Mark WFH', status: 'pending' },
+    ];
+
+    let MATERNITY_CASES = [
+      { id: 1, empId: 2, due: '2026-10-02', start: '2026-09-04', end: '2027-03-05', weeks: 26, status: 'requested' },
+      { id: 2, empId: 8, due: '2026-08-20', start: '2026-07-23', end: '2027-01-21', weeks: 26, status: 'approved' },
+      { id: 3, empId: 6, due: '2026-05-15', start: '2026-04-17', end: '2026-10-16', weeks: 26, status: 'onleave' },
+      { id: 4, empId: 12, due: '2026-01-10', start: '2025-12-13', end: '2026-06-12', weeks: 26, status: 'returned', returnedOn: 'Jun 15, 2026' },
+    ];
+    let maternityIdSeq = MATERNITY_CASES.length;
+    const MATERNITY_STAGES = ['requested', 'approved', 'onleave', 'returned'];
+    const MATERNITY_STAGE_LABEL = { requested: 'Requested', approved: 'Approved', onleave: 'On leave', returned: 'Returned' };
+
+    function maternityStats() {
+      const s = { requested: 0, approved: 0, onleave: 0, returned: 0 };
+      MATERNITY_CASES.forEach(m => { s[m.status] = (s[m.status] || 0) + 1; });
+      return s;
+    }
+    function maternityProgress(m) {
+      if (m.status === 'returned') return 100;
+      if (m.status !== 'onleave') return 0;
+      const start = new Date(m.start), end = new Date(m.end), now = DEMO_TODAY;
+      const pct = Math.round((now - start) / (end - start) * 100);
+      return Math.max(2, Math.min(98, pct));
+    }
+
+    const CELEBRATIONS = [
+      { emoji: '🎂', name: 'Ananya Rao', label: 'Birthday', date: 'Jul 29' },
+      { emoji: '🎉', name: 'Arjun Nair', label: '2-year anniversary', date: 'Jul 30' },
+      { emoji: '🎂', name: 'Divya Menon', label: 'Birthday', date: 'Aug 1' },
+      { emoji: '🎉', name: 'Meera Pillai', label: '1-year anniversary', date: 'Aug 2' },
+    ];
+
+    const DOMAINS = [
+      { id: 1, domain: 'loopwork.io', verified: true },
+      { id: 2, domain: 'loopwork-labs.com', verified: false, token: '8f2a91c6e4b7d0351a9c8e2f7b4d610a' },
+    ];
+
+    function deptBars() {
+      const counts = {};
+      EMPLOYEES.forEach(e => { counts[e.dept] = (counts[e.dept] || 0) + 1; });
+      const total = EMPLOYEES.length;
+      const colors = { Engineering: '#1d9e75', Design: '#0EA5E9', Product: '#8B5CF6', Sales: '#F59E0B', Marketing: '#EC4899', Finance: '#06B6D4', Operations: '#7aab92' };
+      return Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([dept, count]) => ({ dept, count, pct: Math.round(count / total * 100), color: colors[dept] || '#1d9e75' }));
+    }
+
+    /* Canonical document list — employee uploads at onboarding, admin verifies. Planned near-term
+       product direction (see docs/product/11-current-state.md); the real app has no document
+       upload/storage today, only these encrypted text fields entered by an admin. */
+    const REQUIRED_DOCUMENTS = [
+      { key: 'offer', name: 'Offer letter' },
+      { key: 'pan', name: 'PAN card' },
+      { key: 'aadhaar', name: 'Aadhaar card' },
+      { key: 'bank', name: 'Bank proof' },
+    ];
+
+    const WIZARD_STEPS = [
+      {
+        label: 'Basic details', subtitle: 'Personal and contact information', fields: [
+          { key: 'firstName', label: 'First name', required: true, type: 'text' },
+          { key: 'lastName', label: 'Last name', required: true, type: 'text' },
+          { key: 'workEmail', label: 'Work email', required: true, type: 'email', placeholder: 'name@loopwork.io' },
+          { key: 'personalEmail', label: 'Personal email', type: 'email' },
+          { key: 'phone', label: 'Phone', type: 'tel', placeholder: '+91' },
+          { key: 'gender', label: 'Gender', kind: 'select', options: ['', 'Male', 'Female', 'Non-binary', 'Prefer not to say'] },
+          { key: 'dob', label: 'Date of birth', type: 'date' },
+          { key: 'maritalStatus', label: 'Marital status', kind: 'select', options: ['', 'Single', 'Married', 'Divorced', 'Widowed'] },
+          { key: 'bloodGroup', label: 'Blood group', kind: 'select', options: ['', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] },
+          { key: 'address', label: 'Current address', kind: 'textarea', full: true, placeholder: 'Street, City, State, PIN' },
+        ]
+      },
+      {
+        label: 'Employment', subtitle: 'Job and employment details', fields: [
+          { key: 'employeeId', label: 'Employee ID', type: 'text', placeholder: 'e.g. LW-108' },
+          { key: 'designation', label: 'Designation', type: 'text' },
+          { key: 'dept', label: 'Department', kind: 'select', options: DEPARTMENTS },
+          { key: 'employmentType', label: 'Employment type', kind: 'select', options: ['Full-time', 'Part-time', 'Contract', 'Intern', 'Consultant'] },
+          { key: 'workMode', label: 'Work mode', kind: 'select', options: ['Office', 'Remote', 'Hybrid'] },
+          { key: 'location', label: 'Work location', type: 'text' },
+          { key: 'joined', label: 'Date of joining', type: 'date' },
+          { key: 'manager', label: 'Reporting manager', type: 'text' },
+        ]
+      },
+      {
+        label: 'Bank & IDs', subtitle: 'Financial and statutory identifiers', fields: [
+          { key: 'pan', label: 'PAN', type: 'text', placeholder: 'ABCDE1234F' },
+          { key: 'aadhaar', label: 'Aadhaar', type: 'text', placeholder: '12-digit number' },
+          { key: 'uan', label: 'UAN', type: 'text', placeholder: 'Universal Account Number' },
+          { key: 'bankAccount', label: 'Bank account number', type: 'text', full: true, placeholder: 'Account number' },
+          { key: 'bankIfsc', label: 'Bank IFSC', type: 'text' },
+          { key: 'bankName', label: 'Bank name', type: 'text', placeholder: 'e.g. HDFC Bank' },
+        ]
+      },
+      {
+        label: 'Emergency', subtitle: 'Emergency contact information', fields: [
+          { key: 'emName', label: 'Contact name', type: 'text', full: true, placeholder: 'Full name' },
+          { key: 'emRelation', label: 'Relationship', type: 'text', placeholder: 'e.g. Spouse, Parent' },
+          { key: 'emPhone', label: 'Phone', type: 'tel', placeholder: '10-digit mobile number' },
+        ]
+      },
+      { label: 'Review', subtitle: 'Review and submit', fields: [] },
+    ];
+
+    /* ~3 months of fake presence history, generated once at load — the timeline shows
+       only the most recent slice by default (see timelineRowsShown), Load More reveals more. */
+    function fmtHM(h, m) {
+      const period = h >= 12 ? 'PM' : 'AM';
+      const h12 = ((h + 11) % 12) + 1;
+      return `${h12}:${String(m).padStart(2, '0')} ${period}`;
+    }
+    function generateHistory() {
+      const today = DEMO_TODAY;
+      const out = [];
+      for (let i = 0; i < 92; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() - i);
+        if (d.getDay() === 0 || d.getDay() === 6) continue; // weekends have no events
+        const r = Math.random();
+        const startLabel = fmtHM(8 + Math.floor(Math.random() * 1.5), Math.floor(Math.random() * 60));
+        const endLabel = fmtHM(17 + Math.floor(Math.random() * 1.5), Math.floor(Math.random() * 60));
+        let status, gps, network, note;
+        if (i === 0) { status = 'verified'; gps = true; network = true; }
+        else if (r < 0.05) { status = 'leave'; }
+        else if (r < 0.12) { status = 'partial'; gps = r < 0.09; network = !gps; note = gps ? 'GPS matched, office network did not' : 'Office network matched, GPS did not'; }
+        else if (r < 0.16) { status = 'none'; gps = false; network = false; note = 'No signals matched — checked in outside the office'; }
+        else { status = 'verified'; gps = true; network = true; }
+        out.push({
+          id: i,
+          dateObj: d,
+          day: i === 0 ? 'Today' : i === 1 ? 'Yesterday' : d.toLocaleDateString(undefined, { weekday: 'short' }),
+          date: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+          time: status === 'leave' ? '—' : (i === 0 ? `${startLabel} – now` : `${startLabel} – ${endLabel}`),
+          status, gps, network, note,
+        });
+      }
+      return out;
+    }
+    const ALL_EVENTS = generateHistory();
+    function myEvents() { return ALL_EVENTS; }
+    function filterEventsByRange(start, end) {
+      const s = new Date(start + 'T00:00:00'), e = new Date(end + 'T23:59:59');
+      return ALL_EVENTS.filter(ev => ev.dateObj >= s && ev.dateObj <= e);
+    }
+
+    function upcomingHolidaysList() {
+      const startOfToday = (() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); })();
+      const withDates = HOLIDAYS.map(h => ({ ...h, d: new Date(h.date) })).sort((a, b) => a.d - b.d);
+      const upcoming = withDates.filter(h => h.d >= startOfToday);
+      return upcoming.length ? upcoming : withDates; // demo runs after 2026 — fall back to full list
+}
+
+/* ============================================================
+   FAKE API — mimics real endpoints with artificial latency
+   ============================================================ */
+const state = {
+  authed: true,
+  activeWorkspaceSlug: 'loopwork',
+  surface: 'me',
+  hash: 'me/checkin',
+  checkinStatus: 'idle', // idle | acquiring-gps | acquiring-network | done
+  checkedInAt: null,
+  todaySessions: [], // { start:Date, end:Date|null }[] — one entry per check-in/checkout cycle today
+  overridePanel: null,
+  moreOpen: false, // profile bottom sheet (reachable from any `me` screen)
+  confirmingLogout: false,
+  adminMenuOpen: false,
+  wsSwitcherOpen: false,
+  memberModal: null, // { title, list:[rowShape], search, visible } | null
+  timelineRowsShown: 8, // "Today" + previous 7 business days
+  timelineLoading: false,
+  timelineFilter: null, // { start:'YYYY-MM-DD', end:'YYYY-MM-DD' } | null
+  timelineFilterOpen: false,
+  leaveTab: 'balance', // balance | apply | history | holidays
+  regFormEventId: null, // timeline event id currently showing the "request correction" form
+  // ── admin (ws) surface ──
+  rejectingDoc: null,        // "empId:key" of the document currently showing the reject-reason form
+  empDetail: null,           // employee id being viewed
+  wizard: null,              // { mode:'add'|'edit', empId, step, form:{}, errors:{} }
+  empSearch: '',
+  empDept: 'all',
+  appliedFilter: 'all',
+  settingsTab: 'org',
+  reportsTab: 'export',
+  monthlyYear: DEMO_TODAY.getFullYear(),
+  monthlyMonth: DEMO_TODAY.getMonth(),
+  showMatForm: false,
+  matForm: { empId: '', due: '', weeks: '26' },
+  showHolidayImport: false,
+  holidayCsvText: '',
+  holidayForm: { name: '', date: '' },
+  showBalanceImport: false,
+  wsSettings: { workingDays: [1, 2, 3, 4, 5], allowRemoteCheckin: false, leaveModuleEnabled: true, companyName: WORKSPACE.name, tz: WORKSPACE.tz },
+};
+
+const mockApi = {
+  delay(ms){ return new Promise(r=>setTimeout(r, ms)); },
+  async checkin(){
+    state.checkinStatus = 'acquiring-gps'; updateCheckinCard();
+    await mockApi.delay(650);
+    state.checkinStatus = 'acquiring-network'; updateCheckinCard();
+    await mockApi.delay(500);
+    state.checkinStatus = 'done';
+    const now = new Date();
+    state.checkedInAt = now;
+    state.todaySessions.push({ start: now, end: null });
+    updateCheckinCard();
+    playCelebration();
+  },
+  async checkout(){
+    const open = state.todaySessions[state.todaySessions.length - 1];
+    if (open && !open.end) open.end = new Date();
+    state.checkinStatus = 'idle';
+    render();
+  },
+  async submitLeave(payload){
+    await mockApi.delay(400);
+    wsLeaveIdSeq += 1;
+    WS_LEAVE_REQUESTS = [{ id:wsLeaveIdSeq, empId:1, type:payload.type, typeColor:payload.typeColor, start:payload.start, end:payload.end, days:payload.days, reason:payload.reason||'', status:'pending', submitted:demoTodayIso() }, ...WS_LEAVE_REQUESTS];
+    return { ok:true };
+  },
+  async override(personId, reason){
+    await mockApi.delay(500);
+    const p = PEOPLE.find(x=>x.id===personId);
+    if(p){ p.status='override'; p.overridden=true; p.overrideReason = reason || 'Manually verified by admin'; }
+  },
+};
+
+/* ============================================================
+   ROUTER
+   ============================================================ */
+    const ME_TABS = [
+  { key:'timeline', label:'Timeline', ic:'≡' },
+    { key: 'checkin', label: 'Home', ic: '⌂' },
+    { key: 'leave', label: 'Leave', ic: '▤' },
+];
+const WS_TABS = [
+  { key: 'overview', label: 'Overview', ic: '▦' },
+  { key: 'employees', label: 'Employees', ic: '☺' },
+  { key: 'attendance', label: 'Attendance', ic: '◷' },
+  { key: 'leave-requests', label: 'Leave', ic: '▤', group: 'leave' },
+  { key: 'holidays', label: 'Holidays', ic: '▧' },
+  { key: 'reports', label: 'Reports', ic: '📊' },
+  { key: 'settings', label: 'Settings', ic: '⚙' },
+];
+
+function setSurface(surface){
+  state.surface = surface;
+  state.hash = surface === 'me' ? 'me/checkin' : 'ws/overview';
+  document.body.className = surface==='me' ? 'theme-me' : 'theme-ws';
+  render();
+}
+function nav(hash){ state.hash = hash; render(); window.scrollTo(0,0); }
+
+/* ============================================================
+   WORKSPACE SWITCHER — multi-workspace membership, per-workspace role
+   ============================================================ */
+function openWsSwitcher(){ state.wsSwitcherOpen = true; render(); }
+function closeWsSwitcher(){ state.wsSwitcherOpen = false; render(); }
+function switchWorkspace(slug){
+  state.activeWorkspaceSlug = slug;
+  const w = MY_WORKSPACES.find(x=>x.slug===slug);
+  if(state.surface==='ws' && !canAdminister(w.role)) state.surface = 'me';
+  state.hash = state.surface==='me' ? 'me/checkin' : 'ws/overview';
+  document.body.className = state.surface==='me' ? 'theme-me' : 'theme-ws';
+  state.wsSwitcherOpen = false;
+  showToast(`Switched to ${w.name}`);
+  render();
+}
+function setSurfaceFromSwitcher(surface){
+  if(surface==='ws' && !canAdminister(activeWorkspace().role)) return;
+  setSurface(surface);
+  state.wsSwitcherOpen = false;
+  render();
+}
+function renderWsSwitcherSheet(){
+  const active = activeWorkspace();
+  return `
+  <div class="me-sheet">
+    <div class="scrim" onclick="closeWsSwitcher()"></div>
+    <div class="panel">
+      <div class="handle"></div>
+      <p class="t-eyebrow" style="margin-bottom:10px;">Your workspaces</p>
+      ${MY_WORKSPACES.map(w => `
+        <div class="rowlink" style="display:flex;align-items:center;gap:12px;padding:10px 6px;" onclick="switchWorkspace('${w.slug}')">
+          <div style="width:36px;height:36px;border-radius:10px;background:${w.color};color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px;flex-shrink:0;">${w.initials}</div>
+          <div style="flex:1;min-width:0;"><p style="font-weight:700;font-size:13.5px;">${w.name}</p></div>
+          ${roleBadge(w.role)}
+          ${w.slug===active.slug ? `<span style="color:var(--brand);font-size:16px;">✓</span>` : ''}
+        </div>
+      `).join('')}
+      <div class="divider"></div>
+      <p class="t-eyebrow" style="margin-bottom:10px;">View as</p>
+      <div class="tabbar" style="width:100%;">
+        <button class="${state.surface==='me'?'active':''}" style="flex:1;" onclick="setSurfaceFromSwitcher('me')">My view</button>
+        <button class="${state.surface==='ws'?'active':''}" style="flex:1;" ${!canAdminister(active.role) ? 'disabled title="You\'re a Member here"' : ''} onclick="setSurfaceFromSwitcher('ws')">Admin view</button>
+      </div>
+      ${!canAdminister(active.role) ? `<p class="t-muted" style="margin-top:8px;">You're a Member here — admin view isn't available.</p>` : ''}
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   MEMBER MODAL — reusable searchable, capped-at-5 + load-more list,
+   used by the workspace roster groups (me) and the admin stat cards (ws)
+   ============================================================ */
+function toMemberRow(e){
+  // normalizes PEOPLE-shaped (status/time) vs EMPLOYEES-shaped (empStatus/dept) records into one row shape
+  if ('empStatus' in e) return { name:e.name, initials:e.initials, sub:e.dept, avatarColor:e.avatarColor, statusHtml:empStatusChip(e.empStatus) };
+  return { name:e.name, initials:e.initials, sub:e.role, avatarColor:e.avatarColor, statusHtml:chip(e.overridden ? 'override' : e.status) };
+}
+function openMemberModal(title, rawList){
+  state.memberModal = { title, list: rawList.map(toMemberRow), search:'', visible:5 };
+  render();
+}
+function closeMemberModal(){ state.memberModal = null; render(); }
+function memberModalFiltered(){
+  const m = state.memberModal;
+  const q = m.search.trim().toLowerCase();
+  return q ? m.list.filter(p => p.name.toLowerCase().includes(q) || (p.sub||'').toLowerCase().includes(q)) : m.list;
+}
+function renderMemberModalListInner(){
+  const m = state.memberModal;
+  const filtered = memberModalFiltered();
+  const shown = filtered.slice(0, m.visible);
+  const rows = shown.length ? shown.map(p => `
+    <div style="display:flex;align-items:center;gap:10px;padding:9px 4px;">
+      <div class="avatar" style="background:color-mix(in srgb, ${p.avatarColor||'#1d9e75'} 20%, transparent);color:${p.avatarColor||'var(--brand)'};">${p.initials}</div>
+      <div style="flex:1;min-width:0;"><p style="font-weight:600;font-size:13px;">${p.name}</p><p class="t-muted">${p.sub||''}</p></div>
+      ${p.statusHtml}
+    </div>
+  `).join('<div class="divider" style="margin:0;"></div>') : `<div class="empty">No matches</div>`;
+  const more = filtered.length > shown.length ? `<button class="btn btn-secondary btn-block btn-sm" style="margin-top:10px;" onclick="loadMoreMemberModal()">Load 5 more (${filtered.length - shown.length} left)</button>` : '';
+  return rows + more;
+}
+function filterMemberModal(){
+  state.memberModal.search = document.getElementById('member-modal-search').value;
+  state.memberModal.visible = 5;
+  document.getElementById('member-modal-list').innerHTML = renderMemberModalListInner();
+}
+function loadMoreMemberModal(){
+  state.memberModal.visible += 5;
+  document.getElementById('member-modal-list').innerHTML = renderMemberModalListInner();
+}
+function renderMemberModal(){
+  const m = state.memberModal;
+  return `
+  <div class="modal">
+    <div class="scrim" onclick="closeMemberModal()"></div>
+    <div class="panel" style="max-width:420px;text-align:left;max-height:80vh;display:flex;flex-direction:column;">
+      <div style="display:flex;justify-content:space-between;align-items:center;">
+        <p class="t-h1" style="font-size:16px;">${m.title} <span class="t-muted" style="font-size:12px;font-weight:500;">${m.list.length}</span></p>
+        <button class="btn btn-ghost btn-sm" onclick="closeMemberModal()">✕</button>
+      </div>
+      <input class="input" id="member-modal-search" style="margin-top:12px;" placeholder="Search by name or role" value="${m.search}" oninput="filterMemberModal()">
+      <div id="member-modal-list" style="margin-top:10px;overflow-y:auto;flex:1;">${renderMemberModalListInner()}</div>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   AUTH — landing screen + logout
+   ============================================================ */
+function screenLanding(){
+  return `
+  <div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;">
+    <div class="brand-mark" style="width:56px;height:56px;border-radius:16px;font-size:24px;margin-bottom:18px;">V</div>
+    <h1 class="t-display" style="margin-bottom:6px;">Venzio</h1>
+    <p class="t-secondary" style="margin-bottom:32px;">Presence intelligence for hybrid teams</p>
+    <button class="btn btn-primary btn-block" style="max-width:280px;margin-bottom:10px;" onclick="loginAs('me')">Continue as Employee</button>
+    <button class="btn btn-secondary btn-block" style="max-width:280px;" onclick="loginAs('ws')">Continue as Admin</button>
+  </div>`;
+}
+function loginAs(surface){ state.authed = true; setSurface(surface); }
+function requestLogout(){ state.confirmingLogout = true; state.moreOpen = false; state.adminMenuOpen = false; render(); }
+function cancelLogout(){ state.confirmingLogout = false; render(); }
+function confirmLogout(){
+  Object.assign(state, {
+    authed: false, activeWorkspaceSlug: 'loopwork', surface: 'me', hash: 'landing',
+    checkinStatus: 'idle', checkedInAt: null, todaySessions: [], overridePanel: null,
+    moreOpen: false, confirmingLogout: false, adminMenuOpen: false, wsSwitcherOpen: false,
+    memberModal: null,
+    timelineRowsShown: 8, timelineLoading: false, timelineFilter: null, timelineFilterOpen: false,
+    leaveTab: 'balance', regFormEventId: null,
+    rejectingDoc: null,
+    empDetail: null, wizard: null, empSearch: '', empDept: 'all', appliedFilter: 'all',
+    settingsTab: 'org', reportsTab: 'export',
+    monthlyYear: DEMO_TODAY.getFullYear(), monthlyMonth: DEMO_TODAY.getMonth(),
+    showMatForm: false, matForm: { empId: '', due: '', weeks: '26' },
+    showHolidayImport: false, holidayCsvText: '', holidayForm: { name: '', date: '' },
+    showBalanceImport: false,
+    wsSettings: { workingDays: [1, 2, 3, 4, 5], allowRemoteCheckin: false, leaveModuleEnabled: true, companyName: WORKSPACE.name, tz: WORKSPACE.tz },
+  });
+  document.body.className = 'theme-me';
+  render();
+}
+function renderLogoutConfirm(){
+  return `
+  <div class="modal">
+    <div class="scrim" onclick="cancelLogout()"></div>
+    <div class="panel" style="text-align:center;">
+      <p class="t-h1" style="font-size:18px;">Sign out?</p>
+      <p class="t-secondary" style="margin-top:8px;">You'll need to sign back in to check in or view your dashboard.</p>
+      <div style="display:flex;gap:10px;margin-top:20px;">
+        <button class="btn btn-secondary" style="flex:1;" onclick="cancelLogout()">Cancel</button>
+        <button class="btn btn-danger" style="flex:1;border-color:var(--danger);" onclick="confirmLogout()">Sign out</button>
+      </div>
+    </div>
+  </div>`;
+}
+function toggleAdminMenu(){ state.adminMenuOpen = !state.adminMenuOpen; render(); }
+function closeAdminMenu(){ state.adminMenuOpen = false; render(); }
+function showToast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast'; el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=>el.remove(), 2600);
+}
+
+function playCelebration(){
+  requestAnimationFrame(()=>{
+    ['ci-ring-1','ci-ring-2','ci-badge'].forEach(id=>{
+      const el = document.getElementById(id); if(!el) return;
+      el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');
+    });
+    const stage = document.getElementById('ci-stage');
+    if(stage){
+      for(let i=0;i<10;i++){
+        const dot = document.createElement('div');
+        dot.className = 'ci-dot play';
+        const angle = (Math.PI*2/10)*i, dist = 58+Math.random()*14;
+        dot.style.setProperty('--dx', Math.cos(angle)*dist+'px');
+        dot.style.setProperty('--dy', Math.sin(angle)*dist+'px');
+        dot.style.left = 'calc(50% - 3px)'; dot.style.top = 'calc(50% - 3px)';
+        stage.appendChild(dot);
+        setTimeout(()=>dot.remove(), 1100);
+      }
+    }
+  });
+}
+
+/* ============================================================
+   RENDER — screen templates
+   ============================================================ */
+function chip(status, extra){
+  const map = { verified:['chip-verified','● Verified'], partial:['chip-partial','◐ Partial'], none:['chip-none','○ Unverified'], override:['chip-override','◆ Override'], leave:['chip-leave','Leave'] };
+  const [cls,label] = map[status] || ['chip-leave', status];
+  return `<span class="chip ${cls}">${label}${extra?` · ${extra}`:''}</span>`;
+}
+    function leaveStatusChip(status) {
+      const map = { pending: ['chip-partial', 'Pending'], approved: ['chip-verified', 'Approved'], rejected: ['chip-none', 'Declined'] };
+      const [cls, label] = map[status] || ['chip-leave', status];
+      return `<span class="chip ${cls}">${label}</span>`;
+    }
+
+    function fmtTime(d) { return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }); }
+    function durationLabel(ms) {
+      const totalMin = Math.max(0, Math.round(ms / 60000));
+      const h = Math.floor(totalMin / 60), m = totalMin % 60;
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+    function sessionsTotalMs(sessions) {
+      const now = new Date();
+      return sessions.reduce((sum, sess) => sum + ((sess.end || now) - sess.start), 0);
+    }
+    function inOfficeCount() { return (activeWorkspace().people || PEOPLE).filter(p => p.status === 'verified' || p.status === 'override').length; }
+
+function renderCheckinCardInner(s, sessions){
+  return `
+    ${s === 'idle' && sessions.length === 0 ? `
+      <p class="t-muted" style="margin-bottom:6px;">Tap to check in</p>
+      <button class="checkin-btn pressable" onclick="mockApi.checkin()">
+        <span class="ic-big">◎</span><span style="font-size:12px;font-weight:700;">CHECK IN</span>
+      </button>
+      <p class="t-muted" style="margin-top:10px;">We'll verify your GPS and office network</p>
+    ` : (s==='acquiring-gps' || s==='acquiring-network') ? `
+      <div style="max-width:280px;margin:10px auto;display:flex;flex-direction:column;gap:8px;">
+        <div class="signal-row ${s!=='acquiring-gps'?'ok':'pulse'}">
+          <span class="dot"></span><span style="flex:1;text-align:left;font-size:13px;">${s!=='acquiring-gps' ? 'GPS matched — Loopwork HQ' : 'Locating you…'}</span>
+          ${s!=='acquiring-gps' ? '<span>✓</span>' : ''}
+        </div>
+        <div class="signal-row ${s==='acquiring-network'?'pulse':(s!=='acquiring-gps'?'':'')}" style="${s==='acquiring-gps'?'opacity:0.4;':''}">
+          <span class="dot"></span><span style="flex:1;text-align:left;font-size:13px;">Verifying office network…</span>
+        </div>
+      </div>
+    ` : s === 'done' ? `
+      <div class="ci-stage" id="ci-stage">
+        <div class="ci-ring" id="ci-ring-1"></div>
+        <div class="ci-ring r2" id="ci-ring-2"></div>
+        <div class="ci-badge" id="ci-badge">✓</div>
+      </div>
+      <h2 class="t-h1" style="margin-top:6px;">Verified · ${state.checkedInAt ? fmtTime(state.checkedInAt) : '9:02 AM'}</h2>
+      ${sessions.length > 1 ? `<p class="t-muted" style="margin-top:4px;">Session ${sessions.length} today</p>` : ''}
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+        ${chip('verified')}
+      </div>
+      <div style="display:flex;gap:8px;justify-content:center;margin-top:10px;">
+        <span class="chip chip-verified">GPS ✓</span><span class="chip chip-verified">Network ✓</span>
+      </div>
+      <div class="divider"></div>
+      <div style="display:flex;align-items:center;justify-content:space-between;">
+        <div style="text-align:left;">
+          <p class="t-muted">Current streak</p>
+          <p class="t-h1" style="font-family:var(--font-mono);">🔥 ${ME.streak+1} days</p>
+        </div>
+        <button class="btn btn-secondary" onclick="mockApi.checkout()">Check out</button>
+      </div>
+    ` : `
+      <div style="text-align:left;">
+        <p class="t-eyebrow" style="text-align:center;">${sessions.length} session${sessions.length > 1 ? 's' : ''} today · ${durationLabel(sessionsTotalMs(sessions))} total</p>
+        <div style="margin-top:12px;">
+          ${sessions.map((sess, i) => `
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;${i > 0 ? 'border-top:1px solid var(--border);' : ''}">
+              <div>
+                <p style="font-weight:600;font-size:13px;">Session ${i + 1}</p>
+                <p class="t-muted mono" style="margin-top:2px;">${fmtTime(sess.start)} – ${sess.end ? fmtTime(sess.end) : 'now'}</p>
+              </div>
+              ${chip('verified')}
+            </div>
+          `).join('')}
+        </div>
+        <div class="divider"></div>
+        <button class="btn btn-primary btn-block" onclick="mockApi.checkin()">Check in again</button>
+        <p class="t-muted" style="margin-top:10px;text-align:center;">We'll verify your GPS and office network</p>
+      </div>
+    `}
+  `;
+}
+function updateCheckinCard(){
+  const mount = document.getElementById('checkin-card-inner');
+  if(!mount){ render(); return; } // fallback if the user navigated away mid-sequence
+  mount.classList.remove('ci-fade-in');
+  mount.innerHTML = renderCheckinCardInner(state.checkinStatus, state.todaySessions);
+  requestAnimationFrame(()=>mount.classList.add('ci-fade-in'));
+}
+function screenMeCheckin(){
+  const s = state.checkinStatus;
+  const sessions = state.todaySessions;
+  return `
+  <div class="fx-spring">
+    <h1 class="t-h1">Good morning, ${ME.name.split(' ')[0]}</h1>
+    <p class="t-secondary" style="margin-top:2px;">${new Date().toLocaleDateString(undefined,{weekday:'long', month:'long', day:'numeric'})}</p>
+  </div>
+
+  <div class="card" id="checkin-card" style="margin-top:18px; text-align:center;">
+    <div id="checkin-card-inner" class="ci-fade-target ci-fade-in">${renderCheckinCardInner(s, sessions)}</div>
+  </div>
+
+  <div class="fx-spring" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:14px;">
+    ${(() => { const m = myMonthlyStats(); return `
+    <div class="card" style="padding:12px 8px;text-align:center;"><p class="stat-num" style="font-size:19px;color:var(--brand);">${m.wfo}</p><p class="t-muted" style="font-size:10.5px;margin-top:2px;">WFO days</p></div>
+    <div class="card" style="padding:12px 8px;text-align:center;"><p class="stat-num" style="font-size:19px;">${m.wfh}</p><p class="t-muted" style="font-size:10.5px;margin-top:2px;">WFH days</p></div>
+    <div class="card" style="padding:12px 8px;text-align:center;"><p class="stat-num" style="font-size:19px;">${m.leave}</p><p class="t-muted" style="font-size:10.5px;margin-top:2px;">Leave taken</p></div>
+    <div class="card" style="padding:12px 8px;text-align:center;"><p class="stat-num" style="font-size:19px;">${m.leaveRemaining.toFixed(1)}</p><p class="t-muted" style="font-size:10.5px;margin-top:2px;">Leave left</p></div>
+    `; })()}
+  </div>
+
+  <div class="card fx-spring" style="margin-top:14px;">
+    <p class="t-eyebrow">This week</p>
+    <div class="bar-wrap" style="margin-top:10px;height:64px;">
+      ${['M','T','W','T','F','S','S'].map((d,i)=>`
+        <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;">
+          <div class="bar ${i>=5?'weekend':''}" style="flex:none;height:${i>=5?8:40+i*7}px;width:100%;"></div>
+          <span class="t-muted" style="font-size:10px;">${d}</span>
+        </div>`).join('')}
+    </div>
+  </div>
+
+  <div class="card rowlink fx-spring" style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;" onclick="nav('me/workspace')">
+    <div>
+      <p class="t-eyebrow">Workspace</p>
+      <p style="font-weight:700;font-size:14px;margin-top:4px;">${inOfficeCount()} people in office right now</p>
+    </div>
+    <span class="t-muted" style="font-size:18px;">›</span>
+  </div>
+  `;
+  }
+
+  function wsGroupList(kind) {
+    const people = activeWorkspace().people || PEOPLE;
+    if (kind === 'present') return people.filter(p => p.status === 'verified' || p.status === 'override');
+    if (kind === 'remote') return people.filter(p => p.status === 'partial' || p.status === 'none');
+    if (kind === 'leave') return people.filter(p => p.status === 'leave');
+    return [];
+  }
+  function screenMeWorkspace() {
+    const ws = activeWorkspace();
+    const present = wsGroupList('present');
+    const remote = wsGroupList('remote');
+    const onLeave = wsGroupList('leave');
+    const group = (title, list, kind) => list.length ? `
+    <p class="t-eyebrow fx-snap" style="margin:20px 0 8px;">${title} · ${list.length}</p>
+    <div class="card fx-spring" style="padding:6px;">
+      ${list.slice(0, 5).map(p => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 8px;">
+          <div class="avatar">${p.initials}</div>
+          <div style="flex:1;"><p style="font-weight:600;font-size:13px;">${p.name}</p><p class="t-muted">${p.role}</p></div>
+          <p class="t-muted mono" style="font-size:11.5px;">${p.time}</p>
+        </div>
+      `).join('<div class="divider" style="margin:0 8px;"></div>')}
+      ${list.length > 5 ? `<div class="divider" style="margin:0 8px;"></div><button class="btn btn-ghost btn-sm btn-block" onclick="openMemberModal('${title}', wsGroupList('${kind}'))">Load ${list.length - 5} more</button>` : ''}
+    </div>
+  ` : '';
+    return `
+  <div class="fx-snap" style="display:flex;align-items:center;gap:10px;">
+    <button class="btn btn-ghost btn-sm" style="padding:0 6px;font-size:18px;" onclick="nav('me/checkin')" aria-label="Back">‹</button>
+    <div>
+      <h1 class="t-h1">${ws.name}</h1>
+      <p class="t-muted" style="margin-top:2px;">${ws.office}</p>
+    </div>
+  </div>
+  <div class="fx-spring" style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px;">
+    <div class="card" style="padding:14px;text-align:center;"><p class="stat-num" style="font-size:22px;color:var(--brand);">${present.length}</p><p class="t-muted" style="margin-top:2px;">Present</p></div>
+    <div class="card" style="padding:14px;text-align:center;"><p class="stat-num" style="font-size:22px;">${remote.length}</p><p class="t-muted" style="margin-top:2px;">Remote</p></div>
+    <div class="card" style="padding:14px;text-align:center;"><p class="stat-num" style="font-size:22px;">${onLeave.length}</p><p class="t-muted" style="margin-top:2px;">Leave</p></div>
+  </div>
+  ${group('Present', present, 'present')}
+  ${group('Remote', remote, 'remote')}
+  ${group('On leave', onLeave, 'leave')}
+  `;
+}
+
+function screenMeTimeline(){
+  const filtered = state.timelineFilter ? filterEventsByRange(state.timelineFilter.start, state.timelineFilter.end) : null;
+  const visible = filtered || ALL_EVENTS.slice(0, state.timelineRowsShown);
+  const hasMore = !filtered && state.timelineRowsShown < ALL_EVENTS.length;
+  return `
+  <div class="fx-snap" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div><h1 class="t-h1">Your timeline</h1><p class="t-secondary" style="margin-top:2px;">Verification is computed for your current workspace</p></div>
+    <button class="btn btn-secondary btn-sm" onclick="toggleTimelineFilter()">📅 ${state.timelineFilter ? 'Custom range applied' : 'Custom range'}</button>
+  </div>
+  ${state.timelineFilterOpen ? renderTimelineFilterPanel() : ''}
+  <div id="timeline-list" class="fx-spring-stagger" style="margin-top:10px;">
+    ${visible.length ? visible.map(renderTimelineRow).join('') : `<div class="empty">No events in this range</div>`}
+  </div>
+  <div id="timeline-loadmore" style="margin-top:10px;">
+    ${filtered ? '' : state.timelineLoading ? renderTimelineSkeleton() : hasMore ? `
+      <button class="btn btn-secondary btn-block" onclick="loadMoreTimeline()">Load 7 more days</button>
+    ` : `<p class="t-muted" style="text-align:center;padding:16px 0;">You've reached the beginning of your history</p>`}
+  </div>
+  `;
+    }
+    function renderTimelineFilterPanel() {
+      const f = state.timelineFilter || {};
+      return `
+  <div class="card fx-snap" style="margin-top:10px;">
+    <p class="t-eyebrow" style="margin-bottom:10px;">Custom date range</p>
+    <div style="display:flex;gap:10px;">
+      <div style="flex:1;"><label class="field-label">From</label><input class="input" type="date" id="tl-start" value="${f.start || ''}"></div>
+      <div style="flex:1;"><label class="field-label">To</label><input class="input" type="date" id="tl-end" value="${f.end || ''}"></div>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button class="btn btn-primary btn-sm" onclick="applyTimelineFilter()">Apply</button>
+      ${state.timelineFilter ? `<button class="btn btn-ghost btn-sm" onclick="clearTimelineFilter()">Clear</button>` : ''}
+    </div>
+  </div>`;
+    }
+    function toggleTimelineFilter() { state.timelineFilterOpen = !state.timelineFilterOpen; render(); }
+    function applyTimelineFilter() {
+      const start = document.getElementById('tl-start').value;
+      const end = document.getElementById('tl-end').value;
+      if (!start || !end) { showToast('Pick both a start and end date'); return; }
+      if (new Date(start) > new Date(end)) { showToast('Start date must be before end date'); return; }
+      state.timelineFilter = { start, end };
+      state.timelineFilterOpen = false;
+      render();
+    }
+    function clearTimelineFilter() { state.timelineFilter = null; state.timelineFilterOpen = false; render(); }
+    function renderRegEntry(e) {
+      if (state.regFormEventId === e.id) {
+        return `
+        <div class="divider"></div>
+        <div onclick="event.stopPropagation()">
+          <label class="field-label">What should this be marked as?</label>
+          <select class="input" id="reg-change-${e.id}">
+            <option value="Mark verified (network only)">Mark verified (network only)</option>
+            <option value="Mark WFO — manual">Mark WFO — manual</option>
+            <option value="Mark WFH">Mark WFH</option>
+            <option value="Other">Other</option>
+          </select>
+          <div style="margin-top:8px;"><label class="field-label">Reason</label><textarea class="input" id="reg-reason-${e.id}" placeholder="Explain what happened"></textarea></div>
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <button class="btn btn-ghost btn-sm" onclick="closeRegForm()">Cancel</button>
+            <button class="btn btn-primary btn-sm" onclick="submitRegularization(${e.id})">Submit</button>
+          </div>
+        </div>`;
+      }
+      const mine = REGULARIZATIONS.find(r => r.empId === 1 && r.eventId === e.id);
+      if (mine) return `<div class="divider"></div><p class="t-muted">Correction requested — ${regStatusChip(mine.status)}</p>`;
+      return `<button class="btn btn-secondary btn-sm" style="margin-top:10px;" onclick="event.stopPropagation();openRegForm(${e.id})">Request correction</button>`;
+    }
+    function renderTimelineRow(e) {
+      return `
+  <div class="card rowlink" style="margin-top:10px;padding:14px 16px;" onclick="toggleDetail(${e.id})">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <p style="font-weight:700;font-size:13.5px;">${e.day} <span class="t-muted" style="font-weight:500;">· ${e.date}</span></p>
+        <p class="t-muted" style="margin-top:2px;">${e.time}</p>
+      </div>
+      ${chip(e.status)}
+    </div>
+    <div class="detail-${e.id}" style="display:none;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      ${e.status === 'leave' ? `<p class="t-muted">On approved leave</p>` : `
+        <div style="display:flex;gap:8px;">
+          <span class="chip ${e.gps ? 'chip-verified' : 'chip-none'}">GPS ${e.gps ? '✓' : '✗'}</span>
+          <span class="chip ${e.network ? 'chip-verified' : 'chip-none'}">Network ${e.network ? '✓' : '✗'}</span>
+        </div>
+        ${e.note ? `<p class="t-muted" style="margin-top:8px;">${e.note}</p>` : ''}
+        ${(e.status === 'partial' || e.status === 'none') ? renderRegEntry(e) : ''}
+      `}
+    </div>
+  </div>`;
+    }
+    function renderTimelineSkeleton() {
+      return `<div style="display:flex;flex-direction:column;gap:10px;">
+    ${[0, 1, 2].map(() => `<div class="skeleton" style="height:60px;border-radius:var(--radius-lg);"></div>`).join('')}
+  </div>`;
+    }
+    async function loadMoreTimeline() {
+      state.timelineLoading = true; render();
+      await mockApi.delay(700);
+      state.timelineRowsShown += 7;
+      state.timelineLoading = false;
+      render();
+}
+
+function screenMeLeave(){
+  const tabs = [{ key:'balance', label:'Balance' }, { key:'apply', label:'Apply' }, { key:'history', label:'History' }, { key:'holidays', label:'Holidays' }];
+  const tabFns = { balance: meLeaveBalanceTab, apply: meLeaveApplyTab, history: meLeaveHistoryTab, holidays: meLeaveHolidaysTab };
+  return `
+  <h1 class="t-h1 fx-snap">Leave</h1>
+  <div class="fx-snap tabbar" style="margin:12px 0 16px;">
+    ${tabs.map(t=>`<button class="${state.leaveTab===t.key?'active':''}" onclick="setLeaveTab('${t.key}')">${t.label}</button>`).join('')}
+  </div>
+  ${tabFns[state.leaveTab]()}
+  `;
+}
+function setLeaveTab(t){ state.leaveTab = t; render(); }
+function meLeaveBalanceTab(){
+  return `
+  <div class="fx-spring-stagger">
+  ${LEAVE_TYPES.map(t=>`
+    <div class="card" style="margin-top:12px;display:flex;justify-content:space-between;align-items:center;">
+      <div><p style="font-weight:700;font-size:13.5px;">${t.name}</p><p class="t-muted">${t.freq} accrual · ${t.credits}/period</p></div>
+      <div style="text-align:right;"><p class="stat-num" style="font-size:20px;">${(t.accrued-t.used).toFixed(1)}</p><p class="t-muted">available</p></div>
+    </div>
+  `).join('')}
+  </div>`;
+}
+function meLeaveApplyTab(){
+  return `
+  <div class="fx-spring" style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
+    ${LEAVE_TYPES.map(t=>`<span class="chip chip-leave">${t.name}: ${(t.accrued-t.used).toFixed(1)} left</span>`).join('')}
+  </div>
+  <div class="card fx-spring">
+    <p class="t-eyebrow" style="margin-bottom:12px;">Request leave</p>
+    <div><label class="field-label">Leave type</label>
+      <select class="input" id="lv-type">${LEAVE_TYPES.map(t=>`<option value="${t.id}">${t.name}</option>`).join('')}</select>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:10px;">
+      <div style="flex:1;"><label class="field-label">Start</label><input class="input" type="date" id="lv-start"></div>
+      <div style="flex:1;"><label class="field-label">End</label><input class="input" type="date" id="lv-end"></div>
+    </div>
+    <div style="margin-top:10px;"><label class="field-label">Reason (optional)</label><input class="input" id="lv-reason" placeholder="e.g. Family function"></div>
+    <button class="btn btn-primary btn-block" style="margin-top:12px;" onclick="submitLeaveDemo()">Submit request</button>
+    <p class="t-muted" style="margin-top:8px;text-align:center;">Your admin reviews every request before it's approved</p>
+  </div>
+  `;
+}
+function meLeaveHistoryTab(){
+  return `
+  <p class="t-eyebrow fx-snap" style="margin-bottom:10px;">Your requests</p>
+  <div class="fx-spring-stagger">${renderLeaveList(myLeaveRequests())}</div>
+  <p class="t-eyebrow fx-snap" style="margin:20px 0 10px;">Your correction requests</p>
+  <div class="fx-spring-stagger">${renderMyRegularizations()}</div>
+  `;
+}
+function meLeaveHolidaysTab(){
+  const holidays = upcomingHolidaysList();
+  return `
+  <div class="card fx-spring">
+    <p class="t-eyebrow" style="margin-bottom:8px;">Upcoming holidays</p>
+    <div>
+      ${holidays.map(h => `<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;"><p style="font-size:13px;font-weight:600;">${h.name}</p><p class="t-muted mono">${h.date}</p></div>`).join('<div class="divider" style="margin:0;"></div>')}
+    </div>
+  </div>
+  `;
+}
+    function renderLeaveList(list) {
+      const requests = list || myLeaveRequests();
+      if (!requests.length) return `<div class="empty">No leave requests yet</div>`;
+      return requests.map(r =>`
+    <div class="card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;">
+      <div><p style="font-weight:700;font-size:13px;">${r.type}</p><p class="t-muted">${fmtShort(r.start)} → ${fmtShort(r.end)} · ${r.days} day(s)</p></div>
+      ${leaveStatusChip(r.status)}
+    </div>
+  `).join('');
+}
+async function submitLeaveDemo(){
+  const start = document.getElementById('lv-start').value;
+  const end = document.getElementById('lv-end').value || start;
+  const reason = document.getElementById('lv-reason').value.trim();
+  if(!start){ showToast('Pick a start date'); return; }
+  const typeId = document.getElementById('lv-type').value;
+  const type = LEAVE_TYPES.find(t=>String(t.id)===typeId) || LEAVE_TYPES[0];
+  const typeColorMap = { 'Paid Leave':'#0EA5E9', 'Sick Leave':'#EC4899', 'Casual Leave':'#10B981' };
+  const days = Math.max(1, Math.round((new Date(end)-new Date(start))/86400000)+1);
+  await mockApi.submitLeave({ type:type.name, typeColor:typeColorMap[type.name]||'#0EA5E9', start, end, days, reason });
+  state.leaveTab = 'history';
+  render();
+  showToast('Leave request submitted — awaiting approval');
+}
+
+/* ── Regularization requests (two-sided, planned near-term product direction — see
+   docs/product/11-current-state.md. The real app today only supports admin-initiated
+   overrides via the Alerts/Disputes page; this employee-submission flow is a demo build. ── */
+function renderMyRegularizations(){
+  const mine = REGULARIZATIONS.filter(r=>r.empId===1);
+  if(!mine.length) return `<div class="empty">No correction requests yet.</div>`;
+  return mine.map(r=>`
+    <div class="card" style="margin-top:10px;display:flex;justify-content:space-between;align-items:center;">
+      <div><p style="font-weight:700;font-size:13px;">${r.change}</p><p class="t-muted">${r.date} · ${r.reason}</p></div>
+      ${regStatusChip(r.status)}
+    </div>
+  `).join('');
+}
+function regStatusChip(status){ const map={pending:['chip-partial','Pending'],approved:['chip-verified','Approved'],declined:['chip-none','Declined']}; const [cls,label]=map[status]||['chip-leave',status]; return `<span class="chip ${cls}">${label}</span>`; }
+function openRegForm(id){ state.regFormEventId = id; render(); }
+function closeRegForm(){ state.regFormEventId = null; render(); }
+function submitRegularization(eventId){
+  const change = document.getElementById('reg-change-'+eventId).value;
+  const reason = document.getElementById('reg-reason-'+eventId).value.trim();
+  if(!reason){ showToast('Please add a reason'); return; }
+  const ev = ALL_EVENTS.find(x=>x.id===eventId);
+  const nextId = REGULARIZATIONS.length ? Math.max(...REGULARIZATIONS.map(r=>r.id))+1 : 1;
+  REGULARIZATIONS.push({ id:nextId, empId:1, eventId, reason, date: ev ? `${ev.day} · ${ev.date}` : '', change, status:'pending' });
+  state.regFormEventId = null;
+  showToast('Regularization request submitted');
+  render();
+}
+
+    function renderMoreSheet() {
+  const items = [
+    { label: 'Profile', onclick: "showToast('Profile editing would open here'); closeMoreSheet();" },
+    { label: 'My documents', onclick: "closeMoreSheet(); nav('me/documents');" },
+    { label: 'Linked workspaces', onclick: "closeMoreSheet(); openWsSwitcher();" },
+    { label: 'Notifications', onclick: "closeMoreSheet();" },
+    { label: 'Privacy & data', onclick: "closeMoreSheet();" },
+    { label: 'Sign out', onclick: "closeMoreSheet(); requestLogout();", danger: true },
+  ];
+  return `
+  <div class="me-sheet">
+    <div class="scrim" onclick="closeMoreSheet()"></div>
+    <div class="panel">
+      <div class="handle"></div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <div class="avatar" style="width:44px;height:44px;font-size:15px;">${ME.initials}</div>
+        <div><p style="font-weight:700;">${ME.name}</p><p class="t-muted">${ME.role} · ${activeWorkspace().name}</p></div>
+      </div>
+      <div class="divider"></div>
+      ${items.map(i => `<div class="rowlink" style="padding:14px 4px;font-size:13.5px;${i.danger ? 'color:var(--danger);' : ''}" onclick="${i.onclick}">${i.label}</div>`).join('<div class="divider" style="margin:0;"></div>')}
+    </div>
+  </div>`;
+}
+    function openMoreSheet() { state.moreOpen = true; render(); }
+    function closeMoreSheet() { state.moreOpen = false; render(); }
+
+    /* ── Employee documents — upload side (planned near-term product direction, see
+       docs/product/11-current-state.md; the real app has no upload flow today). ── */
+    function screenMeDocuments(){
+      const e = findEmployee(1); // ME = Rahul Verma
+      return `
+  <div class="fx-snap" style="display:flex;align-items:center;gap:10px;">
+    <button class="btn btn-ghost btn-sm" style="padding:0 6px;font-size:18px;" onclick="nav('me/checkin')" aria-label="Back">‹</button>
+    <h1 class="t-h1">My documents</h1>
+  </div>
+  <p class="t-secondary fx-snap" style="margin-top:2px;">Required at onboarding · admin verifies each upload</p>
+  <div class="fx-spring-stagger" style="margin-top:14px;">${e.documents.map(renderMyDocumentRow).join('')}</div>
+  `;
+    }
+    function renderMyDocumentRow(d){
+      const chipCls = d.status === 'verified' ? 'chip-verified' : d.status === 'pending' ? 'chip-partial' : 'chip-none';
+      const needsUpload = d.status === 'missing' || d.status === 'rejected';
+      return `
+  <div class="card" style="margin-top:10px;">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="width:34px;height:34px;border-radius:var(--radius-sm);background:var(--surface-2);color:var(--brand);display:flex;align-items:center;justify-content:center;flex-shrink:0;">▤</span>
+      <div style="flex:1;min-width:0;">
+        <p style="font-weight:600;font-size:13.5px;">${d.name}</p>
+        ${d.fileName ? `<p class="t-muted" style="font-size:11px;margin-top:2px;">${d.fileName}</p>` : ''}
+      </div>
+      <span class="chip ${chipCls}">${d.status}</span>
+    </div>
+    ${d.status === 'rejected' && d.rejectReason ? `<p class="t-muted" style="margin-top:8px;font-size:11.5px;">Rejected — ${d.rejectReason}. Please re-upload.</p>` : ''}
+    ${needsUpload ? `
+      <label class="dropzone" style="margin-top:10px;">
+        <input type="file" style="display:none;" onchange="uploadMyDocument('${d.key}', this.files[0])">
+        ⬆ Tap to upload
+      </label>
+    ` : ''}
+  </div>`;
+    }
+    function uploadMyDocument(key, file){
+      if (!file) return;
+      const e = findEmployee(1);
+      const d = e?.documents.find(x => x.key === key);
+      if (d) { d.status = 'pending'; d.fileName = file.name; d.uploadedAt = demoTodayIso(); d.rejectReason = null; }
+      showToast('Uploaded — awaiting verification');
+      render();
+    }
+
+    function fmtShort(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
+    function fmtLong(iso) { const d = new Date(iso + 'T00:00:00'); return isNaN(d) ? iso : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }); }
+    function pendingLeaveCount() { return WS_LEAVE_REQUESTS.filter(l => l.status === 'pending').length; }
+    function pendingMaternityCount() { return MATERNITY_CASES.filter(m => m.status === 'requested').length; }
+    function pendingRegCount() { return REGULARIZATIONS.filter(r => r.status === 'pending').length; }
+    function wsPresentTodayList() { return PEOPLE.filter(p => p.status === 'verified' || p.status === 'override' || p.status === 'partial'); }
+    function wsOnLeaveList() { return PEOPLE.filter(p => p.status === 'leave'); }
+
+    /* ─────────────────────────── OVERVIEW ─────────────────────────── */
+    function screenWsOverview() {
+      const present = PEOPLE.filter(p => p.status === 'verified' || p.status === 'override' || p.status === 'partial').length;
+      const onLeave = PEOPLE.filter(p => p.status === 'leave').length;
+      const pendingLeaves = WS_LEAVE_REQUESTS.filter(l => l.status === 'pending');
+      const pendingRegs = REGULARIZATIONS.filter(r => r.status === 'pending');
+      const pendingDocs = EMPLOYEES.flatMap(e => e.documents.filter(d => d.status === 'pending').map(d => ({ kind: 'doc', emp: e, label: 'Document', chipCls: 'chip-partial', detail: d.name })));
+      const pendingTotal = pendingLeaves.length + pendingRegs.length + pendingDocs.length;
+      const approvals = [
+        ...pendingLeaves.map(l => ({ kind: 'leave', id: l.id, emp: findEmployee(l.empId), label: l.type, chipCls: 'chip-leave', detail: `${fmtShort(l.start)} → ${fmtShort(l.end)} · ${l.days} day(s)` })),
+        ...pendingRegs.map(r => ({ kind: 'reg', id: r.id, emp: findEmployee(r.empId), label: 'Regularization', chipCls: 'chip-partial', detail: r.change })),
+        ...pendingDocs,
+      ];
+      const bars = deptBars();
+  return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px;">
+    <div><div class="t-eyebrow">${WORKSPACE.name}</div><h1 class="t-h1" style="margin-top:4px;">Good morning, ${ADMIN.name.split(' ')[0]}</h1><p class="t-secondary" style="margin-top:2px;">${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })} · ${pendingTotal} item(s) need your attention</p></div>
+    <button class="btn btn-primary" onclick="showToast('Invite flow would open here in production')">+ Add employee</button>
+  </div>
+  <div class="fx-spring-stagger" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px;">
+    <div class="card rowlink" onclick="openMemberModal('Headcount', EMPLOYEES)"><p class="t-eyebrow">Headcount</p><p class="stat-num" style="margin-top:6px;">${EMPLOYEES.length}</p><p class="t-muted" style="margin-top:2px;color:var(--brand);font-weight:600;">▲ 3 joined this month</p></div>
+    <div class="card rowlink" onclick="openMemberModal('Present today', wsPresentTodayList())"><p class="t-eyebrow">Present today</p><p class="stat-num" style="color:var(--brand);margin-top:6px;">${present}</p><p class="t-muted" style="margin-top:2px;">of ${PEOPLE.length} · ${Math.round(present / PEOPLE.length * 100)}%</p></div>
+    <div class="card rowlink" onclick="openMemberModal('On leave', wsOnLeaveList())"><p class="t-eyebrow">On leave</p><p class="stat-num" style="margin-top:6px;">${onLeave}</p><p class="t-muted" style="margin-top:2px;">${pendingLeaves.length} requests pending</p></div>
+    <div class="card"><p class="t-eyebrow">Attrition (YTD)</p><p class="stat-num" style="margin-top:6px;">4.2%</p><p class="t-muted" style="margin-top:2px;color:var(--brand);font-weight:600;">▼ 0.8% vs last year</p></div>
+  </div>
+  ${renderPresenceGraphCard()}
+  <div class="fx-spring" style="display:grid;grid-template-columns:1.15fr 1fr;gap:14px;margin-top:14px;align-items:stretch;">
+    <div class="card card-fixed-h" style="padding:0;overflow:hidden;">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+        <p class="t-h2">Pending approvals</p>
+        ${pendingTotal ? `<span class="chip chip-partial">${pendingTotal}</span>` : ''}
+      </div>
+      <div class="scroll-body">
+      ${approvals.length ? approvals.map(a => `
+        <div style="display:flex;align-items:center;gap:10px;padding:12px 20px;border-top:1px solid var(--border);">
+          <div class="avatar" style="background:color-mix(in srgb, ${a.emp.avatarColor} 20%, transparent);color:${a.emp.avatarColor};">${a.emp.initials}</div>
+          <div style="flex:1;min-width:0;"><p style="font-weight:600;font-size:13px;">${a.emp.name}</p><div style="display:flex;gap:6px;align-items:center;margin-top:2px;flex-wrap:wrap;"><span class="chip ${a.chipCls}" style="font-size:10px;">${a.label}</span><span class="t-muted" style="font-size:11.5px;">${a.detail}</span></div></div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            ${a.kind === 'doc' ? `
+              <button class="btn btn-secondary btn-sm" onclick="nav('ws/employees');openEmployee(${a.emp.id})">Review ›</button>
+            ` : `
+              <button class="icon-btn icon-btn-decline" onclick="${a.kind === 'leave' ? `declineLeaveReq(${a.id})` : `declineRegularization(${a.id})`}" title="Decline">✕</button>
+              <button class="icon-btn icon-btn-approve" onclick="${a.kind === 'leave' ? `approveLeaveReq(${a.id})` : `approveRegularization(${a.id})`}" title="Approve">✓</button>
+            `}
+          </div>
+        </div>
+      `).join('') : `<div class="empty">Inbox zero 🎉<br><span class="t-muted">Every request has been actioned.</span></div>`}
+      </div>
+    </div>
+    <div class="card card-fixed-h">
+      <p class="t-h2" style="margin-bottom:14px;">Headcount by department</p>
+      <div class="scroll-body" style="display:flex;flex-direction:column;gap:12px;">
+        ${bars.map(b => `
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span class="t-secondary" style="font-size:12px;">${b.dept}</span><span class="mono" style="font-size:12px;font-weight:600;">${b.count}</span></div>
+            <div class="progress"><div style="width:${b.pct}%;background:${b.color};"></div></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="fx-spring" style="display:grid;grid-template-columns:1.3fr 1fr;gap:14px;margin-top:14px;align-items:stretch;">
+    <div class="card card-fixed-h" style="padding:0;overflow:hidden;">
+      <p class="t-h2" style="padding:16px 20px;border-bottom:1px solid var(--border);">Recent activity</p>
+      <div class="scroll-body">
+      ${PEOPLE.filter(p => p.status !== 'leave').slice(0, 6).map(p => `
+        <div class="rowlink" style="display:flex;align-items:center;gap:10px;padding:11px 20px;border-top:1px solid var(--border);">
+          <div class="avatar">${p.initials}</div>
+          <div style="flex:1;"><p style="font-weight:600;font-size:13px;">${p.name}</p><p class="t-muted">${p.time}</p></div>
+          ${chip(p.overridden ? 'override' : p.status)}
+        </div>
+      `).join('')}
+      </div>
+    </div>
+    <div class="card card-fixed-h" style="padding:0;overflow:hidden;">
+      <p class="t-h2" style="padding:16px 20px;border-bottom:1px solid var(--border);">This week</p>
+      <div class="scroll-body">
+      ${CELEBRATIONS.map(c => `
+        <div style="display:flex;align-items:center;gap:10px;padding:11px 20px;border-top:1px solid var(--border);">
+          <div style="width:32px;height:32px;border-radius:var(--radius-sm);background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">${c.emoji}</div>
+          <div style="flex:1;min-width:0;"><p style="font-weight:600;font-size:12.5px;">${c.name}</p><p class="t-muted">${c.label}</p></div>
+          <span class="t-muted mono">${c.date}</span>
+        </div>
+      `).join('')}
+      </div>
+    </div>
+  </div>
+  `;
+}
+
+    /* ─────────────────────────── ATTENDANCE (formerly People) ─────────────────────────── */
+    function screenWsAttendance() {
+      const pendingRegs = REGULARIZATIONS.filter(r => r.status === 'pending');
+      const present = PEOPLE.filter(p => p.status === 'verified' || p.status === 'override').length;
+      const onLeave = PEOPLE.filter(p => p.status === 'leave').length;
+      const flagged = PEOPLE.filter(p => p.status === 'partial' || p.status === 'none').length;
+  return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <div><h1 class="t-h1">Attendance</h1><p class="t-secondary" style="margin-top:4px;">Today · ${new Date().toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p></div>
+    <p class="t-muted">Showing ${PEOPLE.length} of ${WORKSPACE.totalMembers}</p>
+  </div>
+  <div class="fx-spring-stagger" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px;">
+    <div class="card"><p class="t-eyebrow">Verified WFO</p><p class="stat-num" style="color:var(--brand);margin-top:6px;">${present}</p></div>
+    <div class="card"><p class="t-eyebrow">On leave</p><p class="stat-num" style="margin-top:6px;">${onLeave}</p></div>
+    <div class="card"><p class="t-eyebrow">Partial / unverified</p><p class="stat-num" style="margin-top:6px;color:var(--amber);">${flagged}</p></div>
+    <div class="card"><p class="t-eyebrow">Regularizations</p><p class="stat-num" style="margin-top:6px;">${pendingRegs.length}</p></div>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;padding:0;overflow:hidden;">
+    <table class="datatable">
+      <thead><tr><th>Name</th><th>Role</th><th>Today</th><th>Time</th><th></th></tr></thead>
+      <tbody>
+      ${PEOPLE.map(p=>`
+        <tr class="rowlink" onclick="openDrilldown(${p.id})">
+          <td style="display:flex;align-items:center;gap:10px;"><div class="avatar">${p.initials}</div>${p.name}</td>
+          <td class="t-secondary">${p.role}</td>
+          <td>${chip(p.overridden?'override':p.status)}</td>
+          <td class="t-muted mono">${p.time}</td>
+          <td class="t-muted">›</td>
+        </tr>
+      `).join('')}
+      </tbody>
+    </table>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;padding:0;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <p class="t-h2">Regularization requests</p>
+      ${pendingRegs.length ? `<span class="chip chip-partial">${pendingRegs.length}</span>` : ''}
+    </div>
+    ${pendingRegs.length ? pendingRegs.map(r => {
+      const e = findEmployee(r.empId);
+      return `
+      <div style="display:flex;align-items:center;gap:12px;padding:13px 20px;border-top:1px solid var(--border);flex-wrap:wrap;">
+        <div class="avatar" style="background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>
+        <div style="flex:1;min-width:160px;"><p style="font-weight:600;font-size:13.5px;">${e.name}</p><p class="t-muted" style="font-size:11.5px;">${r.reason}</p></div>
+        <div style="text-align:right;min-width:150px;"><p class="mono" style="font-size:12.5px;">${r.date}</p><p class="t-muted mono" style="font-size:11px;">${r.change}</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-danger btn-sm" onclick="declineRegularization(${r.id})">Decline</button>
+          <button class="btn btn-primary btn-sm" onclick="approveRegularization(${r.id})">Approve</button>
+        </div>
+      </div>`;
+    }).join('') : `<div class="empty">No pending regularizations.</div>`}
+  </div>
+  ${state.overridePanel ? renderDrilldown(state.overridePanel) : ''}
+  `;
+}
+    function approveRegularization(id) { const r = REGULARIZATIONS.find(x => x.id === id); if (r) r.status = 'approved'; showToast('Regularization approved'); render(); }
+    function declineRegularization(id) { const r = REGULARIZATIONS.find(x => x.id === id); if (r) r.status = 'declined'; showToast('Regularization declined'); render(); }
+function openDrilldown(id){ state.overridePanel = id; render(); }
+function closeDrilldown(){ state.overridePanel = null; render(); }
+function renderDrilldown(id){
+  const p = PEOPLE.find(x=>x.id===id); if(!p) return '';
+  return `
+  <div class="slideover">
+    <div class="scrim" onclick="closeDrilldown()"></div>
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+        <div style="display:flex;gap:12px;align-items:center;">
+          <div class="avatar" style="width:44px;height:44px;font-size:15px;">${p.initials}</div>
+          <div><p class="t-h1" style="font-size:16px;">${p.name}</p><p class="t-muted">${p.role}</p></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="closeDrilldown()">✕</button>
+      </div>
+      <div class="divider"></div>
+      <p class="t-eyebrow">Today's status</p>
+      <div style="margin-top:8px;">${chip(p.overridden?'override':p.status)}</div>
+      ${p.status!=='leave' ? `
+        <div style="display:flex;gap:8px;margin-top:12px;">
+          <span class="chip ${p.gps?'chip-verified':'chip-none'}">GPS ${p.gps?'✓':'✗'}</span>
+          <span class="chip ${p.network?'chip-verified':'chip-none'}">Network ${p.network?'✓':'✗'}</span>
+        </div>
+      ` : ''}
+      ${p.note ? `<p class="t-secondary" style="margin-top:10px;">${p.note}</p>` : ''}
+      ${p.overridden ? `<p class="t-secondary" style="margin-top:10px;">Overridden by ${ADMIN.name} — "${p.overrideReason}"</p>` : ''}
+      <div class="divider"></div>
+      ${!p.overridden && p.status!=='leave' && p.status!=='verified' ? `
+        <p class="t-eyebrow" style="margin-bottom:8px;">Override to present</p>
+        <textarea class="input" id="ov-reason" placeholder="Reason (required, kept on the audit trail)"></textarea>
+        <button class="btn btn-primary btn-block" style="margin-top:10px;" onclick="doOverride(${p.id})">Mark as present</button>
+        <p class="t-muted" style="margin-top:8px;">This never modifies the original event — it's stored as a separate, additive override.</p>
+      ` : ''}
+    </div>
+  </div>`;
+}
+async function doOverride(id){
+  const reason = document.getElementById('ov-reason').value;
+  if(!reason.trim()){ showToast('A reason is required'); return; }
+  await mockApi.override(id, reason);
+  showToast('Marked as present — override recorded');
+  render();
+}
+
+    /* ─────────────────────────── REPORTS ─────────────────────────── */
+/* ── Monthly Activity Gantt/heatmap — mirrors the real app's src/app/ws/[slug]/monthly/MonthlyClient.tsx
+   (cell coloring, row summary format, month nav, per-day export mapping) rather than a numbers-only table. ── */
+const SIGNALS_CONFIGURED = SIGNALS_CONFIG.some(s => s.status === 'live'); // true today (gps+network live, wifi roadmap)
+function seededRand(str){ // same char-hash technique as avatarColor() — deterministic, doesn't reshuffle on re-render
+  let h = 0; for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+  return (Math.abs(h) % 1000) / 1000;
+}
+function daysInMonth(year, monthIdx){ return new Date(year, monthIdx + 1, 0).getDate(); }
+function isoDate(year, monthIdx, day){ return `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`; }
+function dailyStatus(emp, year, monthIdx, day){
+  const dateStr = isoDate(year, monthIdx, day);
+  const dateObj = new Date(year, monthIdx, day);
+  if (dateObj > DEMO_TODAY) return 'future';
+  if (dateStr < emp.joined) return 'pre-join';
+  if (HOLIDAYS.some(h => h.date === dateStr)) return 'holiday';
+  const dow = dateObj.getDay();
+  if (dow === 0 || dow === 6) return 'weekend';
+  if (WS_LEAVE_REQUESTS.some(l => l.empId === emp.id && l.status === 'approved' && dateStr >= l.start && dateStr <= l.end)) return 'leave';
+  const r = seededRand(emp.id + '|' + dateStr);
+  if (r < 0.06) return 'absent';
+  if (r < 0.22) return SIGNALS_CONFIGURED ? 'remote' : 'office'; // no signals configured → counted as office, matching the real app
+  return 'office';
+}
+function buildMonthlyGrid(year, monthIdx){ // single source of truth shared by the on-screen grid AND the CSV export
+  const nDays = daysInMonth(year, monthIdx);
+  return EMPLOYEES.map(emp => {
+    const cells = Array.from({ length: nDays }, (_, i) => {
+      const day = i + 1, status = dailyStatus(emp, year, monthIdx, day);
+      return { day, dateStr: isoDate(year, monthIdx, day), status };
+    });
+    return {
+      emp, cells,
+      officeCount: cells.filter(c => c.status === 'office').length,
+      remoteCount: cells.filter(c => c.status === 'remote').length,
+      absentCount: cells.filter(c => c.status === 'absent').length,
+    };
+  });
+}
+function workingDaysInMonth(year, monthIdx){
+  const nDays = daysInMonth(year, monthIdx);
+  let n = 0;
+  for (let d = 1; d <= nDays; d++){ const dow = new Date(year, monthIdx, d).getDay(); if (dow !== 0 && dow !== 6 && !HOLIDAYS.some(h => h.date === isoDate(year, monthIdx, d))) n++; }
+  return n;
+}
+const MONTHLY_STATUS_LABEL = { office:'office', remote:'remote', absent:'absent', leave:'on leave', holiday:'holiday', weekend:'weekend', future:'upcoming', 'pre-join':'not yet a member' };
+function monthlyIsCurrent(){ return state.monthlyYear === DEMO_TODAY.getFullYear() && state.monthlyMonth === DEMO_TODAY.getMonth(); }
+function monthNavPrev(){ state.monthlyMonth--; if (state.monthlyMonth < 0) { state.monthlyMonth = 11; state.monthlyYear--; } render(); }
+function monthNavNext(){ if (monthlyIsCurrent()) return; state.monthlyMonth++; if (state.monthlyMonth > 11) { state.monthlyMonth = 0; state.monthlyYear++; } render(); }
+function monthNavToday(){ state.monthlyYear = DEMO_TODAY.getFullYear(); state.monthlyMonth = DEMO_TODAY.getMonth(); render(); }
+function monthlyCellExportValue(status){ return { office:1, remote:'WFH', holiday:'Holiday', leave:'Leave', absent:0 }[status] ?? ''; }
+function exportMonthlyCsv(){
+  const y = state.monthlyYear, m = state.monthlyMonth, nDays = daysInMonth(y, m);
+  const grid = buildMonthlyGrid(y, m);
+  const header = ['Name', ...Array.from({ length: nDays }, (_, i) => String(i + 1))];
+  const rows = [header, ...grid.map(r => [r.emp.name, ...r.cells.map(c => monthlyCellExportValue(c.status))])];
+  downloadCsv(rows, `loopwork-monthly-activity-${y}-${String(m + 1).padStart(2, '0')}.csv`);
+}
+
+function screenWsReports(){
+  const tabs = [{ key:'export', label:'Export' }, { key:'monthly', label:'Monthly Activity' }];
+  return `
+  <h1 class="t-h1 fx-snap">Reports</h1>
+  <div class="fx-snap tabbar" style="margin:12px 0 16px;">
+    ${tabs.map(t=>`<button class="${state.reportsTab===t.key?'active':''}" onclick="setReportsTab('${t.key}')">${t.label}</button>`).join('')}
+  </div>
+  ${state.reportsTab==='monthly' ? reportsMonthlyActivityTab() : reportsExportTab()}
+  `;
+}
+function setReportsTab(t){ state.reportsTab = t; render(); }
+function reportsExportTab(){
+  return `
+  <p class="t-secondary fx-snap" style="margin-top:4px;margin-bottom:16px;">Generate and export HR reports as CSV.</p>
+  <div class="fx-spring-stagger" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;">
+    <div class="card report-card">
+      <p class="t-eyebrow">Attendance summary</p>
+      <p class="t-muted" style="font-size:12px;">Daily &amp; monthly presence, WFO / WFH / leave by employee.</p>
+      <button class="btn btn-secondary btn-sm" style="margin-top:auto;" onclick="generateReport('attendance')">⬇ Generate</button>
+    </div>
+    <div class="card report-card">
+      <p class="t-eyebrow">Leave balance</p>
+      <p class="t-muted" style="font-size:12px;">Opening, taken and closing balances by employee.</p>
+      <button class="btn btn-secondary btn-sm" style="margin-top:auto;" onclick="generateReport('leave')">⬇ Generate</button>
+    </div>
+    <div class="card report-card">
+      <p class="t-eyebrow">Headcount &amp; attrition</p>
+      <p class="t-muted" style="font-size:12px;">Joins, exits and department distribution.</p>
+      <button class="btn btn-secondary btn-sm" style="margin-top:auto;" onclick="generateReport('headcount')">⬇ Generate</button>
+    </div>
+    <div class="card report-card disabled">
+      <p class="t-eyebrow">Expense &amp; claims</p>
+      <p class="t-muted" style="font-size:12px;">Travel and reimbursement claims by status.</p>
+      <span class="chip chip-roadmap" style="margin-top:auto;align-self:flex-start;">Coming soon</span>
+    </div>
+  </div>
+  <div class="card fx-spring" style="margin-top:16px;">
+    <p class="t-eyebrow">WFO trend · last 14 days</p>
+    <div class="bar-wrap" style="margin-top:14px;height:150px;">
+      ${TREND_14D.map((v, i) => `<div class="bar ${v < 10 ? 'weekend' : ''}" title="${TREND_LABELS[i].toLocaleDateString()}: ${v}" style="height:${v * 4.4}px;"></div>`).join('')}
+    </div>
+  </div>
+  `;
+}
+function reportsMonthlyActivityTab(){
+  const y = state.monthlyYear, m = state.monthlyMonth;
+  const monthLabel = new Date(y, m, 1).toLocaleDateString(undefined, { month:'long', year:'numeric' });
+  const nDays = daysInMonth(y, m);
+  const grid = buildMonthlyGrid(y, m);
+  const gridCols = `180px repeat(${nDays},1fr)`;
+  const legendItems = [
+    { cls:'gantt-office', label:'Office / Present' },
+    ...(SIGNALS_CONFIGURED ? [{ cls:'gantt-remote', label:'Remote' }] : []),
+    { cls:'gantt-absent', label:'Absent' },
+    { cls:'gantt-leave', label:'On Leave' },
+    { cls:'gantt-holiday', label:'Holiday' },
+    { cls:'gantt-weekend', label:'Weekend' },
+  ];
+  return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <p class="t-h2">${monthLabel} · ${grid.length} people</p>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn btn-ghost btn-sm" onclick="monthNavPrev()">‹ Prev</button>
+      <button class="btn btn-secondary btn-sm" onclick="monthNavToday()">Today</button>
+      <button class="btn btn-ghost btn-sm" ${monthlyIsCurrent() ? 'disabled' : ''} onclick="monthNavNext()">Next ›</button>
+      <button class="btn btn-secondary btn-sm" onclick="exportMonthlyCsv()">⬇ Export Report</button>
+    </div>
+  </div>
+  ${!SIGNALS_CONFIGURED ? `<p class="t-muted fx-snap" style="margin-top:10px;">No location signals configured — all check-ins counted as present. Configure GPS or Network signals in Settings to distinguish remote days.</p>` : ''}
+  <div class="card fx-spring" style="margin-top:14px;padding:20px;overflow-x:auto;">
+    <div style="min-width:${180 + nDays * 26}px;">
+      <div class="gantt-row" style="grid-template-columns:${gridCols};">
+        <div></div>
+        ${Array.from({ length: nDays }, (_, i) => `<div class="t-muted mono" style="text-align:center;font-size:9px;">${i + 1}</div>`).join('')}
+      </div>
+      ${grid.map(r => `
+        <div class="gantt-row" style="grid-template-columns:${gridCols};">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <div class="avatar" style="width:30px;height:30px;font-size:11px;background:color-mix(in srgb, ${r.emp.avatarColor} 20%, transparent);color:${r.emp.avatarColor};">${r.emp.initials}</div>
+            <div style="min-width:0;">
+              <p style="font-weight:600;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${r.emp.name}</p>
+              <p class="t-muted mono" style="font-size:9.5px;">${r.officeCount}d${SIGNALS_CONFIGURED && r.remoteCount > 0 ? ` / ${r.remoteCount}r` : ''}${r.absentCount > 0 ? ` / ${r.absentCount}a` : ''}</p>
+            </div>
+          </div>
+          ${r.cells.map(c => `<div class="gantt-cell gantt-${c.status}" title="${c.dateStr}: ${MONTHLY_STATUS_LABEL[c.status]}">${c.day}</div>`).join('')}
+        </div>
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:16px;margin-top:16px;flex-wrap:wrap;align-items:center;">
+      ${legendItems.map(l => `<span style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-secondary);"><span class="${l.cls}" style="width:14px;height:14px;border-radius:4px;display:inline-block;"></span>${l.label}</span>`).join('')}
+      <span class="t-muted mono" style="margin-left:auto;">${workingDaysInMonth(y, m)} working days</span>
+    </div>
+  </div>
+  `;
+}
+    function downloadCsv(rows, filename) {
+  const csv = rows.map(r=>r.join(',')).join('\n');
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  showToast('Report exported');
+}
+    function exportCsv() {
+      const rows = [['Name', 'WFO days', 'WFH days', 'Leave days'], ...MONTHLY_REPORT.map(r => [r.name, r.wfo, r.wfh, r.leave])];
+      downloadCsv(rows, 'loopwork-attendance-report.csv');
+    }
+    function exportLeaveBalanceCsv() {
+      const rows = [['Name', 'Department', 'Paid Leave left', 'Sick Leave left', 'Casual Leave left'], ...EMPLOYEES.map(e => [e.name, e.dept, ...e.leaveBalance.map(b => b.total - b.used)])];
+      downloadCsv(rows, 'loopwork-leave-balance.csv');
+    }
+    function exportHeadcountCsv() {
+      const rows = [['Department', 'Headcount'], ...deptBars().map(b => [b.dept, b.count])];
+      downloadCsv(rows, 'loopwork-headcount.csv');
+    }
+    function generateReport(kind) {
+      if (kind === 'attendance') return exportCsv();
+      if (kind === 'leave') return exportLeaveBalanceCsv();
+      if (kind === 'headcount') return exportHeadcountCsv();
+    }
+
+    /* ─────────────────────────── LEAVE (requests / applied / maternity) ─────────────────────────── */
+    function screenWsLeaveScreen(sub) {
+      const tabs = [{ key: 'requests', label: 'Requests' }, { key: 'applied', label: 'Applied leaves' }, { key: 'maternity', label: 'Maternity' }];
+      const pc = pendingLeaveCount(), mc = pendingMaternityCount();
+      return `
+  <h1 class="t-h1 fx-snap">Leave</h1>
+  <div class="fx-snap tabbar" style="margin:12px 0 16px;">
+    ${tabs.map(t => `<button class="${sub === t.key ? 'active' : ''}" onclick="nav('ws/leave-${t.key}')">${t.label}${t.key === 'requests' && pc ? ` · ${pc}` : ''}${t.key === 'maternity' && mc ? ` · ${mc}` : ''}</button>`).join('')}
+  </div>
+  ${sub === 'requests' ? screenWsLeaveRequests() : sub === 'applied' ? screenWsLeaveApplied() : screenWsLeaveMaternity()}
+  `;
+    }
+    function screenWsLeaveRequests() {
+      const pending = WS_LEAVE_REQUESTS.filter(l => l.status === 'pending');
+      return `
+  <div class="card fx-spring" style="padding:0;overflow:hidden;">
+    <p class="t-h2" style="padding:16px 20px;border-bottom:1px solid var(--border);">Pending requests <span style="color:var(--amber);">· ${pending.length}</span></p>
+    ${pending.length ? pending.map(l => {
+        const e = findEmployee(l.empId);
+        return `
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 20px;border-top:1px solid var(--border);flex-wrap:wrap;">
+        <div class="avatar" style="background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>
+        <div style="flex:1;min-width:160px;"><p style="font-weight:600;font-size:14px;">${e.name}</p><p class="t-muted" style="font-size:12px;">${l.reason}</p></div>
+        <div style="text-align:right;"><span class="chip" style="background:color-mix(in srgb, ${l.typeColor} 16%, transparent);color:${l.typeColor};">${l.type}</span><p class="mono t-secondary" style="margin-top:5px;font-size:12px;">${fmtShort(l.start)} → ${fmtShort(l.end)} · ${l.days}d</p></div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-danger btn-sm" onclick="declineLeaveReq(${l.id})">Decline</button>
+          <button class="btn btn-primary btn-sm" onclick="approveLeaveReq(${l.id})">Approve</button>
+        </div>
+      </div>`;
+      }).join('') : `<div class="empty">All caught up 🎉<br><span class="t-muted">No leave requests waiting on you.</span></div>`}
+  </div>
+  `;
+    }
+    function approveLeaveReq(id) { const l = WS_LEAVE_REQUESTS.find(x => x.id === id); if (l) l.status = 'approved'; showToast('Leave request approved'); render(); }
+    function declineLeaveReq(id) { const l = WS_LEAVE_REQUESTS.find(x => x.id === id); if (l) l.status = 'rejected'; showToast('Leave request declined'); render(); }
+
+    function screenWsLeaveApplied() {
+      const filters = [{ key: 'all', label: 'All' }, { key: 'pending', label: 'Pending' }, { key: 'approved', label: 'Approved' }, { key: 'rejected', label: 'Declined' }];
+      const rows = WS_LEAVE_REQUESTS.filter(l => state.appliedFilter === 'all' || l.status === state.appliedFilter);
+      return `
+  <div class="fx-snap" style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;">
+    ${filters.map(f => `<span class="chip ${state.appliedFilter === f.key ? 'chip-verified' : 'chip-leave'}" style="cursor:pointer;" onclick="setAppliedFilter('${f.key}')">${f.label} (${f.key === 'all' ? WS_LEAVE_REQUESTS.length : WS_LEAVE_REQUESTS.filter(l => l.status === f.key).length})</span>`).join('')}
+  </div>
+  <div class="card fx-spring" style="padding:0;overflow:hidden;">
+    <div style="overflow-x:auto;">
+    <table class="datatable" style="min-width:640px;">
+      <thead><tr><th>Employee</th><th>Type</th><th>Dates</th><th>Days</th><th>Status</th></tr></thead>
+      <tbody>
+      ${rows.length ? rows.map(l => {
+        const e = findEmployee(l.empId);
+        return `<tr>
+          <td><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>${e.name}</div></td>
+          <td><span class="chip" style="background:color-mix(in srgb, ${l.typeColor} 16%, transparent);color:${l.typeColor};">${l.type}</span></td>
+          <td class="mono t-secondary">${fmtShort(l.start)} → ${fmtShort(l.end)}</td>
+          <td class="t-secondary">${l.days}</td>
+          <td>${leaveStatusChip(l.status)}</td>
+        </tr>`;
+      }).join('') : `<tr><td colspan="5"><div class="empty">No leaves in this filter.</div></td></tr>`}
+      </tbody>
+    </table>
+    </div>
+  </div>
+  `;
+    }
+    function setAppliedFilter(f) { state.appliedFilter = f; render(); }
+
+    function screenWsLeaveMaternity() {
+      const stats = maternityStats();
+      return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:4px;">
+    <p class="t-secondary" style="max-width:520px;">26-week paid entitlement (Maternity Benefit Act). Track each case from request through return to work.</p>
+    <button class="btn btn-primary btn-sm" onclick="toggleMatForm()">+ Start maternity leave</button>
+  </div>
+  ${state.showMatForm ? `
+    <div class="card fx-spring" style="margin-top:12px;">
+      <p class="t-eyebrow" style="margin-bottom:12px;">New maternity leave</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;">
+        <div style="flex:2;min-width:180px;"><label class="field-label">Employee</label>
+          <select class="input" id="mat-emp">
+            <option value="">Select employee</option>
+            ${EMPLOYEES.map(e => `<option value="${e.id}">${e.name}</option>`).join('')}
+          </select>
+        </div>
+        <div style="flex:1;min-width:150px;"><label class="field-label">Expected due date</label><input class="input" type="date" id="mat-due"></div>
+        <div style="flex:1;min-width:100px;"><label class="field-label">Weeks</label><input class="input" type="number" id="mat-weeks" value="26" min="1"></div>
+        <button class="btn btn-primary" onclick="addMaternityCase()">Add</button>
+        <button class="btn btn-secondary" onclick="toggleMatForm()">Cancel</button>
+      </div>
+      <p class="t-muted" style="margin-top:10px;">Leave starts ~4 weeks before the due date; expected return is auto-calculated from the entitlement.</p>
+    </div>
+  ` : ''}
+  <div class="fx-spring-stagger" style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px;">
+    <div class="card"><p class="t-eyebrow">Awaiting approval</p><p class="stat-num" style="margin-top:6px;color:#EC4899;">${stats.requested}</p></div>
+    <div class="card"><p class="t-eyebrow">Approved · upcoming</p><p class="stat-num" style="margin-top:6px;color:var(--amber);">${stats.approved}</p></div>
+    <div class="card"><p class="t-eyebrow">Currently on leave</p><p class="stat-num" style="margin-top:6px;color:#8B5CF6;">${stats.onleave}</p></div>
+    <div class="card"><p class="t-eyebrow">Returned (YTD)</p><p class="stat-num" style="margin-top:6px;color:var(--brand);">${stats.returned}</p></div>
+  </div>
+  <div style="display:flex;flex-direction:column;gap:14px;margin-top:14px;">
+    ${MATERNITY_CASES.length ? MATERNITY_CASES.map(renderMaternityCard).join('') : `<div class="card"><div class="empty">No maternity leave cases.</div></div>`}
+  </div>
+  `;
+    }
+    function renderMaternityCard(m) {
+      const e = findEmployee(m.empId);
+      const pct = maternityProgress(m);
+      const stageIdx = MATERNITY_STAGES.indexOf(m.status);
+      const statusChipMap = { requested: ['chip-partial', 'Requested'], approved: ['chip-leave', 'Approved'], onleave: ['chip-override', 'On leave'], returned: ['chip-verified', 'Returned'] };
+      const [chipCls, chipLabel] = statusChipMap[m.status];
+  return `
+  <div class="card fx-spring">
+    <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px;">
+      <div class="avatar" style="width:44px;height:44px;font-size:14px;background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>
+      <div style="flex:1;min-width:160px;"><p style="font-weight:700;font-size:15px;">${e.name}</p><p class="t-muted">${e.role} · ${e.dept}</p></div>
+      <span class="chip ${chipCls}">${chipLabel}</span>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:16px;">
+      <div><p class="t-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;">Due date</p><p style="font-size:13.5px;font-weight:600;margin-top:3px;">${fmtLong(m.due)}</p></div>
+      <div><p class="t-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;">Leave start</p><p style="font-size:13.5px;font-weight:600;margin-top:3px;">${fmtLong(m.start)}</p></div>
+      <div><p class="t-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;">Expected return</p><p style="font-size:13.5px;font-weight:600;margin-top:3px;">${fmtLong(m.end)}</p></div>
+      <div><p class="t-muted" style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;">Entitlement</p><p style="font-size:13.5px;font-weight:600;margin-top:3px;">${m.weeks} weeks</p></div>
+    </div>
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span class="t-secondary" style="font-size:11.5px;">${MATERNITY_STAGE_LABEL[m.status]}</span><span class="mono" style="font-size:11.5px;">${pct}%</span></div>
+      <div class="progress"><div style="width:${pct}%;background:${m.status === 'returned' ? 'var(--brand)' : '#8B5CF6'};"></div></div>
+    </div>
+    <div style="display:flex;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+      ${MATERNITY_STAGES.map((s, i) => `
+        <span class="stage-dot ${i < stageIdx ? 'done' : i === stageIdx ? 'current' : ''}">${i < stageIdx ? '✓' : ''}</span>
+        <span class="t-muted" style="font-size:10.5px;margin:0 6px;white-space:nowrap;${i <= stageIdx ? 'color:var(--text-secondary);font-weight:600;' : ''}">${MATERNITY_STAGE_LABEL[s]}</span>
+        ${i < MATERNITY_STAGES.length - 1 ? `<span class="stage-connector ${i < stageIdx ? 'done' : ''}"></span>` : ''}
+      `).join('')}
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">
+      ${m.status === 'requested' ? `<button class="btn btn-danger btn-sm" onclick="declineMaternity(${m.id})">Decline</button><button class="btn btn-primary btn-sm" onclick="approveMaternity(${m.id})">Approve leave</button>` : ''}
+      ${m.status === 'approved' ? `<button class="btn btn-primary btn-sm" style="background:#8B5CF6;" onclick="startMaternity(${m.id})">Mark on leave</button>` : ''}
+      ${m.status === 'onleave' ? `<button class="btn btn-primary btn-sm" style="background:#00D4AA;" onclick="returnMaternity(${m.id})">Mark returned</button>` : ''}
+      ${m.status === 'returned' ? `<span class="chip chip-verified">✓ Returned ${m.returnedOn || ''}</span>` : ''}
+    </div>
+  </div>
+  `;
+}
+    function toggleMatForm() { state.showMatForm = !state.showMatForm; render(); }
+    function addMaternityCase() {
+      const empId = Number(document.getElementById('mat-emp').value);
+      const due = document.getElementById('mat-due').value;
+      const weeks = Number(document.getElementById('mat-weeks').value) || 26;
+      if (!empId || !due) { showToast('Select an employee and due date'); return; }
+      const dueDate = new Date(due + 'T00:00:00');
+      const start = new Date(dueDate); start.setDate(start.getDate() - 28);
+      const end = new Date(start); end.setDate(end.getDate() + weeks * 7);
+      maternityIdSeq++;
+      MATERNITY_CASES = [{ id: maternityIdSeq, empId, due, start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10), weeks, status: 'requested' }, ...MATERNITY_CASES];
+      state.showMatForm = false;
+      showToast('Maternity leave case created');
+      render();
+    }
+    function approveMaternity(id) { const m = MATERNITY_CASES.find(x => x.id === id); if (m) m.status = 'approved'; showToast('Maternity leave approved'); render(); }
+    function declineMaternity(id) { MATERNITY_CASES = MATERNITY_CASES.filter(x => x.id !== id); showToast('Request declined'); render(); }
+    function startMaternity(id) { const m = MATERNITY_CASES.find(x => x.id === id); if (m) m.status = 'onleave'; showToast('Marked on leave'); render(); }
+    function returnMaternity(id) { const m = MATERNITY_CASES.find(x => x.id === id); if (m) { m.status = 'returned'; m.returnedOn = fmtLong(demoTodayIso()); } showToast('Welcome back — marked returned'); render(); }
+
+    /* ─────────────────────────── HOLIDAYS ─────────────────────────── */
+function screenWsHolidays(){
+  const sorted = [...HOLIDAYS].sort((a, b) => new Date(a.date) - new Date(b.date));
+  return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+    <h1 class="t-h1">Holidays · 2026</h1>
+    <button class="btn btn-secondary btn-sm" onclick="toggleHolidayImport()">⬆ Import CSV</button>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;">
+    ${state.showHolidayImport ? `
+      <div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border);">
+        <label class="dropzone" for="holiday-file">⬆ <span>${state.holidayFileName || 'Click to choose a .csv / .xlsx file'}</span></label>
+        <input type="file" id="holiday-file" accept=".csv,.xlsx,.xls" style="display:none;" onchange="onHolidayFile(this.files[0])">
+        <p class="t-muted" style="margin-top:8px;text-align:center;">Columns: <span class="mono">date</span>, <span class="mono">name</span></p>
+        <p class="t-eyebrow" style="margin:14px 0 6px;">Or paste CSV — one holiday per line</p>
+        <textarea class="input" id="holiday-csv" style="height:90px;" placeholder="2026-05-01,Labour Day&#10;2026-11-14,Children's Day"></textarea>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="btn btn-primary btn-sm" onclick="importHolidaysCsv()">Import</button>
+          <button class="btn btn-secondary btn-sm" onclick="toggleHolidayImport()">Cancel</button>
+        </div>
+      </div>
+    ` : ''}
+    <p class="t-eyebrow" style="margin-bottom:10px;">Add a holiday</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <input class="input" id="hol-name" style="flex:2;min-width:180px;" placeholder="Holiday name">
+      <input class="input" id="hol-date" type="date" style="flex:1;min-width:150px;">
+      <button class="btn btn-primary" onclick="addHoliday()">Add</button>
+    </div>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;padding:0;overflow:hidden;">
+    <p class="t-h2" style="padding:16px 20px;border-bottom:1px solid var(--border);">2026 holidays <span class="t-muted" style="font-weight:500;">· ${sorted.length}</span></p>
+    ${sorted.length ? sorted.map(h => `
+      <div style="display:flex;align-items:center;gap:16px;padding:13px 20px;border-top:1px solid var(--border);">
+        <div style="width:50px;text-align:center;flex-shrink:0;background:var(--surface-2);border-radius:var(--radius-sm);padding:6px 0;">
+          <p style="font-family:var(--font-head);font-size:18px;font-weight:700;color:var(--brand);line-height:1;">${new Date(h.date + 'T00:00:00').getDate()}</p>
+          <p class="t-muted" style="font-size:9px;text-transform:uppercase;">${new Date(h.date + 'T00:00:00').toLocaleDateString(undefined, { month: 'short' })}</p>
+        </div>
+        <div style="flex:1;"><p style="font-weight:600;font-size:14px;">${h.name}</p><p class="t-muted">${new Date(h.date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'long' })}</p></div>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deleteHoliday(${h.id})" title="Remove">✕</button>
+      </div>
+    `).join('') : `<div class="empty">No holidays added yet.</div>`}
+  </div>
+  `;
+}
+    function toggleHolidayImport() { state.showHolidayImport = !state.showHolidayImport; render(); }
+    function onHolidayFile(file) { if (!file) return; state.holidayFileName = file.name; render(); }
+    function addHoliday() {
+      const name = document.getElementById('hol-name').value.trim();
+      const date = document.getElementById('hol-date').value;
+      if (!name || !date) { showToast('Name and date are required'); return; }
+      holidayIdSeq++;
+      HOLIDAYS = [...HOLIDAYS, { id: holidayIdSeq, name, date }];
+      showToast('Holiday added');
+      render();
+    }
+    function deleteHoliday(id) { HOLIDAYS = HOLIDAYS.filter(h => h.id !== id); showToast('Holiday removed'); render(); }
+    function importHolidaysCsv() {
+      const text = document.getElementById('holiday-csv').value.trim();
+      if (!text) { showToast('Paste CSV rows or choose a file first'); return; }
+      const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+      let added = 0;
+      lines.forEach(line => {
+        const [date, ...rest] = line.split(',');
+        const name = rest.join(',').trim();
+        if (date && name && !isNaN(new Date(date.trim()))) { holidayIdSeq++; HOLIDAYS.push({ id: holidayIdSeq, name, date: date.trim() }); added++; }
+      });
+      state.showHolidayImport = false;
+      showToast(added ? `Imported ${added} holiday(s)` : 'No valid rows found');
+      render();
+    }
+
+    /* ─────────────────────────── EMPLOYEES (directory / detail / wizard) ─────────────────────────── */
+function screenWsEmployees(){
+          if (state.wizard) return screenWsEmployeeWizard();
+          if (state.empDetail) return screenWsEmployeeDetail(state.empDetail);
+          return screenWsEmployeeDirectory();
+        }
+        function employeeRows(rows) {
+          return rows.length ? rows.map(e => `
+    <tr class="rowlink" onclick="openEmployee(${e.id})">
+      <td><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div><div><p style="font-weight:600;font-size:13px;">${e.name}</p><p class="t-muted mono" style="font-size:10.5px;">${e.email}</p></div></div></td>
+      <td class="t-secondary">${e.role}</td>
+      <td>${roleBadge(e.orgRole)}</td>
+      <td class="t-secondary">${e.dept}</td>
+      <td class="t-secondary">${e.employmentType}</td>
+      <td class="t-muted mono">${fmtShort(e.joined)}</td>
+      <td>${empStatusChip(e.empStatus)}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="7"><div class="empty">No employees match your filters.</div></td></tr>`;
+        }
+        function screenWsEmployeeDirectory() {
+  return `
+  <div class="fx-spring" style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:10px;">
+    <div><h1 class="t-h1">Employees</h1><p class="t-secondary" style="margin-top:4px;">${EMPLOYEES.length} people · ${EMPLOYEES.filter(e => e.empStatus === 'active').length} active</p></div>
+    <button class="btn btn-primary btn-sm" onclick="openWizard('add')">+ Invite someone</button>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;padding:0;overflow:hidden;">
+    <div style="display:flex;gap:10px;padding:14px 18px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+      <input class="input" id="emp-search-input" style="flex:1;min-width:200px;" placeholder="Search name, role or email" value="${state.empSearch}" oninput="filterEmployees()">
+      <select class="input" id="emp-dept-select" style="width:180px;" onchange="filterEmployees()">
+        <option value="all" ${state.empDept === 'all' ? 'selected' : ''}>All departments</option>
+        ${DEPARTMENTS.map(d => `<option value="${d}" ${state.empDept === d ? 'selected' : ''}>${d}</option>`).join('')}
+      </select>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="datatable" style="min-width:820px;">
+      <thead><tr><th>Employee</th><th>Job title</th><th>Role</th><th>Department</th><th>Type</th><th>Joined</th><th>Status</th></tr></thead>
+      <tbody id="emp-tbody">${employeeRows(filteredEmployees())}</tbody>
+    </table>
+    </div>
+  </div>
+  `;
+      }
+      function filteredEmployees() {
+        const q = state.empSearch.trim().toLowerCase();
+        return EMPLOYEES.filter(e => {
+          if (state.empDept !== 'all' && e.dept !== state.empDept) return false;
+          if (q && !(e.name.toLowerCase().includes(q) || e.role.toLowerCase().includes(q) || e.email.toLowerCase().includes(q))) return false;
+          return true;
+        });
+      }
+      function filterEmployees() {
+        state.empSearch = document.getElementById('emp-search-input').value;
+        state.empDept = document.getElementById('emp-dept-select').value;
+        document.getElementById('emp-tbody').innerHTML = employeeRows(filteredEmployees());
+      }
+      function openEmployee(id) { state.empDetail = id; render(); }
+      function closeEmployee() { state.empDetail = null; render(); }
+
+      function maskIfSensitive(key, value) {
+        if (!value) return value;
+        if (key === 'aadhaar' || key === 'bankAccount') return String(value).replace(/\S(?=\S{4})/g, '•');
+        return value;
+      }
+      function renderReadSection(step, profile) {
+        return `
+      <div class="card">
+        <p class="t-eyebrow" style="margin-bottom:12px;">${step.label}</p>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px 16px;">
+          ${step.fields.map(f => `<div style="${f.full ? 'grid-column:1/-1;' : ''}"><p class="t-muted" style="font-size:11px;margin-bottom:2px;">${f.label}</p><p style="font-size:13.5px;font-weight:500;overflow-wrap:anywhere;">${maskIfSensitive(f.key, profile[f.key]) || '—'}</p></div>`).join('')}
+        </div>
+      </div>`;
+      }
+      function renderRoleControl(e) {
+        if (e.orgRole === 'owner') return `<span class="t-muted" style="font-size:11px;">Owner can't be changed</span>`;
+        if (e.orgRole === 'admin') {
+          const soleAdmin = EMPLOYEES.filter(x => x.orgRole === 'admin').length <= 1;
+          return `<button class="btn btn-ghost btn-sm" ${soleAdmin ? 'disabled title="At least one Admin is required"' : ''} onclick="demoteToMember(${e.id})">Demote to Member</button>`;
+        }
+        return `<button class="btn btn-ghost btn-sm" onclick="promoteToAdmin(${e.id})">Promote to Admin</button>`;
+      }
+      function promoteToAdmin(id) { const e = findEmployee(id); if (!e) return; e.orgRole = 'admin'; showToast(`${e.name} is now an Admin`); render(); }
+      function demoteToMember(id) {
+        const e = findEmployee(id); if (!e) return;
+        if (e.orgRole === 'admin' && EMPLOYEES.filter(x => x.orgRole === 'admin').length <= 1) { showToast('At least one Admin is required'); return; }
+        e.orgRole = 'member'; showToast(`${e.name} is now a Member`); render();
+      }
+
+      /* ── Employee documents — admin verification side (planned near-term product direction,
+         see docs/product/11-current-state.md; the real app has no upload/verify flow today). ── */
+      function verifyDocument(empId, key) {
+        const d = findEmployee(empId)?.documents.find(x => x.key === key);
+        if (d) { d.status = 'verified'; d.rejectReason = null; }
+        showToast('Document verified'); render();
+      }
+      function startRejectDocument(empId, key) { state.rejectingDoc = `${empId}:${key}`; render(); }
+      function cancelRejectDocument() { state.rejectingDoc = null; render(); }
+      function confirmRejectDocument(empId, key) {
+        const reason = document.getElementById(`doc-reject-reason-${empId}-${key}`).value.trim();
+        if (!reason) { showToast('Please add a reason'); return; }
+        const d = findEmployee(empId)?.documents.find(x => x.key === key);
+        if (d) { d.status = 'rejected'; d.rejectReason = reason; }
+        state.rejectingDoc = null;
+        showToast('Document rejected'); render();
+      }
+      function renderAdminDocumentRow(e, d) {
+        const isRejecting = state.rejectingDoc === `${e.id}:${d.key}`;
+        const chipCls = d.status === 'verified' ? 'chip-verified' : d.status === 'pending' ? 'chip-partial' : 'chip-none';
+        return `
+    <div style="padding:12px 20px;border-top:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="width:30px;height:30px;border-radius:var(--radius-sm);background:var(--surface-2);color:var(--brand);display:flex;align-items:center;justify-content:center;flex-shrink:0;">▤</span>
+        <div style="flex:1;min-width:0;">
+          <span style="font-size:13px;">${d.name}</span>
+          ${d.fileName ? `<p class="t-muted" style="font-size:11px;margin-top:2px;">${d.fileName}</p>` : ''}
+        </div>
+        <span class="chip ${chipCls}">${d.status}</span>
+        ${d.status === 'pending' ? `
+          <button class="icon-btn icon-btn-decline" onclick="startRejectDocument(${e.id}, '${d.key}')" title="Reject">✕</button>
+          <button class="icon-btn icon-btn-approve" onclick="verifyDocument(${e.id}, '${d.key}')" title="Verify">✓</button>
+        ` : ''}
+      </div>
+      ${d.status === 'rejected' && d.rejectReason ? `<p class="t-muted" style="margin-top:6px;font-size:11.5px;">Rejected — ${d.rejectReason}</p>` : ''}
+      ${isRejecting ? `
+        <div style="margin-top:10px;">
+          <textarea class="input" id="doc-reject-reason-${e.id}-${d.key}" placeholder="Reason for rejecting"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-ghost btn-sm" onclick="cancelRejectDocument()">Cancel</button>
+            <button class="btn btn-danger btn-sm" onclick="confirmRejectDocument(${e.id}, '${d.key}')">Confirm reject</button>
+          </div>
+        </div>
+      ` : ''}
+    </div>`;
+      }
+      function screenWsEmployeeDetail(id) {
+        const e = findEmployee(id);
+        if (!e) { state.empDetail = null; return screenWsEmployeeDirectory(); }
+        return `
+  <button class="btn btn-ghost btn-sm fx-snap" style="padding-left:0;" onclick="closeEmployee()">← Back to directory</button>
+  <div class="card fx-spring" style="margin-top:10px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+    <div class="avatar" style="width:64px;height:64px;font-size:20px;background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>
+    <div style="flex:1;min-width:180px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><h2 class="t-h1" style="font-size:20px;">${e.name}</h2>${roleBadge(e.orgRole)}</div>
+      <p class="t-secondary" style="margin-top:2px;">${e.role} · ${e.dept}</p>
+      <p class="t-muted mono" style="margin-top:4px;">${e.email} · ${e.employeeId}</p>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;">
+      ${empStatusChip(e.empStatus)}
+      <p class="t-muted" style="font-size:11.5px;">${e.employmentType} · joined ${fmtLong(e.joined)}</p>
+      ${renderRoleControl(e)}
+      <button class="btn btn-secondary btn-sm" onclick="openWizard('edit', ${e.id})">✎ Edit profile</button>
+    </div>
+  </div>
+  <div class="fx-spring" style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+    ${WIZARD_STEPS.slice(0, -1).map(step => renderReadSection(step, e.profile)).join('')}
+    <div class="card">
+      <p class="t-eyebrow" style="margin-bottom:12px;">Leave balance</p>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        ${e.leaveBalance.map(b => `
+          <div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:5px;"><span class="t-secondary" style="font-size:12px;">${b.label}</span><span class="mono" style="font-size:12px;">${b.total - b.used} of ${b.total} left</span></div>
+            <div class="progress"><div style="width:${Math.round((b.total - b.used) / b.total * 100)}%;background:${b.color};"></div></div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  </div>
+  <div class="card fx-spring" style="margin-top:14px;padding:0;overflow:hidden;">
+    <p class="t-h2" style="padding:16px 20px;border-bottom:1px solid var(--border);">Documents</p>
+    ${e.documents.map(d => renderAdminDocumentRow(e, d)).join('')}
+  </div>
+  `;
+      }
+
+      function openWizard(mode, empId) {
+        let form = { dept: 'Engineering', employmentType: 'Full-time', workMode: 'Office', location: 'Bengaluru' };
+        if (mode === 'edit') {
+          const e = findEmployee(empId);
+          form = { ...e.profile };
+        }
+        state.wizard = { mode, empId, step: 0, form, errors: {} };
+        render();
+      }
+      function closeWizard() { state.wizard = null; render(); }
+      function onWizardField(key, value) { if (state.wizard) state.wizard.form[key] = value; }
+      function wizardNext() {
+        const w = state.wizard; if (!w) return;
+        if (w.step === 0) {
+          w.errors = {};
+          if (!w.form.firstName) w.errors.firstName = 'Required';
+          if (!w.form.lastName) w.errors.lastName = 'Required';
+          if (!w.form.workEmail) w.errors.workEmail = 'Required';
+          if (Object.keys(w.errors).length) { render(); return; }
+        }
+        if (w.step < WIZARD_STEPS.length - 1) { w.step++; render(); }
+        else { submitWizard(); }
+      }
+      function wizardBack() {
+        const w = state.wizard; if (!w) return;
+        if (w.step === 0) { closeWizard(); return; }
+        w.step--; render();
+      }
+      function submitWizard() {
+        const w = state.wizard; const f = w.form;
+        if (w.mode === 'edit') {
+          const e = findEmployee(w.empId);
+          if (e) {
+            e.profile = { ...f };
+            e.name = [f.firstName, f.lastName].filter(Boolean).join(' ') || e.name;
+            e.initials = initials(e.name);
+            e.email = f.workEmail || e.email;
+            e.phone = f.phone || e.phone;
+            e.employeeId = f.employeeId || e.employeeId;
+            e.role = f.designation || e.role;
+            e.dept = f.dept || e.dept;
+            e.employmentType = f.employmentType || e.employmentType;
+            e.workMode = f.workMode || e.workMode;
+            e.location = f.location || e.location;
+            e.joined = f.joined || e.joined;
+            e.manager = f.manager || e.manager;
+          }
+          showToast('Employee profile updated');
+          state.wizard = null; state.empDetail = w.empId;
+        } else {
+          showToast('Invite sent — they will appear once they accept');
+          state.wizard = null;
+        }
+        render();
+      }
+      function screenWsEmployeeWizard() {
+        const w = state.wizard;
+        const step = WIZARD_STEPS[w.step];
+        const isReview = w.step === WIZARD_STEPS.length - 1;
+        const subject = w.mode === 'edit' ? (findEmployee(w.empId)?.name || 'Employee') : 'New employee';
+        return `
+  <button class="btn btn-ghost btn-sm fx-snap" style="padding-left:0;" onclick="closeWizard()">← Back</button>
+  <h1 class="t-h1" style="margin-top:8px;">${w.mode === 'edit' ? 'Edit profile' : 'Add employee'}</h1>
+  <p class="t-secondary" style="margin-top:2px;margin-bottom:18px;">${subject}</p>
+  <div class="card fx-spring" style="padding:0;overflow:hidden;">
+    <div style="padding:18px 22px 16px;border-bottom:1px solid var(--border);">
+      <p class="t-h2">${step.label}</p>
+      <p class="t-muted" style="margin-bottom:14px;">${step.subtitle}</p>
+      <div class="wizard-steps">
+        ${WIZARD_STEPS.map((s, i) => `
+          <span class="wizard-step-dot ${i < w.step ? 'done' : i === w.step ? 'current' : ''}">${i < w.step ? '✓' : i + 1}</span>
+          ${i < WIZARD_STEPS.length - 1 ? `<span class="wizard-connector ${i < w.step ? 'done' : ''}"></span>` : ''}
+        `).join('')}
+      </div>
+    </div>
+    <div style="padding:22px;">
+      ${isReview ? renderWizardReview(w) : `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+          ${step.fields.map(f => `
+            <div style="${f.full ? 'grid-column:1/-1;' : ''}">
+              <label class="field-label">${f.label}${f.required ? '<span style="color:var(--danger);"> *</span>' : ''}</label>
+              ${f.kind === 'select' ? `
+                <select class="input" onchange="onWizardField('${f.key}', this.value)">
+                  ${f.options.map(o => `<option value="${o}" ${w.form[f.key] === o ? 'selected' : ''}>${o || 'Select'}</option>`).join('')}
+                </select>
+              ` : f.kind === 'textarea' ? `
+                <textarea class="input" placeholder="${f.placeholder || ''}" oninput="onWizardField('${f.key}', this.value)">${w.form[f.key] || ''}</textarea>
+              ` : `
+                <input class="input" type="${f.type || 'text'}" placeholder="${f.placeholder || ''}" value="${w.form[f.key] || ''}" oninput="onWizardField('${f.key}', this.value)">
+              `}
+              ${w.errors[f.key] ? `<p style="color:var(--danger);font-size:11.5px;margin-top:4px;">${w.errors[f.key]}</p>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:16px 22px;border-top:1px solid var(--border);">
+      <button class="btn btn-secondary" onclick="wizardBack()">Back</button>
+      <button class="btn btn-primary" onclick="wizardNext()">${isReview ? (w.mode === 'edit' ? 'Save changes' : 'Send invite') : 'Continue'}</button>
+    </div>
+  </div>
+  `;
+  }
+    function renderWizardReview(w) {
+      return WIZARD_STEPS.slice(0, -1).map(sec => `
+    <div style="margin-bottom:20px;">
+      <p class="t-eyebrow" style="margin-bottom:10px;">${sec.label}</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">
+        ${sec.fields.map(f => `<div><p class="t-muted" style="font-size:11px;margin-bottom:2px;">${f.label}</p><p style="font-size:13.5px;font-weight:500;">${w.form[f.key] || '—'}</p></div>`).join('')}
+      </div>
+    </div>
+  `).join('');
+    }
+
+    /* ─────────────────────────── SETTINGS (tabs incl. Billing) ─────────────────────────── */
+function screenWsSettings(){
+  const tabs = [
+    { key: 'org', label: 'Org details' }, { key: 'leave', label: 'Leave policies' }, { key: 'balances', label: 'Balances' },
+    { key: 'signals', label: 'Signals' }, { key: 'domains', label: 'Domains' }, { key: 'billing', label: 'Billing' },
+  ];
+  return `
+  <h1 class="t-h1 fx-snap">Settings</h1>
+  <div class="fx-snap tabbar" style="margin:14px 0 16px;">
+    ${tabs.map(t => `<button class="${state.settingsTab === t.key ? 'active' : ''}" onclick="setSettingsTab('${t.key}')">${t.label}</button>`).join('')}
+  </div>
+  ${state.settingsTab === 'org' ? settingsOrgTab()
+          : state.settingsTab === 'leave' ? settingsLeaveTab()
+            : state.settingsTab === 'balances' ? settingsBalancesTab()
+              : state.settingsTab === 'signals' ? settingsSignalsTab()
+                : state.settingsTab === 'domains' ? settingsDomainsTab()
+                  : screenWsBilling()}
+  `;
+    }
+    function setSettingsTab(t) { state.settingsTab = t; render(); }
+
+    function settingsOrgTab() {
+      const s = state.wsSettings;
+      const days = [{ n: 1, l: 'Mon' }, { n: 2, l: 'Tue' }, { n: 3, l: 'Wed' }, { n: 4, l: 'Thu' }, { n: 5, l: 'Fri' }, { n: 6, l: 'Sat' }, { n: 0, l: 'Sun' }];
+      return `
+  <div class="card fx-spring">
+    <p class="t-eyebrow" style="margin-bottom:12px;">Organisation details</p>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+      <div style="flex:1;min-width:200px;"><label class="field-label">Company name</label><input class="input" id="org-name" value="${s.companyName}"></div>
+      <div style="flex:1;min-width:200px;"><label class="field-label">Timezone</label>
+        <select class="input" id="org-tz">
+          ${['Asia/Kolkata', 'America/New_York', 'Europe/London', 'Asia/Singapore', 'Asia/Dubai'].map(tz => `<option value="${tz}" ${s.tz === tz ? 'selected' : ''}>${tz}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <label class="field-label">Working days</label>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 16px;">
+      ${days.map(d => `<span class="chip ${s.workingDays.includes(d.n) ? 'chip-verified' : 'chip-leave'}" style="cursor:pointer;" onclick="toggleWorkingDay(${d.n})">${d.l}</span>`).join('')}
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-2);margin-bottom:10px;gap:12px;">
+      <div><p style="font-weight:600;font-size:13.5px;">Allow remote check-in</p><p class="t-muted">Let employees mark attendance outside office signals.</p></div>
+      <button class="toggle ${s.allowRemoteCheckin ? 'on' : ''}" onclick="toggleSetting('allowRemoteCheckin')"><span class="knob"></span></button>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);background:var(--surface-2);margin-bottom:16px;gap:12px;">
+      <div><p style="font-weight:600;font-size:13.5px;">Leave module enabled</p><p class="t-muted">Show the Leave tab and holiday calendar to everyone.</p></div>
+      <button class="toggle ${s.leaveModuleEnabled ? 'on' : ''}" onclick="toggleSetting('leaveModuleEnabled')"><span class="knob"></span></button>
+    </div>
+    <button class="btn btn-primary" onclick="saveOrgSettings()">Save changes</button>
+  </div>
+  `;
+    }
+    function toggleWorkingDay(n) {
+      const s = state.wsSettings;
+      s.workingDays = s.workingDays.includes(n) ? s.workingDays.filter(x => x !== n) : [...s.workingDays, n];
+      render();
+    }
+    function toggleSetting(key) { state.wsSettings[key] = !state.wsSettings[key]; render(); }
+    function saveOrgSettings() {
+      state.wsSettings.companyName = document.getElementById('org-name').value || state.wsSettings.companyName;
+      state.wsSettings.tz = document.getElementById('org-tz').value;
+      showToast('Settings saved');
+      render();
+    }
+
+    function settingsLeaveTab() {
+      return `
+  <div class="card fx-spring">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:10px;">
+      <p class="t-eyebrow">Leave policies</p>
+      <button class="btn btn-secondary btn-sm" onclick="toggleLeaveTypeForm()">+ Add leave type</button>
+    </div>
+    <p class="t-muted" style="margin-bottom:14px;">Leave types and their accrual. Changes apply to the whole organisation.</p>
+    ${state.showLeaveTypeForm ? `
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:14px;padding:14px;background:var(--surface-2);border-radius:var(--radius-md);">
+        <div style="flex:2;min-width:150px;"><label class="field-label">Name</label><input class="input" id="lt-name" placeholder="e.g. Paternity"></div>
+        <div style="flex:1;min-width:100px;"><label class="field-label">Credits/period</label><input class="input" id="lt-credits" type="number" placeholder="1.5" step="0.5"></div>
+        <div style="flex:1;min-width:120px;"><label class="field-label">Frequency</label>
+          <select class="input" id="lt-freq"><option value="monthly">Monthly</option><option value="quarterly">Quarterly</option></select>
+        </div>
+        <button class="btn btn-primary" onclick="addLeaveTypeSetting()">Add</button>
+      </div>
+    ` : ''}
+    ${LEAVE_TYPES.length ? LEAVE_TYPES.map(t => `
+      <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--radius-md);margin-bottom:8px;">
+        <div style="flex:1;"><p style="font-weight:600;font-size:13.5px;">${t.name}</p><p class="t-muted">${t.freq} · ${t.credits} credits/period</p></div>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger);" onclick="deleteLeaveTypeSetting(${t.id})">Remove</button>
+      </div>
+    `).join('') : `<div class="empty">No leave types yet. Add one to start tracking leave.</div>`}
+  </div>
+  `;
+    }
+    function toggleLeaveTypeForm() { state.showLeaveTypeForm = !state.showLeaveTypeForm; render(); }
+    function addLeaveTypeSetting() {
+      const name = document.getElementById('lt-name').value.trim();
+      const credits = parseFloat(document.getElementById('lt-credits').value) || 1;
+      const freq = document.getElementById('lt-freq').value;
+      if (!name) { showToast('Name is required'); return; }
+      const id = LEAVE_TYPES.length ? Math.max(...LEAVE_TYPES.map(t => t.id)) + 1 : 1;
+      LEAVE_TYPES.push({ id, name, freq, credits, accrued: 0, used: 0 });
+      state.showLeaveTypeForm = false;
+      showToast('Leave type added');
+      render();
+    }
+    function deleteLeaveTypeSetting(id) {
+      const idx = LEAVE_TYPES.findIndex(t => t.id === id);
+      if (idx > -1) LEAVE_TYPES.splice(idx, 1);
+      showToast('Leave type removed');
+      render();
+    }
+
+    function settingsBalancesTab() {
+      return `
+  <div class="card fx-spring" style="padding:0;overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 20px;border-bottom:1px solid var(--border);">
+      <div><p class="t-h2">Opening leave balances</p><p class="t-muted" style="margin-top:3px;">Set each employee's starting balance per leave type — edit inline or import a sheet.</p></div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-sm" onclick="toggleBalanceImport()">⬆ Import</button>
+        <button class="btn btn-primary btn-sm" onclick="saveBalances()">Save</button>
+      </div>
+    </div>
+    ${state.showBalanceImport ? `
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border);background:var(--surface-2);">
+        <label class="dropzone" for="bal-file">⬆ <span>Click to choose a .csv / .xlsx file</span></label>
+        <input type="file" id="bal-file" accept=".csv,.xlsx,.xls" style="display:none;" onchange="showToast('File selected — matching employees will update on save')">
+        <p class="t-muted" style="margin-top:8px;text-align:center;">Columns: <span class="mono">email</span> then one column per leave type (${LEAVE_TYPES.map(t => t.name.toLowerCase()).join(', ')}).</p>
+      </div>
+    ` : ''}
+    ${LEAVE_TYPES.length ? `
+    <div style="overflow-x:auto;">
+    <table class="datatable" style="min-width:${360 + LEAVE_TYPES.length * 110}px;">
+      <thead><tr><th>Employee</th>${LEAVE_TYPES.map(t => `<th style="text-align:center;">${t.name}</th>`).join('')}</tr></thead>
+      <tbody>
+      ${EMPLOYEES.map(e => `
+        <tr>
+          <td><div style="display:flex;align-items:center;gap:10px;"><div class="avatar" style="width:28px;height:28px;font-size:11px;background:color-mix(in srgb, ${e.avatarColor} 20%, transparent);color:${e.avatarColor};">${e.initials}</div>${e.name}</div></td>
+          ${LEAVE_TYPES.map(t => { const bal = e.leaveBalance.find(b => b.label === t.name); return `<td><input class="bal-input" type="number" min="0" value="${bal ? bal.total : t.accrued || 0}" data-emp="${e.id}" data-type="${t.id}"></td>`; }).join('')}
+        </tr>
+      `).join('')}
+      </tbody>
+    </table>
+    </div>
+    ` : `<div class="empty">Add leave types first (Leave policies tab) to set balances.</div>`}
+  </div>
+  `;
+    }
+    function toggleBalanceImport() { state.showBalanceImport = !state.showBalanceImport; render(); }
+    function saveBalances() { showToast('Opening balances saved'); }
+
+    function settingsSignalsTab() {
+      return `
+  <div class="card fx-spring">
+    <p class="t-eyebrow" style="margin-bottom:12px;">Signals</p>
+    ${SIGNALS_CONFIG.map(s=>`
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);">
+        <span class="chip ${s.status==='live'?'chip-verified':'chip-roadmap'}" style="min-width:74px;justify-content:center;">${s.status==='live'?'Live':'Roadmap'}</span>
+        <div style="flex:1;"><p style="font-weight:600;font-size:13px;">${s.label}</p><p class="t-muted">${s.detail}</p></div>
+      </div>`).join('')}
+    <p class="t-muted" style="margin-top:12px;">Verification uses AND logic — every live signal above must match for a check-in to count as verified.</p>
+  </div>
+  `;
+    }
+
+    function settingsDomainsTab() {
+      return `
+  <div class="card fx-spring">
+    <p class="t-eyebrow">Email domains</p>
+    <p class="t-muted" style="margin:4px 0 14px;">Verified domains auto-enroll matching employees. Add a TXT record to verify ownership.</p>
+    ${DOMAINS.map(d => `
+      <div style="border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;margin-bottom:10px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+          <span class="mono" style="font-size:14px;font-weight:600;">${d.domain}</span>
+          <span class="chip ${d.verified ? 'chip-verified' : 'chip-partial'}">${d.verified ? 'Verified' : 'Pending'}</span>
+        </div>
+        ${!d.verified ? `
+          <div style="margin-top:12px;background:var(--surface-2);border-radius:var(--radius-sm);padding:12px;">
+            <p class="t-eyebrow" style="margin-bottom:7px;">Add this DNS TXT record</p>
+            <div style="display:flex;gap:16px;flex-wrap:wrap;" class="mono">
+              <div><span class="t-muted">Name&nbsp;&nbsp;</span>_venzio-verify.${d.domain}</div>
+              <div><span class="t-muted">Value&nbsp;</span>venzio-verify=${d.token}</div>
+            </div>
+            <button class="btn btn-primary btn-sm" style="margin-top:12px;" onclick="verifyDomain(${d.id})">Check verification</button>
+          </div>
+        ` : ''}
+      </div>
+    `).join('')}
+  </div>
+  `;
+}
+    function verifyDomain(id) { const d = DOMAINS.find(x => x.id === id); if (d) d.verified = true; showToast('Domain verified'); render(); }
+
+function screenWsBilling(){
+  return `
+  <div class="card fx-spring">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;">
+      <div><p class="t-eyebrow">Current plan</p><p class="t-h1" style="margin-top:6px;text-transform:capitalize;">${WORKSPACE.plan}</p></div>
+      <p class="stat-num">₹99<span class="t-muted" style="font-size:12px;font-weight:500;">/user/mo</span></p>
+    </div>
+    <div class="divider"></div>
+    <p class="t-secondary">Unlimited users · 7-year history · 5 signal locations · CSV export</p>
+    <button class="btn btn-secondary" style="margin-top:14px;" onclick="showToast('Billing portal would open here in production')">Manage billing</button>
+  </div>
+  `;
+}
+
+/* ============================================================
+   MAIN RENDER
+   ============================================================ */
+function render(){
+  if(!state.authed){
+    document.body.className = 'theme-me';
+    document.getElementById('app').innerHTML = screenLanding();
+    return;
+  }
+  const [surface, screen] = state.hash.split('/');
+  document.body.className = surface==='me' ? 'theme-me' : 'theme-ws';
+  const active = activeWorkspace();
+
+  if(surface==='me'){
+    const screens = { checkin: screenMeCheckin, timeline: screenMeTimeline, leave: screenMeLeave, workspace: screenMeWorkspace, documents: screenMeDocuments };
+    document.getElementById('app').innerHTML = `
+      <div class="shell-me">
+        <div class="me-topbar" style="padding:52px 20px 0;display:flex;justify-content:space-between;align-items:center;">
+          <button class="ws-pill pressable" onclick="openWsSwitcher()">
+            <span class="swatch" style="background:${active.color};">${active.initials}</span>
+            ${active.name} <span style="opacity:0.6;">▾</span>
+          </button>
+          <button class="avatar pressable" onclick="openMoreSheet()" aria-label="Profile menu">${ME.initials}</button>
+        </div>
+        <div class="me-content" style="padding-top:6px;">${(screens[screen] || screenMeCheckin)()}</div>
+        <div class="me-bottomnav">
+          ${ME_TABS.map(t=>`<div class="me-navitem ${screen===t.key?'active':''}" onclick="nav('me/${t.key}')"><span class="ic">${t.ic}</span>${t.label}</div>`).join('')}
+        </div>
+        ${state.moreOpen ? renderMoreSheet() : ''}
+      </div>`;
+  } else {
+    const screens = {
+      overview: screenWsOverview,
+      employees: screenWsEmployees,
+      attendance: screenWsAttendance,
+      'leave-requests': () => screenWsLeaveScreen('requests'),
+      'leave-applied': () => screenWsLeaveScreen('applied'),
+      'leave-maternity': () => screenWsLeaveScreen('maternity'),
+      holidays: screenWsHolidays,
+      reports: screenWsReports,
+      settings: screenWsSettings,
+    };
+    const leavePending = pendingLeaveCount() + pendingMaternityCount();
+    document.getElementById('app').innerHTML = `
+      <div class="shell-ws">
+        <div class="sidebar">
+          <div class="sidebar-brand"><div class="brand-mark">V</div><div class="brand-name">Venzio</div></div>
+          ${WS_TABS.map(t => {
+            const isActive = screen === t.key || (t.group === 'leave' && screen.startsWith('leave-'));
+            return `<div class="navitem ${isActive ? 'active' : ''}" onclick="nav('ws/${t.key}')"><span class="ic">${t.ic}</span>${t.label}${t.group === 'leave' && leavePending ? `<span class="navbadge">${leavePending}</span>` : ''}</div>`;
+          }).join('')}
+          <div class="sidebar-foot">
+            <div class="rowlink" style="display:flex;align-items:center;gap:9px;padding:8px;" onclick="toggleAdminMenu()">
+              <div class="avatar">${ADMIN.initials}</div>
+              <div style="flex:1;min-width:0;"><p style="font-size:12.5px;font-weight:700;">${ADMIN.name}</p><p class="t-muted" style="font-size:11px;">${ADMIN.role}</p></div>
+              <span class="t-muted" style="font-size:14px;">⋯</span>
+            </div>
+            ${state.adminMenuOpen ? `
+              <div class="dropdown-menu">
+                <div class="rowlink" onclick="closeAdminMenu();nav('ws/settings')">Settings</div>
+                <div class="rowlink" style="color:var(--danger);" onclick="closeAdminMenu();requestLogout();">Sign out</div>
+              </div>` : ''}
+          </div>
+        </div>
+        <div class="ws-main">
+          <div class="ws-topbar">
+            <button class="ws-pill pressable" onclick="openWsSwitcher()">
+              <span class="swatch" style="background:${active.color};">${active.initials}</span>
+              ${active.name} <span style="opacity:0.6;">▾</span>
+            </button>
+            <div style="display:flex;align-items:center;gap:8px;">
+              ${roleBadge(active.role)}
+              <span class="chip chip-verified" style="text-transform:capitalize;">${WORKSPACE.plan} plan</span>
+              <div class="topbar-account">
+                <button class="avatar pressable" style="width:32px;height:32px;font-size:11px;" onclick="toggleAdminMenu()" aria-label="Account menu">${ADMIN.initials}</button>
+                ${state.adminMenuOpen ? `
+                  <div class="dropdown-menu below">
+                    <div class="rowlink" onclick="closeAdminMenu();nav('ws/settings')">Settings</div>
+                    <div class="rowlink" style="color:var(--danger);" onclick="closeAdminMenu();requestLogout();">Sign out</div>
+                  </div>` : ''}
+              </div>
+            </div>
+          </div>
+          <div class="ws-content">${(screens[screen] || screenWsOverview)()}</div>
+        </div>
+      </div>`;
+  }
+  if(state.confirmingLogout) document.getElementById('app').insertAdjacentHTML('beforeend', renderLogoutConfirm());
+  if(state.wsSwitcherOpen) document.getElementById('app').insertAdjacentHTML('beforeend', renderWsSwitcherSheet());
+  if(state.memberModal) document.getElementById('app').insertAdjacentHTML('beforeend', renderMemberModal());
+}
+
+function toggleDetail(key){
+  const els = document.getElementsByClassName('detail-'+String(key).replace(/\s/g,''));
+  for(const el of els){ el.style.display = el.style.display==='none' ? 'block' : 'none'; }
+}
+
+render();
+</script>
+</body>
+</html>

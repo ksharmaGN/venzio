@@ -43,7 +43,7 @@ No payroll integration, no allowance auto-calculation, no org-level analytics da
 
 ## Leave
 
-Per-workspace leave types (name, accrual frequency, accrual credits). Employees submit requests that are **approved instantly — there is no approval workflow**. Balance is computed on the fly (accrued − used), never stored. This shipped well ahead of the original roadmap's "Year 2" placement for it.
+Per-workspace leave types (name, accrual frequency, accrual credits). Employees submit requests that start as `pending`; an admin approves or rejects via `actionLeaveRequest()` (`lib/db/queries/leaves.ts`) — **there is a real approval workflow**. (An earlier version of this doc, and of the root `CLAUDE.md`, claimed requests were "approved instantly, no approval workflow" — that was stale; the schema has always had `status DEFAULT 'pending'`, plus a dedicated admin approve/reject route and UI.) Balance is computed on the fly (accrued − used, counting only `approved` requests), never stored. This shipped well ahead of the original roadmap's "Year 2" placement for it.
 
 ## Holidays
 
@@ -52,6 +52,14 @@ Per-workspace holiday calendar, soft-deleted, admin-managed, CSV/XLSX bulk impor
 ## Employees
 
 A separate employee-records feature (HR fields — PAN, Aadhaar, bank account) exists, with sensitive fields AES-256-GCM encrypted at rest. Recent addition, not in any of the original strategy docs.
+
+## Pitch demo — forward-looking features not yet shipped
+
+`docs/product/demo/venzio-pitch-demo.html` intentionally demonstrates a few near-term product directions ahead of the real codebase, so the pitch shows where the product is going, not just where it is. Treat these as **planned, not shipped** — do not describe them as live in customer-facing copy until they land in `src/`:
+
+1. **Three-tier Owner / Admin / Member roles.** The real schema (`workspace_members.role`) is a flat `admin` | `member` — no `owner` value exists. The only owner-like protection today is a "workspace must always keep ≥1 admin" check in `leaveWorkspace()`/`getSoleAdminWorkspaces()` (`lib/db/queries/workspaces.ts`). The demo's Owner/Admin/Member model, its promote/demote controls, and its multi-workspace switcher (with a distinct role per workspace) are the intended near-term direction — see `06-product-roadmap.md`.
+2. **Employee document upload.** The real app has no `documents` table and no file upload for employees at all — PAN/Aadhaar/bank/UAN are plain encrypted text fields, entered once by an admin via the employee wizard (`src/app/ws/[slug]/people/[userId]/details/DetailsClient.tsx`). The demo's employee-side upload flow + admin verify/reject queue is a proposed design, not existing behavior.
+3. **Employee-submitted regularization requests.** The real app's only correction mechanism is admin-initiated: an admin browses unmatched/disputed events on the Alerts page (`src/app/ws/[slug]/disputes/`) and unilaterally creates an `admin_overrides` row. There is no employee-facing "request a correction" flow today. The demo's two-sided flow (employee submits from their timeline, admin approves/declines) is a proposed design that would need a new table (or an extension of `admin_overrides` to support employee-initiated, pending-state entries) — see the Codex implementation plan in `docs/product/demo/codex-implementation-plan.md`.
 
 ## Design system (what's actually shipped in `globals.css`, not what the docs say)
 

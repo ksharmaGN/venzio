@@ -51,7 +51,15 @@ Goal: 50 paying organisations. Add features that make existing customers sticky 
 | Map view in user profile (GPS pin per event) | Field force managers need visual location verification | When first 5 field-force orgs are onboarded |
 | Slack integration for check-in | Office workers who live in Slack prefer one fewer app | When 10+ customers request it explicitly |
 
-> ⚠️ **Status check:** "Leave request + approval flow (per org)" is already live, and considerably ahead of this "months 3–8, triggered by customer demand" placement — `workspace_leave_types` + `leave_requests` ship today (CLAUDE.md "Leave System"). It differs from the spec here in one important way: it is *not* an approval flow — submissions are auto-approved instantly with no admin review step. "Allowance config per user" and the email nudge / Slack integration were not found in the codebase and remain unbuilt, consistent with this roadmap.
+> ⚠️ **Status check:** "Leave request + approval flow (per org)" is already live, and considerably ahead of this "months 3–8, triggered by customer demand" placement — `workspace_leave_types` + `leave_requests` ship today, including a real pending → admin approve/reject workflow via `actionLeaveRequest()` (an earlier version of this doc, and of the root `CLAUDE.md`, incorrectly said submissions were auto-approved instantly with no review step — that was stale). "Allowance config per user" and the email nudge / Slack integration were not found in the codebase and remain unbuilt, consistent with this roadmap.
+
+**Also planned for this phase (validated in the pitch demo, not yet built in `src/`):**
+
+| Feature | Why next | Trigger to build |
+|---|---|---|
+| Three-tier Owner / Admin / Member workspace roles | Today's flat admin/member model can't express "the person who created the workspace can't be removed" as a first-class concept — only an implicit sole-admin guard | Demoed in `docs/product/demo/venzio-pitch-demo.html`; see `docs/product/demo/codex-implementation-plan.md` for the schema/migration approach |
+| Employee document upload + admin verification queue | PAN/Aadhaar/bank exist as encrypted text fields only — no file evidence is ever collected | Same demo; needs a new `employee_documents` table (none exists today) |
+| Employee-submitted regularization requests | Today corrections are entirely admin-initiated (Alerts page); employees have no way to ask for a correction | Same demo; extends or sits alongside `admin_overrides` |
 
 ## LATER — v3 (Year 2): The Platform Layer
 
@@ -69,7 +77,7 @@ Goal: 500 paying organisations. Venzio replaces Zoho Leave + attendance tool + f
 | Enterprise plan: SSO, SAML, bulk user management, SLA | Enterprises 200–500 employees start asking | When average deal size consistently > ₹20,000/month |
 | Form 16 / compliance export | CAs and tax professionals need structured attendance for payroll compliance | When payroll integration is live and 50+ companies use it |
 
-> ⚠️ **Status check:** Two of these "Year 2, 100+ customers" items are already built at a basic level: a per-workspace **holiday calendar** (`workspace_holidays`, admin + member APIs, CSV/XLSX bulk import) and a **leave tracker** with types and computed balances (`workspace_leave_types`, `leave_requests`) both ship today (CLAUDE.md "Holiday Calendar", "Leave System"). What's *not* built yet, matching this roadmap: accrual carry-over, multi-level approval workflows (current leave requests are instantly auto-approved), the payroll data pipe, the productivity layer (focus/habit tracking), calendar sync, a native app, SSO/enterprise plan, and Form 16 export.
+> ⚠️ **Status check:** Two of these "Year 2, 100+ customers" items are already built at a basic level: a per-workspace **holiday calendar** (`workspace_holidays`, admin + member APIs, CSV/XLSX bulk import) and a **leave tracker** with types and computed balances (`workspace_leave_types`, `leave_requests`) both ship today (CLAUDE.md "Holiday Calendar", "Leave System"). Single-level leave approval is also already live (see the v2 status check above). What's *not* built yet, matching this roadmap: accrual carry-over, *multi-level* (two-level) approval workflows, the payroll data pipe, the productivity layer (focus/habit tracking), calendar sync, a native app, SSO/enterprise plan, and Form 16 export.
 
 ## What Is Never on This Roadmap
 
