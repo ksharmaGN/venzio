@@ -7,14 +7,17 @@ import type { DashboardMember, DashboardResponse } from '@/app/api/ws/[slug]/das
 import type { InsightsResponse, InsightBucket } from '@/app/api/ws/[slug]/insights/route'
 import type { MemberStatsResponse, StatsInterval } from '@/app/api/ws/[slug]/member-stats/route'
 import type { RealtimeResponse } from '@/app/api/ws/[slug]/realtime/route'
+import type { OverviewWidgetsResponse } from '@/app/api/ws/[slug]/overview/route'
 import { fmtHours } from '@/lib/client/format-time'
 import { resolvePresenceTag, PRESENCE_TAG_CONFIG } from '@/lib/client/presence'
+import { en } from '@/locales/en'
 import { Users, Monitor, Home, Activity } from 'lucide-react'
 
 interface Props {
   slug: string
   planLimitBanner?: React.ReactNode
   workspaceCreatedAt: string
+  adminFirstName: string
 }
 
 
@@ -840,7 +843,7 @@ function OfficePresenceGraph({ buckets, loading }: { buckets: InsightBucket[]; l
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt }: Props) {
+export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt, adminFirstName }: Props) {
   const [data, setData] = useState<DashboardResponse | null>(null)
   const [modal, setModal] = useState<{ title: string; members: DashboardMember[] } | null>(null)
 
@@ -884,13 +887,25 @@ export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt 
     }
   }, [slug])
 
+  const [overview, setOverview] = useState<OverviewWidgetsResponse | null>(null)
+
+  const fetchOverview = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/ws/${slug}/overview`, { cache: 'no-store' })
+      if (res.ok) setOverview(await res.json())
+    } catch {
+      // best-effort widget data; page still works without it
+    }
+  }, [slug])
+
   const refreshAll = useCallback(async () => {
     await Promise.all([
       fetchDash(),
       fetchTodayHourly(),
+      fetchOverview(),
       // fetchStats(statsInterval), // maybe too heavy for auto-poll
     ])
-  }, [fetchDash, fetchTodayHourly])
+  }, [fetchDash, fetchTodayHourly, fetchOverview])
 
   const fetchStats = useCallback(async (iv: StatsInterval, custom?: { start: string; end: string }) => {
     setStatsLoading(true)
@@ -937,30 +952,46 @@ export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt 
 
   const counts = data?.counts ?? { present: 0, visited: 0, notIn: 0, total: 0, office: 0, remote: 0 }
 
+  const [approvingId, setApprovingId] = useState<string | null>(null)
+
+  async function approveLeaveRequest(id: string) {
+    setApprovingId(id)
+    try {
+      const res = await fetch(`/api/ws/${slug}/leaves/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'approve' }),
+      })
+      if (res.ok) await fetchOverview()
+    } finally {
+      setApprovingId(null)
+    }
+  }
 
   return (
     <div className="dash-page" style={{ padding: '24px', minHeight: '100%' }}>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
+          <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
+            {en.wsOverview.greeting}, {adminFirstName}
+          </p>
           <h1 style={{
             fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '20px', fontWeight: 700,
             color: 'var(--text-primary)', margin: 0, lineHeight: 1.2,
           }}>
             {data?.workspace_name ?? slug}
           </h1>
-          <span style={{
-            fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px',
-            color: 'var(--text-muted)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '8px'
-          }}>
-            Dashboard
-            {lastUpdated && (
-              <>
-                <span style={{ width: '4px', height: '4px', borderRadius: '50%', background: 'var(--border)' }} />
-                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </>
-            )}
-          </span>
+          <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)' }}>
+            {overview
+              ? overview.pendingLeaveRequests.length === 0
+                ? en.wsOverview.subtitleAllClear
+                : overview.pendingLeaveRequests.length === 1
+                  ? en.wsOverview.subtitlePendingSingular
+                  : en.wsOverview.subtitlePendingPlural.replace('{count}', String(overview.pendingLeaveRequests.length))
+              : ' '}
+            {lastUpdated ? ` · Updated ${lastUpdated.toLocaleTimeString()}` : ''}
+          </p>
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <button
@@ -1038,6 +1069,13 @@ export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt 
           onClick={() => setModal({ title: 'Remote', members: (data?.all_members ?? []).filter(m => resolvePresenceTag(m.presence_status, m.latest_event?.matched_by, m.latest_event?.event_type) === 'remote') })}
           icon={<Home size={16} />}
         />
+        <StatCard
+          className="dash-stat-card"
+          title={en.wsOverview.onLeaveTitle}
+          value={overview?.onLeaveToday ?? '—'}
+          sub={en.wsOverview.onLeaveSub}
+          icon={<Users size={16} />}
+        />
       </div>
 
       {/* ── Graphs row ── */}
@@ -1047,6 +1085,106 @@ export default function TodayClient({ slug, planLimitBanner, workspaceCreatedAt 
         </div>
         <div className="dash-graph-item" style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column' }}>
           <RealtimeWidget data={realtimeData} loading={realtimeLoading} activeCount={counts.present} locationCounts={data?.location_counts} />
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: '14px', marginTop: '14px' }}>
+        <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
+            <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px' }}>{en.wsOverview.pendingApprovalsTitle}</p>
+            {!!overview?.pendingLeaveRequests.length && (
+              <span style={{ background: 'color-mix(in srgb, var(--amber) 16%, transparent)', color: '#9a6200', fontSize: '11px', fontWeight: 700, padding: '3px 9px', borderRadius: '999px' }}>
+                {overview.pendingLeaveRequests.length}
+              </span>
+            )}
+          </div>
+          {overview && overview.pendingLeaveRequests.length === 0 && (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>{en.wsOverview.pendingApprovalsEmpty}</div>
+          )}
+          {overview?.pendingLeaveRequests.map((r) => (
+            <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 600, fontSize: '13px' }}>{r.user_full_name ?? r.user_email}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '11.5px' }}>{r.leave_type_name} · {r.start_date} – {r.end_date} · {r.days}d</p>
+              </div>
+              <button
+                onClick={() => approveLeaveRequest(r.id)}
+                disabled={approvingId === r.id}
+                style={{ height: '30px', padding: '0 12px', borderRadius: 'var(--radius-sm)', background: 'var(--brand)', color: '#fff', fontSize: '12px', fontWeight: 600, border: 'none', cursor: 'pointer' }}
+              >
+                {approvingId === r.id ? '…' : 'Approve'}
+              </button>
+              <Link
+                href={`/ws/${slug}/leaves`}
+                style={{ height: '30px', padding: '0 12px', display: 'inline-flex', alignItems: 'center', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600, textDecoration: 'none' }}
+              >
+                {en.wsOverview.reviewAction}
+              </Link>
+            </div>
+          ))}
+        </div>
+        <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '20px' }}>
+          <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px', marginBottom: '14px' }}>{en.wsOverview.departmentTitle}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            {overview?.departmentBreakdown.map((b) => {
+              const max = overview.departmentBreakdown[0]?.count || 1
+              return (
+                <div key={b.department}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', fontSize: '12px' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>{b.department}</span>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{b.count}</span>
+                  </div>
+                  <div style={{ height: '7px', background: 'var(--surface-2)', borderRadius: '4px', overflow: 'hidden' }}>
+                    <div style={{ height: '100%', width: `${Math.round((b.count / max) * 100)}%`, background: 'var(--brand)', borderRadius: '4px' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '14px', marginTop: '14px' }}>
+        <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>{en.wsOverview.recentActivityTitle}</p>
+          {(data?.all_members ?? [])
+            .filter((m) => m.latest_event)
+            .sort((a, b) => (b.latest_event!.checkin_at).localeCompare(a.latest_event!.checkin_at))
+            .slice(0, 6)
+            .map((m) => (
+              <div key={m.member_id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 20px', borderTop: '1px solid var(--border)' }}>
+                <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'color-mix(in srgb, var(--brand) 16%, transparent)', color: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: '11px', flexShrink: 0 }}>
+                  {getInitials(m.full_name ?? m.email)}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p style={{ fontWeight: 600, fontSize: '13px' }}>{m.full_name ?? m.email}</p>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>{new Date(m.latest_event!.checkin_at.includes('T') ? m.latest_event!.checkin_at : m.latest_event!.checkin_at.replace(' ', 'T') + 'Z').toLocaleTimeString()}</p>
+                </div>
+                <StatusBadge member={m} />
+              </div>
+            ))}
+          {data && (data.all_members ?? []).filter((m) => m.latest_event).length === 0 && (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>{en.wsOverview.recentActivityEmpty}</div>
+          )}
+        </div>
+        <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
+          <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>{en.wsOverview.celebrationsTitle}</p>
+          {overview?.celebrations.map((c) => (
+            <div key={`${c.employeeId}-${c.kind}`} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 20px', borderTop: '1px solid var(--border)' }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <p style={{ fontWeight: 600, fontSize: '12.5px' }}>{c.name}</p>
+                <p style={{ color: 'var(--text-muted)', fontSize: '11px' }}>
+                  {c.kind === 'birthday' ? en.wsOverview.birthdayLabel : `${c.yearsCount}-year ${en.wsOverview.anniversaryLabel}`}
+                </p>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: '11px' }}>
+                {new Date(`${c.occursOn}T00:00:00Z`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </span>
+            </div>
+          ))}
+          {overview && overview.celebrations.length === 0 && (
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '13px' }}>{en.wsOverview.celebrationsEmpty}</div>
+          )}
         </div>
       </div>
 
