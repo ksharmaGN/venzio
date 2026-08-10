@@ -47,7 +47,6 @@ export default async function WsDashboardPage({ params }: Props) {
     <TodayClient
       slug={slug}
       planLimitBanner={planLimitBanner}
-      workspaceCreatedAt={workspace.created_at.slice(0, 10)}
       adminFirstName={adminFirstName}
     />
   )
