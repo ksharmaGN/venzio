@@ -603,7 +603,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
   return (
     <div className="dash-page" style={{ padding: '24px', minHeight: '100%' }}>
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div className="fx-spring" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
         <div>
           <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '2px' }}>
             {en.wsOverview.greeting}, {adminFirstName}
@@ -676,7 +676,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
       {planLimitBanner}
 
       {/* ── Stat cards ── */}
-      <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+      <div className="fx-spring-stagger" style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
         <StatCard
           className="dash-stat-card"
           title="Total Employees"
@@ -711,7 +711,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
       </div>
 
       {/* ── Graphs row ── */}
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'stretch', flexWrap: 'wrap' }}>
+      <div className="fx-spring" style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'stretch', flexWrap: 'wrap' }}>
         <div className="dash-graph-item" style={{ flex: 2, minWidth: '300px', display: 'flex', flexDirection: 'column' }}>
           <OfficePresenceGraph buckets={todayHourlyData?.buckets ?? []} loading={todayHourlyLoading} />
         </div>
@@ -720,7 +720,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: '14px', marginTop: '14px' }}>
+      <div className="fx-spring" style={{ display: 'grid', gridTemplateColumns: '1.15fr 1fr', gap: '14px', marginTop: '14px' }}>
         <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
             <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px' }}>{en.wsOverview.pendingApprovalsTitle}</p>
@@ -776,7 +776,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '14px', marginTop: '14px' }}>
+      <div className="fx-spring" style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: '14px', marginTop: '14px' }}>
         <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
           <p style={{ fontFamily: 'Playfair Display, serif', fontWeight: 700, fontSize: '15px', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>{en.wsOverview.recentActivityTitle}</p>
           {(data?.all_members ?? [])
