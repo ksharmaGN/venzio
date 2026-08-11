@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { db } from '../index'
 
 export interface User {
@@ -40,12 +41,12 @@ export async function getUserByEmailIncludeDeleted(email: string): Promise<User 
 }
 
 // Active users only
-export async function getUserById(id: string): Promise<User | null> {
+export const getUserById = cache(async (id: string): Promise<User | null> => {
   return db.queryOne<User>(
     'SELECT * FROM users WHERE id = ? AND deleted_at IS NULL',
     [id]
   )
-}
+})
 
 export async function createUser(params: {
   email: string

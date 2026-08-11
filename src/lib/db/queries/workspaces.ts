@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { db } from '../index'
 
 export interface Workspace {
@@ -85,9 +86,9 @@ export async function createWorkspace(params: {
   return db.queryOne<Workspace>('SELECT * FROM workspaces WHERE id = ?', [id]) as Promise<Workspace>
 }
 
-export async function getWorkspaceBySlug(slug: string): Promise<Workspace | null> {
+export const getWorkspaceBySlug = cache(async (slug: string): Promise<Workspace | null> => {
   return db.queryOne<Workspace>('SELECT * FROM workspaces WHERE slug = ?', [slug])
-}
+})
 
 export async function getWorkspaceById(id: string): Promise<Workspace | null> {
   return db.queryOne<Workspace>('SELECT * FROM workspaces WHERE id = ?', [id])

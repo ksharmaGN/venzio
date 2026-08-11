@@ -7,6 +7,7 @@ import type { DashboardMember, DashboardResponse } from '@/app/api/ws/[slug]/das
 import type { InsightsResponse, InsightBucket } from '@/app/api/ws/[slug]/insights/route'
 import type { RealtimeResponse } from '@/app/api/ws/[slug]/realtime/route'
 import type { OverviewWidgetsResponse } from '@/app/api/ws/[slug]/overview/route'
+import type { TodaySummaryResponse } from '@/app/api/ws/[slug]/today-summary/route'
 import { resolvePresenceTag, PRESENCE_TAG_CONFIG } from '@/lib/client/presence'
 import { en } from '@/locales/en'
 import { Users, Monitor, Home, Activity } from 'lucide-react'
@@ -505,36 +506,29 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
   const [modal, setModal] = useState<{ title: string; members: DashboardMember[] } | null>(null)
 
   const [todayHourlyData, setTodayHourlyData] = useState<InsightsResponse | null>(null)
-  const [todayHourlyLoading, setTodayHourlyLoading] = useState(true)
-
   const [realtimeData, setRealtimeData] = useState<RealtimeResponse | null>(null)
-  const [realtimeLoading, setRealtimeLoading] = useState(true)
 
-  const [dashLoading, setDashLoading] = useState(true)
+  const [todaySummaryLoading, setTodaySummaryLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
-  const fetchDash = useCallback(async (isSilent = false) => {
-    if (!isSilent) setDashLoading(true)
+  // Combines what used to be 3 separate requests (dashboard, insights?interval=today,
+  // realtime) into one - they all derive from the same "today" event window.
+  const fetchTodaySummary = useCallback(async (isSilent = false) => {
+    if (!isSilent) setTodaySummaryLoading(true)
     try {
       const res = await fetch(
-        `/api/ws/${slug}/dashboard?status=all&signal=all&sortBy=name&sortDir=asc&page=1&limit=10`,
-      );
+        `/api/ws/${slug}/today-summary?status=all&signal=all&sortBy=name&sortDir=asc&page=1&limit=10`,
+        { cache: 'no-store' },
+      )
       if (res.ok) {
-        setData(await res.json())
+        const summary: TodaySummaryResponse = await res.json()
+        setData(summary.dashboard)
+        setTodayHourlyData(summary.hourly)
+        setRealtimeData(summary.realtime)
         setLastUpdated(new Date())
       }
     } finally {
-      if (!isSilent) setDashLoading(false)
-    }
-  }, [slug])
-
-  const fetchTodayHourly = useCallback(async (isSilent = false) => {
-    if (!isSilent) setTodayHourlyLoading(true)
-    try {
-      const res = await fetch(`/api/ws/${slug}/insights?interval=today`, { cache: 'no-store' })
-      if (res.ok) setTodayHourlyData(await res.json())
-    } finally {
-      if (!isSilent) setTodayHourlyLoading(false)
+      if (!isSilent) setTodaySummaryLoading(false)
     }
   }, [slug])
 
@@ -551,36 +545,16 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
 
   const refreshAll = useCallback(async () => {
     await Promise.all([
-      fetchDash(),
-      fetchTodayHourly(),
+      fetchTodaySummary(),
       fetchOverview(),
     ])
-  }, [fetchDash, fetchTodayHourly, fetchOverview])
+  }, [fetchTodaySummary, fetchOverview])
 
   useEffect(() => {
     refreshAll()
-    const dashId = setInterval(() => fetchDash(true), 30000)
-    const graphId = setInterval(() => fetchTodayHourly(true), 10000)
-    return () => {
-      clearInterval(dashId)
-      clearInterval(graphId)
-    }
-  }, [refreshAll, fetchDash, fetchTodayHourly])
-
-  useEffect(() => {
-    async function fetchRealtime() {
-      setRealtimeLoading(true)
-      try {
-        const res = await fetch(`/api/ws/${slug}/realtime`)
-        if (res.ok) setRealtimeData(await res.json())
-      } finally {
-        setRealtimeLoading(false)
-      }
-    }
-    fetchRealtime()
-    const id = setInterval(fetchRealtime, 60000)
+    const id = setInterval(() => fetchTodaySummary(true), 30000)
     return () => clearInterval(id)
-  }, [slug])
+  }, [refreshAll, fetchTodaySummary])
 
   const counts = data?.counts ?? { present: 0, visited: 0, notIn: 0, total: 0, office: 0, remote: 0 }
 
@@ -629,7 +603,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
           <button
             type="button"
             onClick={refreshAll}
-            disabled={dashLoading || todayHourlyLoading}
+            disabled={todaySummaryLoading}
             style={{
               height: '40px', padding: '0 16px',
               background: 'var(--surface-0)', color: 'var(--text-primary)',
@@ -638,8 +612,8 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
               cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px'
             }}
           >
-            <Activity size={14} className={dashLoading ? 'animate-spin' : ''} />
-            {dashLoading ? 'Refreshing...' : 'Refresh'}
+            <Activity size={14} className={todaySummaryLoading ? 'animate-spin' : ''} />
+            {todaySummaryLoading ? 'Refreshing...' : 'Refresh'}
           </button>
           <button
             type="button"
@@ -713,10 +687,10 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
       {/* ── Graphs row ── */}
       <div className="fx-spring" style={{ display: 'flex', gap: '16px', marginBottom: '24px', alignItems: 'stretch', flexWrap: 'wrap' }}>
         <div className="dash-graph-item" style={{ flex: 2, minWidth: '300px', display: 'flex', flexDirection: 'column' }}>
-          <OfficePresenceGraph buckets={todayHourlyData?.buckets ?? []} loading={todayHourlyLoading} />
+          <OfficePresenceGraph buckets={todayHourlyData?.buckets ?? []} loading={todaySummaryLoading} />
         </div>
         <div className="dash-graph-item" style={{ flex: 1, minWidth: '220px', display: 'flex', flexDirection: 'column' }}>
-          <RealtimeWidget data={realtimeData} loading={realtimeLoading} activeCount={counts.present} locationCounts={data?.location_counts} />
+          <RealtimeWidget data={realtimeData} loading={todaySummaryLoading} activeCount={counts.present} locationCounts={data?.location_counts} />
         </div>
       </div>
 
@@ -860,7 +834,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName }: P
             </>
           )}
 
-          {counts.total === 0 && !dashLoading && (
+          {counts.total === 0 && !todaySummaryLoading && (
             <div style={{ padding: '48px 0', textAlign: 'center' }}>
               <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '15px', color: 'var(--text-secondary)' }}>No members yet.</p>
               <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
