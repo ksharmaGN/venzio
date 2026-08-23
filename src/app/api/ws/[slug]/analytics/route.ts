@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { getActiveMembersWithDetails } from '@/lib/db/queries/workspaces'
 import { queryWorkspaceEvents } from '@/lib/signals'
 import { getWorkspaceSignals } from '@/lib/db/queries/signals'
@@ -75,7 +75,7 @@ function countGpsClusters(latlngs: [number, number][]): number {
  */
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'analytics', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const url = new URL(request.url)

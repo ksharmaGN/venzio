@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { todayInTz } from '@/lib/timezone'
 import { getMembersOnLeaveToday } from '@/lib/db/queries/leaves'
 import { getPendingApprovalItems, type ApprovalItem } from '@/lib/approvals'
@@ -24,7 +24,7 @@ interface Props {
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'dashboard', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const today = todayInTz(ctx.workspace.display_timezone)

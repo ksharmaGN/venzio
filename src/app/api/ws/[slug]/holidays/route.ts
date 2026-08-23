@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { Readable } from 'stream'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import {
   listHolidays,
   createHoliday,
@@ -20,7 +20,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'holidays', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const yearParam = req.nextUrl.searchParams.get('year')
@@ -36,7 +36,7 @@ export async function GET(req: NextRequest, { params }: Props) {
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'holidays', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const contentType = req.headers.get('content-type') ?? ''

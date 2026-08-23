@@ -7,6 +7,7 @@ import {
 } from '@/lib/db/queries/workspaces'
 import { findEmployeeByUserId } from '@/lib/db/queries/employees'
 import DetailsClient from './DetailsClient'
+import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
 
 interface Props {
   params: Promise<{ slug: string; userId: string }>
@@ -24,7 +25,7 @@ export default async function EmployeeDetailsPage({ params }: Props) {
   const adminMembership = await getWorkspaceMember(workspace.id, session.sub)
   if (
     !adminMembership ||
-    adminMembership.role !== 'admin' ||
+    !isWorkspaceAdmin(adminMembership.role) ||
     adminMembership.status !== 'active'
   ) {
     redirect('/me')

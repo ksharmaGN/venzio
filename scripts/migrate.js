@@ -120,6 +120,24 @@ CREATE TABLE IF NOT EXISTS workspace_members (
   UNIQUE(workspace_id, email)
 );
 
+CREATE TABLE IF NOT EXISTS workspace_roles (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  key          TEXT NOT NULL,
+  name         TEXT NOT NULL,
+  description  TEXT,
+  permissions  TEXT NOT NULL DEFAULT '{}',
+  scope        TEXT NOT NULL DEFAULT 'self',
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at   TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_roles_key
+  ON workspace_roles(workspace_id, key) WHERE deleted_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_workspace_roles_ws ON workspace_roles(workspace_id);
+
 CREATE TABLE IF NOT EXISTS workspace_signal_config (
   id                TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
   workspace_id      TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
@@ -175,6 +193,132 @@ CREATE TABLE IF NOT EXISTS rate_limit_log (
 
 CREATE INDEX IF NOT EXISTS idx_rate_limit_key_action ON rate_limit_log(key, action, created_at DESC);
 `
+
+// ─── System role seeds ────────────────────────────────────────────────────────
+//
+// DUPLICATED FROM src/lib/permissions/catalogue.ts ON PURPOSE.
+// This script is CommonJS and cannot import TypeScript, so the grids live in
+// two places. If you add a resource to the catalogue and want owner/admin to
+// hold it, update BOTH files. Nothing checks this for you.
+//
+// admin = owner minus the things that destroy data or take the workspace away:
+// no `ownership` (transfer / archive / billing) and no `members.role`.
+// member  = deliberately empty. Members live on /me and have no org access.
+
+const SYSTEM_ROLE_SEED = [
+  {
+    key: 'owner',
+    name: 'Owner',
+    description: 'Full control, including ownership, billing and deleting the workspace.',
+    scope: 'all',
+    permissions: {
+      dashboard: ['read'],
+      analytics: ['read'],
+      activity: ['read'],
+      export: ['read'],
+      members: ['read', 'write', 'delete'],
+      employees: ['read', 'write', 'delete'],
+      holidays: ['read', 'write', 'delete'],
+      leaves: ['read', 'write', 'delete'],
+      approvals: ['read', 'write'],
+      signals: ['read', 'write', 'delete'],
+      domains: ['read', 'write', 'delete'],
+      settings: ['read', 'write'],
+      'members.role': ['write'],
+      roles: ['read', 'write', 'delete'],
+      ownership: ['write', 'delete'],
+    },
+  },
+  {
+    key: 'admin',
+    name: 'Admin',
+    description: 'Runs the workspace day to day. Cannot transfer ownership, archive the workspace, change billing, or assign roles.',
+    scope: 'all',
+    permissions: {
+      dashboard: ['read'],
+      analytics: ['read'],
+      activity: ['read'],
+      export: ['read'],
+      members: ['read', 'write', 'delete'],
+      employees: ['read', 'write', 'delete'],
+      holidays: ['read', 'write', 'delete'],
+      leaves: ['read', 'write', 'delete'],
+      approvals: ['read', 'write'],
+      signals: ['read', 'write', 'delete'],
+      domains: ['read', 'write', 'delete'],
+      settings: ['read', 'write'],
+      roles: ['read'],
+    },
+  },
+  {
+    key: 'member',
+    name: 'Member',
+    description: 'Records their own presence. No access to the org dashboard.',
+    scope: 'self',
+    permissions: {},
+  },
+]
+
+/**
+ * Seed the three system roles into every workspace, then backfill owners.
+ *
+ * Idempotent twice over:
+ *   - roles use INSERT OR IGNORE against the partial unique index on
+ *     (workspace_id, key) WHERE deleted_at IS NULL
+ *   - the owner backfill runs ONLY for workspaces that have no owner yet, so
+ *     re-running after admins exist can never mint a second owner
+ *
+ * Why "earliest-added active admin": transfer-ownership is a swap, so before
+ * this migration every workspace has exactly one admin - its creator. That
+ * makes the answer unambiguous today and unanswerable once multiple admins
+ * become possible, which is why this ships in the same release.
+ */
+async function seedRolesAndOwners(all, exec) {
+  const workspaces = await all(`SELECT id FROM workspaces`)
+  let seeded = 0, owners = 0, ownerless = 0
+
+  for (const ws of workspaces) {
+    for (const role of SYSTEM_ROLE_SEED) {
+      const res = await exec(
+        `INSERT OR IGNORE INTO workspace_roles
+           (id, workspace_id, key, name, description, permissions, scope)
+         VALUES (lower(hex(randomblob(16))), ?, ?, ?, ?, ?, ?)`,
+        [ws.id, role.key, role.name, role.description, JSON.stringify(role.permissions), role.scope]
+      )
+      if (res && res.changes) seeded += res.changes
+    }
+
+    const existingOwner = await all(
+      `SELECT id FROM workspace_members
+       WHERE workspace_id = ? AND role = 'owner' AND status = 'active' LIMIT 1`,
+      [ws.id]
+    )
+    if (existingOwner.length > 0) continue
+
+    const candidate = await all(
+      `SELECT id FROM workspace_members
+       WHERE workspace_id = ? AND role = 'admin' AND status = 'active'
+       ORDER BY added_at ASC, id ASC LIMIT 1`,
+      [ws.id]
+    )
+    if (candidate.length === 0) {
+      ownerless++
+      continue
+    }
+
+    await exec(`UPDATE workspace_members SET role = 'owner' WHERE id = ?`, [candidate[0].id])
+    owners++
+  }
+
+  console.log(
+    `✓ Roles seeded - ${workspaces.length} workspace(s), ${seeded} role row(s) inserted, ${owners} owner(s) backfilled`
+  )
+  if (ownerless > 0) {
+    console.warn(
+      `⚠ ${ownerless} workspace(s) have no active admin and therefore no owner - inspect these manually`
+    )
+  }
+}
 
 const ADDITIVE_MIGRATIONS = [
   // users
@@ -437,7 +581,7 @@ const ADDITIVE_MIGRATIONS = [
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
 
-function runSQLite() {
+async function runSQLite() {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const Database = require("better-sqlite3");
   const dbPath = path.join(__dirname, "../venzio.db");
@@ -487,6 +631,11 @@ function runSQLite() {
     }
   }
 
+  await seedRolesAndOwners(
+    (sql, params = []) => db.prepare(sql).all(...params),
+    (sql, params = []) => db.prepare(sql).run(...params),
+  );
+
   db.close();
   console.log(
     `✓ SQLite migration complete - ${ran} executed, ${skipped} skipped - ${dbPath}`,
@@ -524,6 +673,14 @@ async function runTurso() {
     }
   }
 
+  await seedRolesAndOwners(
+    async (sql, args = []) => (await client.execute({ sql, args })).rows,
+    async (sql, args = []) => {
+      const r = await client.execute({ sql, args })
+      return { changes: r.rowsAffected }
+    },
+  )
+
   await client.close()
   console.log(`✓ Turso migration complete - ${ran} executed, ${skipped} skipped - ${process.env.TURSO_DATABASE_URL}`)
 }
@@ -533,5 +690,5 @@ async function runTurso() {
 if (process.env.TURSO_DATABASE_URL) {
   runTurso().catch(err => { console.error(err); process.exit(1) })
 } else {
-  runSQLite()
+  runSQLite().catch(err => { console.error(err); process.exit(1) })
 }

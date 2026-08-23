@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import {
   getWorkspaceMemberByRecordId,
   getWorkspaceMember,
@@ -15,6 +15,7 @@ import {
 } from '@/lib/db/queries/users'
 import { generateOtp, otpExpiresAt } from '@/lib/auth'
 import { sendOtpEmail } from '@/lib/email'
+import { isWorkspaceOwner } from '@/lib/permissions/ranks'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -26,11 +27,11 @@ interface Props { params: Promise<{ slug: string }> }
  *   Sends OTP to the current admin's email.
  *
  * Step 2 - { action: 'confirm', targetMemberId, code }
- *   Validates OTP, swaps roles (admin → member, target → admin).
+ *   Validates OTP, swaps roles (owner → admin, target → owner).
  */
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'ownership', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: { action?: string; targetMemberId?: string; code?: string }
@@ -49,8 +50,10 @@ export async function POST(request: NextRequest, { params }: Props) {
   if (!target || target.status !== 'active') {
     return NextResponse.json({ error: 'Target member not found or not active', code: 'INVALID_TARGET' }, { status: 400 })
   }
-  if (target.role === 'admin') {
-    return NextResponse.json({ error: 'Target is already an admin', code: 'ALREADY_ADMIN' }, { status: 409 })
+  // Admins ARE valid targets - promoting your most trusted admin to owner is
+  // the normal path. Only the current owner is rejected.
+  if (isWorkspaceOwner(target.role)) {
+    return NextResponse.json({ error: 'This member is already the owner', code: 'ALREADY_OWNER' }, { status: 409 })
   }
   if (target.user_id === ctx.userId) {
     return NextResponse.json({ error: 'Cannot transfer ownership to yourself', code: 'SELF_TRANSFER' }, { status: 400 })
@@ -97,9 +100,12 @@ export async function POST(request: NextRequest, { params }: Props) {
     const allMembers = await getActiveMembersWithDetails(ctx.workspace.id)
     const targetDetails = allMembers.find((m) => m.user_id === target.user_id)
 
-    // Swap roles
-    await updateWorkspaceMember(target.id, ctx.workspace.id, { role: 'admin' })
-    await updateWorkspaceMember(adminMember.id, ctx.workspace.id, { role: 'member' })
+    // Hand over ownership. The outgoing owner is left as an ADMIN, not a plain
+    // member: before the owner/admin split 'member' was the only option, and
+    // dropping a founder straight out of the org surface is a trap. They can be
+    // demoted afterwards by the new owner if that is genuinely intended.
+    await updateWorkspaceMember(target.id, ctx.workspace.id, { role: 'owner' })
+    await updateWorkspaceMember(adminMember.id, ctx.workspace.id, { role: 'admin' })
 
     return NextResponse.json({
       ok: true,

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import {
   getHoliday,
   updateHoliday,
@@ -15,7 +15,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 
 export async function PATCH(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'holidays', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const existing = await getHoliday(id, ctx.workspace.id)
@@ -95,7 +95,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
 
 export async function DELETE(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'holidays', 'delete')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const existing = await getHoliday(id, ctx.workspace.id)

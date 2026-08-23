@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import type { WorkspaceMember, Workspace } from '@/lib/db/queries/workspaces'
+import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
+import { en } from '@/locales/en'
 
 interface Props {
   activeMemberships: WorkspaceMember[]
@@ -35,7 +37,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleLeave(workspaceId: string, wsName: string) {
-    if (!confirm(`Leave ${wsName}? You will no longer appear in their presence dashboard.`)) return
+    if (!confirm(en.meOrgs.leaveConfirm(wsName))) return
     setLoadingId(workspaceId)
     try {
       const res = await fetch(`/api/me/workspaces/${workspaceId}`, { method: 'DELETE' })
@@ -44,7 +46,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
         router.refresh()
       } else {
         const data = await res.json()
-        alert(data.error || 'Could not leave workspace')
+        alert(data.error || en.meOrgs.leaveError)
       }
     } finally {
       setLoadingId(null)
@@ -84,7 +86,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
               marginBottom: '10px',
             }}
           >
-            Pending invitations
+            {en.meOrgs.pendingInvitesTitle}
           </h2>
           {pendingList.map((m) => {
             const ws = wsMap[m.workspace_id]
@@ -118,7 +120,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                     marginBottom: '12px',
                   }}
                 >
-                  Wants to include your presence events in their dashboard.
+                  {en.meOrgs.pendingInviteBody}
                 </p>
                 <div style={{ display: 'flex', gap: '8px' }}>
                   <button
@@ -137,7 +139,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                       cursor: 'pointer',
                     }}
                   >
-                    Accept
+                    {en.meOrgs.acceptBtn}
                   </button>
                   <button
                     onClick={() => handleConsent(m.id, 'decline')}
@@ -154,7 +156,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                       cursor: 'pointer',
                     }}
                   >
-                    Decline
+                    {en.meOrgs.declineBtn}
                   </button>
                 </div>
               </div>
@@ -177,7 +179,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
               marginBottom: '10px',
             }}
           >
-            Active
+            {en.meOrgs.activeTitle}
           </h2>
           {activeList.map((m) => {
             const ws = wsMap[m.workspace_id]
@@ -242,11 +244,11 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                 {/* Arrow hint */}
                 <ChevronRight size={22} strokeWidth={2.5} style={{ position: 'relative', zIndex: 1, color: 'var(--brand)', flexShrink: 0, pointerEvents: 'none' }} />
 
-                {m.role !== 'admin' && (
+                {!isWorkspaceAdmin(m.role) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
-                      handleLeave(m.workspace_id, ws?.name ?? 'this workspace')
+                      handleLeave(m.workspace_id, ws?.name ?? en.meOrgs.leaveFallbackName)
                     }}
                     disabled={loadingId === m.workspace_id}
                     style={{
@@ -262,7 +264,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                       marginLeft: '8px',
                     }}
                   >
-                    {loadingId === m.workspace_id ? 'Leaving…' : 'Leave'}
+                    {loadingId === m.workspace_id ? en.meOrgs.leavingBtn : en.meOrgs.leaveBtn}
                   </button>
                 )}
               </div>
@@ -273,10 +275,10 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
         pendingList.length === 0 && (
           <div style={{ textAlign: 'center', padding: '48px 20px' }}>
             <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '15px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-              You&apos;re not part of any workspace yet.
+              {en.meOrgs.emptyTitle}
             </p>
             <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px', lineHeight: 1.6 }}>
-              Your employer needs to add you, or you&apos;ll be auto-enrolled if your email domain matches.
+              {en.meOrgs.emptyBody}
             </p>
             <Link
               href="/ws"
@@ -288,7 +290,7 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                 fontWeight: 500,
               }}
             >
-              Or create your own workspace →
+              {en.meOrgs.createLink}
             </Link>
           </div>
         )

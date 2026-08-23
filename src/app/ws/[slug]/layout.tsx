@@ -12,6 +12,7 @@ import {
 import { getUserById } from "@/lib/db/queries/users";
 import { getPendingLeaveCount } from "@/lib/db/queries/leaves";
 import { getPendingRegularizationCount } from "@/lib/db/queries/regularizations";
+import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
 
 interface Props {
   children: React.ReactNode;
@@ -19,7 +20,7 @@ interface Props {
 }
 
 export const metadata: Metadata = {
-  title: "Workspace",
+  title: en.workspace.pageTitle,
   robots: {
     index: false,
     follow: false,
@@ -37,7 +38,7 @@ export default async function WsSlugLayout({ children, params }: Props) {
   const membership = await getWorkspaceMember(workspace.id, user.userId);
   if (
     !membership ||
-    membership.role !== "admin" ||
+    !isWorkspaceAdmin(membership.role) ||
     membership.status !== "active"
   ) {
     redirect("/me");

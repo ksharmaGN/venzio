@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { Readable } from 'stream'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { getWorkspaceMemberByEmail } from '@/lib/db/queries/workspaces'
 import {
   getWorkspaceLeaveTypes,
@@ -20,7 +20,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'leaves', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let formData: FormData

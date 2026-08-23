@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { getSignalConfigs, addSignalConfig, updateWorkspace } from '@/lib/db/queries/workspaces'
 import { timezoneFromCoords } from '@/lib/timezone-server'
 import { getIpGeo, extractIp } from '@/lib/geo'
@@ -8,7 +8,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'signals', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const signals = await getSignalConfigs(ctx.workspace.id)
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest, { params }: Props) {
 
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'signals', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: {

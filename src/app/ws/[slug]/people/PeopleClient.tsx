@@ -2,10 +2,11 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
-import { KeyRound, Search, Trash2 } from "lucide-react";
+import { KeyRound, Lock, Search, Trash2 } from "lucide-react";
 import type { ApprovalItem } from "@/lib/approvals";
 import { ApprovalRow } from "@/components/ws/ApprovalRow";
 import { en } from "@/locales/en";
+import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
 
 interface Member {
   member_id: string
@@ -24,19 +25,29 @@ interface Member {
   probation_end_date: string | null
 }
 
+interface RoleOption {
+  key: string
+  name: string
+  description: string | null
+}
+
 const AVATAR_COLORS = ['#4F46E5','#0EA5E9','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4']
 function avatarColor(s: string) {
   let h = 0; for (let i = 0; i < s.length; i++) h = s.charCodeAt(i) + ((h << 5) - h)
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length]
 }
 
-const WM_LABEL: Record<string, string> = { office: 'On-site', remote: 'Remote', hybrid: 'Hybrid' }
+const WM_LABEL: Record<string, string> = {
+  office: en.wsPeople.workModeOffice,
+  remote: en.wsPeople.workModeRemote,
+  hybrid: en.wsPeople.workModeHybrid,
+}
 
 function empStatus(doj: string | null, probEnd: string | null) {
   const today = new Date(); today.setHours(0, 0, 0, 0)
-  if (doj && new Date(doj) > today) return { label: 'Onboarding', color: '#6366F1', bg: 'rgba(99,102,241,0.1)' }
-  if (probEnd && new Date(probEnd) >= today) return { label: 'Probation', color: 'var(--amber)', bg: 'color-mix(in srgb, var(--amber) 12%, transparent)' }
-  return { label: 'Active', color: 'var(--teal)', bg: 'color-mix(in srgb, var(--teal) 12%, transparent)' }
+  if (doj && new Date(doj) > today) return { label: en.wsPeople.statusOnboarding, color: '#6366F1', bg: 'rgba(99,102,241,0.1)' }
+  if (probEnd && new Date(probEnd) >= today) return { label: en.wsPeople.statusProbation, color: 'var(--amber)', bg: 'color-mix(in srgb, var(--amber) 12%, transparent)' }
+  return { label: en.wsPeople.statusActive, color: 'var(--teal)', bg: 'color-mix(in srgb, var(--teal) 12%, transparent)' }
 }
 
 function formatDateOfJoining(d: string | null) {
@@ -46,6 +57,8 @@ function formatDateOfJoining(d: string | null) {
 
 interface Props {
   slug: string
+  /** The signed-in user, so their own row never offers a role dropdown. */
+  viewerUserId: string
 }
 
 const inputStyle: React.CSSProperties = {
@@ -93,7 +106,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
         setAdminEmail(data.email)
         setStep('otp')
       } else {
-        setError(data.error || 'Failed to send verification code')
+        setError(data.error || en.wsTransferOwnership.errorRequestFailed)
       }
     } finally {
       setLoading(false)
@@ -112,13 +125,13 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
       })
       const data = await res.json()
       if (res.ok) {
-        setSuccess(`Ownership transferred to ${data.new_admin}. You are now a member.`)
+        setSuccess(en.wsTransferOwnership.successMsg(data.new_admin))
         setTimeout(() => {
           onDone()
           window.location.href = '/ws'
         }, 2000)
       } else {
-        setError(data.error || 'Transfer failed')
+        setError(data.error || en.wsTransferOwnership.errorTransferFailed)
       }
     } finally {
       setLoading(false)
@@ -141,7 +154,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
         width: '100%',
       }}>
         <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', marginBottom: '8px' }}>
-          Transfer ownership
+          {en.wsTransferOwnership.title}
         </h2>
 
         {success ? (
@@ -151,9 +164,9 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
         ) : step === 'confirm' ? (
           <>
             <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
-              You are about to transfer admin ownership of this workspace to{' '}
+              {en.wsTransferOwnership.confirmBodyPrefix}{' '}
               <strong style={{ color: 'var(--text-primary)' }}>{target.full_name ?? target.email}</strong>.
-              You will become a regular member. This action requires verification.
+              {' '}{en.wsTransferOwnership.confirmBodySuffix}
             </p>
             {error && (
               <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--danger)', marginBottom: '12px' }}>{error}</p>
@@ -171,7 +184,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
                   cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
                 }}
               >
-                {loading ? 'Sending code…' : 'Send verification code'}
+                {loading ? en.wsTransferOwnership.sendingCodeBtn : en.wsTransferOwnership.sendCodeBtn}
               </button>
               <button
                 type="button"
@@ -184,20 +197,20 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {en.wsTransferOwnership.cancelBtn}
               </button>
             </div>
           </>
         ) : (
           <>
             <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
-              Enter the 6-digit code sent to <strong style={{ color: 'var(--text-primary)' }}>{adminEmail}</strong> to confirm the transfer.
+              {en.wsTransferOwnership.otpBodyPrefix} <strong style={{ color: 'var(--text-primary)' }}>{adminEmail}</strong> {en.wsTransferOwnership.otpBodySuffix}
             </p>
             <input
               type="text"
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="6-digit code"
+              placeholder={en.wsTransferOwnership.otpPlaceholder}
               maxLength={6}
               onKeyDown={(e) => e.key === 'Enter' && confirmTransfer()}
               style={{ ...inputStyle, marginBottom: '12px', letterSpacing: '0.15em', fontSize: '18px', textAlign: 'center' }}
@@ -220,7 +233,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
                   opacity: (loading || code.length < 6) ? 0.7 : 1,
                 }}
               >
-                {loading ? 'Transferring…' : 'Confirm transfer'}
+                {loading ? en.wsTransferOwnership.transferringBtn : en.wsTransferOwnership.confirmBtn}
               </button>
               <button
                 type="button"
@@ -233,7 +246,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
                   cursor: 'pointer',
                 }}
               >
-                Cancel
+                {en.wsTransferOwnership.cancelBtn}
               </button>
             </div>
           </>
@@ -245,7 +258,7 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function PeopleClient({ slug }: Props) {
+export default function PeopleClient({ slug, viewerUserId }: Props) {
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false);
@@ -261,6 +274,12 @@ export default function PeopleClient({ slug }: Props) {
   const [inviteStatus, setInviteStatus] = useState<{ text: string; ok: boolean } | null>(null)
   const [removingId, setRemovingId] = useState<string | null>(null)
   const [transferTarget, setTransferTarget] = useState<Member | null>(null);
+
+  // Role assignment. `assignableRoles` is server-filtered to roles the viewer
+  // is allowed to grant, so the dropdown can never offer something the API
+  // would reject - the API re-checks regardless.
+  const [roleOptions, setRoleOptions] = useState<{ assignableRoles: RoleOption[]; roleNames: Record<string, string> }>({ assignableRoles: [], roleNames: {} });
+  const [roleModal, setRoleModal] = useState<{ member: Member; roleKey: string; saving: boolean; error: string | null } | null>(null);
 
   const loadMembers = useCallback(
     async (opts?: { append?: boolean }) => {
@@ -285,6 +304,10 @@ export default function PeopleClient({ slug }: Props) {
           nextOffset: nextCursor,
           total: data.total ?? prev?.total ?? 0,
         }));
+        setRoleOptions({
+          assignableRoles: (data.assignableRoles ?? []) as RoleOption[],
+          roleNames: (data.roleNames ?? {}) as Record<string, string>,
+        });
       }
       if (append) setLoadingMore(false);
       else setLoading(false);
@@ -327,10 +350,10 @@ export default function PeopleClient({ slug }: Props) {
       const data = await res.json()
       if (res.ok) {
         setEmail('')
-        setInviteStatus({ text: `Invite sent to ${e}`, ok: true })
+        setInviteStatus({ text: en.wsPeople.inviteSuccess(e), ok: true })
         await loadMembers()
       } else {
-        setInviteStatus({ text: data.error || 'Failed to send invite', ok: false })
+        setInviteStatus({ text: data.error || en.wsPeople.inviteError, ok: false })
       }
     } finally {
       setInviting(false)
@@ -338,13 +361,38 @@ export default function PeopleClient({ slug }: Props) {
   }
 
   async function remove(memberId: string) {
-    if (!confirm('Remove this member?')) return
+    if (!confirm(en.wsPeople.removeConfirm)) return
     setRemovingId(memberId)
     const res = await fetch(`/api/ws/${slug}/members/${memberId}`, { method: 'DELETE' })
     if (res.ok) {
       setMembers((prev) => prev.filter((m) => m.member_id !== memberId))
     }
     setRemovingId(null)
+  }
+
+  async function saveRole() {
+    if (!roleModal) return
+    setRoleModal((prev) => (prev ? { ...prev, saving: true, error: null } : prev))
+    const res = await fetch(
+      `/api/ws/${slug}/members/${roleModal.member.member_id}/role`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role: roleModal.roleKey }),
+      },
+    )
+    const data = await res.json().catch(() => ({}))
+    if (res.ok) {
+      const key = roleModal.roleKey
+      setMembers((prev) =>
+        prev.map((m) =>
+          m.member_id === roleModal.member.member_id ? { ...m, role: key } : m,
+        ),
+      )
+      setRoleModal(null)
+    } else {
+      setRoleModal((prev) => (prev ? { ...prev, saving: false, error: data.error ?? en.wsPeople.roleChangeFailed } : prev))
+    }
   }
 
   const skBase: React.CSSProperties = {
@@ -367,6 +415,61 @@ export default function PeopleClient({ slug }: Props) {
           onCancel={() => setTransferTarget(null)}
         />
       )}
+
+      {roleModal && (() => {
+        const name = roleModal.member.full_name ?? roleModal.member.email
+        const roleName = roleOptions.roleNames[roleModal.roleKey] ?? roleModal.roleKey
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
+            <div style={{ background: 'var(--surface-0)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '28px', maxWidth: '440px', width: '100%' }}>
+              <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '18px', fontWeight: 700, color: 'var(--navy)', marginBottom: '8px' }}>
+                {en.wsPeople.roleModalTitle(name)}
+              </h2>
+              <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                {en.wsPeople.roleModalTo(roleName)}
+              </p>
+
+              {/* Name the consequence, not the mechanism. */}
+              <div style={{ border: '1px solid var(--border)', background: 'var(--surface-1)', borderRadius: 'var(--radius-md)', padding: '10px 12px', marginBottom: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', lineHeight: 1.55 }}>
+                {roleModal.roleKey === 'admin' ? (
+                  <>
+                    <div style={{ color: 'var(--teal)', marginBottom: '6px' }}>+ {en.wsPeople.roleAdminGains}</div>
+                    <div style={{ color: 'var(--danger)' }}>− {en.wsPeople.roleAdminLimits}</div>
+                  </>
+                ) : (
+                  <div style={{ color: 'var(--danger)' }}>− {en.wsPeople.roleMemberEffect}</div>
+                )}
+              </div>
+
+              <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                {en.wsPeople.roleAppliesImmediately}
+              </p>
+
+              {roleModal.error && (
+                <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--danger)', marginBottom: '12px' }}>{roleModal.error}</p>
+              )}
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  type="button"
+                  onClick={saveRole}
+                  disabled={roleModal.saving}
+                  style={{ flex: 1, height: '44px', background: 'var(--brand)', color: '#fff', border: 'none', borderRadius: 'var(--radius-md)', fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500, cursor: roleModal.saving ? 'not-allowed' : 'pointer', opacity: roleModal.saving ? 0.7 : 1 }}
+                >
+                  {roleModal.saving ? en.wsPeople.roleSavingButton : en.wsPeople.roleConfirmButton}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setRoleModal(null)}
+                  style={{ height: '44px', padding: '0 16px', background: 'transparent', color: 'var(--text-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: '14px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer' }}
+                >
+                  {en.wsPeople.roleCancelButton}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Invite row */}
       <div
@@ -396,7 +499,7 @@ export default function PeopleClient({ slug }: Props) {
               marginBottom: "12px",
             }}
           >
-            Invite someone
+            {en.wsPeople.inviteSectionTitle}
           </h2>
         </div>
         <p
@@ -407,15 +510,14 @@ export default function PeopleClient({ slug }: Props) {
             marginBottom: "12px",
           }}
         >
-          They&apos;ll receive an email with an accept/decline link. Their
-          presence data only flows to this workspace after they accept.
+          {en.wsPeople.inviteHelperText}
         </p>
         <div style={{ display: "flex", gap: "8px" }}>
           <input
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            placeholder="colleague@company.com"
+            placeholder={en.wsPeople.invitePlaceholder}
             onKeyDown={(e) => e.key === "Enter" && invite()}
             style={{ ...inputStyle, flex: 1 }}
           />
@@ -438,7 +540,7 @@ export default function PeopleClient({ slug }: Props) {
               flexShrink: 0,
             }}
           >
-            {inviting ? "…" : "Send invite"}
+            {inviting ? en.wsPeople.inviteSubmitting : en.wsPeople.inviteSubmit}
           </button>
         </div>
         {inviteStatus && (
@@ -460,18 +562,18 @@ export default function PeopleClient({ slug }: Props) {
         {/* Header: title + search */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', padding: '16px 20px', borderBottom: '1px solid var(--border)' }}>
           <h2 style={{ fontFamily: 'Playfair Display, serif', fontSize: '15px', fontWeight: 600, color: 'var(--navy)' }}>
-            People ({pagination?.total ?? members.length})
+            {en.wsPeople.peopleCount(pagination?.total ?? members.length)}
           </h2>
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <input
               type="search"
-              placeholder="Search name or email"
+              placeholder={en.wsPeople.searchPlaceholder}
               value={searchDraft}
               onChange={(e) => setSearchDraft(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && applySearch()}
               style={{ height: '36px', padding: '0 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', background: 'var(--surface-0)', color: 'var(--text-primary)', outline: 'none', minWidth: '220px' }}
             />
-            <button type="button" onClick={applySearch} title="Search" style={{ height: '36px', width: '36px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--surface-0)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+            <button type="button" onClick={applySearch} title={en.wsPeople.searchButtonTitle} style={{ height: '36px', width: '36px', borderRadius: 'var(--radius-md)', border: '1px solid var(--border)', background: 'var(--surface-0)', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
               <Search size={16} />
             </button>
           </div>
@@ -494,15 +596,15 @@ export default function PeopleClient({ slug }: Props) {
           </div>
         ) : members.length === 0 ? (
           <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '15px', color: 'var(--text-secondary)', marginBottom: '4px' }}>No members yet.</p>
-            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)' }}>Use the invite form above to add your team.</p>
+            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '15px', color: 'var(--text-secondary)', marginBottom: '4px' }}>{en.wsPeople.emptyTitle}</p>
+            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-muted)' }}>{en.wsPeople.emptyBody}</p>
           </div>
         ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Employee', 'Designation', 'Department', 'Work mode', 'Joined', 'Status', ''].map((h, idx) => (
-                    <th key={idx} style={{ padding: '10px 16px', textAlign: idx === 6 ? 'right' : 'left', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
+                  {[en.wsPeople.colEmployee, en.wsPeople.colDesignation, en.wsPeople.colDepartment, en.wsPeople.colWorkMode, en.wsPeople.colJoined, en.wsPeople.roleColumn, en.wsPeople.colStatus, ''].map((h, idx) => (
+                    <th key={idx} style={{ padding: '10px 16px', textAlign: idx === 7 ? 'right' : 'left', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -514,10 +616,10 @@ export default function PeopleClient({ slug }: Props) {
                   const st = m.employee_record_id
                     ? empStatus(m.date_of_joining, m.probation_end_date)
                     : m.status === 'pending_consent'
-                      ? { label: 'Invite sent', color: 'var(--amber)', bg: 'color-mix(in srgb, var(--amber) 12%, transparent)' }
+                      ? { label: en.wsPeople.statusInviteSent, color: 'var(--amber)', bg: 'color-mix(in srgb, var(--amber) 12%, transparent)' }
                       : m.status === 'declined'
-                        ? { label: 'Declined', color: 'var(--danger)', bg: 'color-mix(in srgb, var(--danger) 12%, transparent)' }
-                        : { label: 'Active', color: 'var(--teal)', bg: 'color-mix(in srgb, var(--teal) 12%, transparent)' }
+                        ? { label: en.wsPeople.statusDeclined, color: 'var(--danger)', bg: 'color-mix(in srgb, var(--danger) 12%, transparent)' }
+                        : { label: en.wsPeople.statusActive, color: 'var(--teal)', bg: 'color-mix(in srgb, var(--teal) 12%, transparent)' }
                   return (
                     <tr key={m.member_id} style={{ borderBottom: i < members.length - 1 || loadingMore ? '1px solid var(--border)' : 'none' }}
                       onMouseEnter={e => (e.currentTarget.style.background = 'var(--surface-1)')}
@@ -550,6 +652,45 @@ export default function PeopleClient({ slug }: Props) {
                       <td style={{ padding: '12px 16px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)' }}>{m.work_mode ? (WM_LABEL[m.work_mode] ?? m.work_mode) : '—'}</td>
                       {/* Joined */}
                       <td style={{ padding: '12px 16px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)' }}>{formatDateOfJoining(m.date_of_joining)}</td>
+                      {/* Role - a dropdown when this viewer may reassign this
+                          person, otherwise a plain locked label. */}
+                      <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
+                        {(() => {
+                          const isSelf = !!m.user_id && m.user_id === viewerUserId
+                          const canReassign =
+                            roleOptions.assignableRoles.length > 0 &&
+                            m.status === 'active' &&
+                            !isSelf &&
+                            m.role !== 'owner' &&
+                            roleOptions.assignableRoles.some((r) => r.key === m.role)
+                          const label = roleOptions.roleNames[m.role] ?? m.role
+
+                          if (!canReassign) {
+                            return (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', background: 'var(--surface-2)', border: '1px solid var(--border)', borderRadius: '4px', padding: '4px 8px' }}>
+                                {label}
+                                {m.role === 'owner' && <Lock size={11} />}
+                              </span>
+                            )
+                          }
+
+                          return (
+                            <select
+                              value={m.role}
+                              onChange={(e) => {
+                                const next = e.target.value
+                                if (next !== m.role) setRoleModal({ member: m, roleKey: next, saving: false, error: null })
+                              }}
+                              aria-label={en.wsPeople.roleSelectAria}
+                              style={{ height: '32px', minWidth: '104px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-0)', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--navy)', padding: '0 6px', cursor: 'pointer' }}
+                            >
+                              {roleOptions.assignableRoles.map((r) => (
+                                <option key={r.key} value={r.key}>{r.name}</option>
+                              ))}
+                            </select>
+                          )
+                        })()}
+                      </td>
                       {/* Status */}
                       <td style={{ padding: '12px 16px', whiteSpace: 'nowrap' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '12px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500, color: st.color, background: st.bg, border: `1px solid ${st.color}`, borderRadius: '4px', padding: '2px 8px' }}>
@@ -561,18 +702,18 @@ export default function PeopleClient({ slug }: Props) {
                       <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', textAlign: 'right' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
                           {m.user_id && m.status === 'active' && !m.employee_record_id && (
-                            <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>+ Set up</Link>
+                            <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--brand)', textDecoration: 'none' }}>{en.wsPeople.setUpLink}</Link>
                           )}
                           {m.user_id && m.status === 'active' && m.employee_record_id && (
-                            <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', textDecoration: 'none' }}>Edit</Link>
+                            <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', textDecoration: 'none' }}>{en.wsPeople.editLink}</Link>
                           )}
-                          {m.role !== 'admin' && m.status === 'active' && (
-                            <button onClick={() => setTransferTarget(m)} title="Make owner" style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <KeyRound size={13} /> Owner
+                          {!isWorkspaceAdmin(m.role) && m.status === 'active' && (
+                            <button onClick={() => setTransferTarget(m)} title={en.wsPeople.makeOwnerTitle} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                              <KeyRound size={13} /> {en.wsPeople.makeOwnerLabel}
                             </button>
                           )}
-                          {m.role !== 'admin' && (
-                            <button onClick={() => remove(m.member_id)} disabled={removingId === m.member_id} title="Remove" style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: removingId === m.member_id ? 'not-allowed' : 'pointer', opacity: removingId === m.member_id ? 0.5 : 1, padding: '0 2px', display: 'flex', alignItems: 'center' }}>
+                          {!isWorkspaceAdmin(m.role) && (
+                            <button onClick={() => remove(m.member_id)} disabled={removingId === m.member_id} title={en.wsPeople.removeTitle} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: removingId === m.member_id ? 'not-allowed' : 'pointer', opacity: removingId === m.member_id ? 0.5 : 1, padding: '0 2px', display: 'flex', alignItems: 'center' }}>
                               <Trash2 size={14} />
                             </button>
                           )}
@@ -583,7 +724,7 @@ export default function PeopleClient({ slug }: Props) {
                 })}
                 {loadingMore && [1,2,3].map(k => (
                   <tr key={`sk-${k}`}>
-                    <td colSpan={7} style={{ padding: '14px 16px', borderBottom: k < 3 ? '1px solid var(--border)' : 'none' }}>
+                    <td colSpan={8} style={{ padding: '14px 16px', borderBottom: k < 3 ? '1px solid var(--border)' : 'none' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <div style={{ ...skBase, width: '34px', height: '34px', borderRadius: '50%', flexShrink: 0 }} />
                         <div style={{ ...skBase, height: '13px', width: '160px' }} />
