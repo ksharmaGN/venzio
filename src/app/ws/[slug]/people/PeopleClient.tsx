@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
-import { KeyRound, Lock, Search, Trash2 } from "lucide-react";
+import { Lock, Search, Trash2 } from "lucide-react";
 import type { ApprovalItem } from "@/lib/approvals";
 import { ApprovalRow } from "@/components/ws/ApprovalRow";
 import { en } from "@/locales/en";
@@ -29,6 +29,15 @@ interface RoleOption {
   key: string
   name: string
   description: string | null
+}
+
+/**
+ * What the VIEWER may do, resolved server-side from their role grid and
+ * returned by GET /api/ws/[slug]/members. Deny-by-default until it loads, so
+ * an owner-only action never flashes for an admin on first paint.
+ */
+interface ViewerPermissions {
+  transferOwnership: boolean
 }
 
 const AVATAR_COLORS = ['#4F46E5','#0EA5E9','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4']
@@ -86,24 +95,33 @@ interface TransferModalProps {
 
 function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModalProps) {
   const [step, setStep] = useState<'confirm' | 'otp'>('confirm')
+  const [password, setPassword] = useState('')
   const [code, setCode] = useState('')
   const [adminEmail, setAdminEmail] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
 
+  // Factor 1: the account password. The server re-checks it and only then
+  // issues the code, so a hijacked session with inbox access is not enough.
   async function requestOtp() {
+    if (!password) {
+      setError(en.wsTransferOwnership.errorPasswordRequired)
+      return
+    }
     setLoading(true)
     setError(null)
     try {
       const res = await fetch(`/api/ws/${slug}/transfer-ownership`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'request', targetMemberId: target.member_id }),
+        body: JSON.stringify({ action: 'request', targetMemberId: target.member_id, password }),
       })
       const data = await res.json()
       if (res.ok) {
         setAdminEmail(data.email)
+        // Don't keep it in state while the OTP step is open.
+        setPassword('')
         setStep('otp')
       } else {
         setError(data.error || en.wsTransferOwnership.errorRequestFailed)
@@ -128,7 +146,10 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
         setSuccess(en.wsTransferOwnership.successMsg(data.new_admin))
         setTimeout(() => {
           onDone()
-          window.location.href = '/ws'
+          // Not /ws: the outgoing owner is now a plain member, so they no longer
+          // match getAdminWorkspacesForUser and would land on an empty picker
+          // with no explanation. /me is the surface they still have.
+          window.location.href = '/me'
         }, 2000)
       } else {
         setError(data.error || en.wsTransferOwnership.errorTransferFailed)
@@ -163,11 +184,55 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
           </p>
         ) : step === 'confirm' ? (
           <>
-            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '20px', lineHeight: 1.5 }}>
+            <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '14px', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.5 }}>
               {en.wsTransferOwnership.confirmBodyPrefix}{' '}
               <strong style={{ color: 'var(--text-primary)' }}>{target.full_name ?? target.email}</strong>.
-              {' '}{en.wsTransferOwnership.confirmBodySuffix}
             </p>
+
+            {/* Destructive warning - stays on screen while they type the
+                password, so the consequence is visible at the moment they
+                authorise it rather than on a screen they already clicked past. */}
+            <div style={{
+              border: '1px solid var(--danger)',
+              background: 'color-mix(in srgb, var(--danger) 8%, transparent)',
+              borderRadius: 'var(--radius-md)',
+              padding: '14px 16px',
+              marginBottom: '20px',
+            }}>
+              <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', fontWeight: 600, color: 'var(--danger)', marginBottom: '8px' }}>
+                {en.wsTransferOwnership.warningTitle}
+              </p>
+              <ul style={{ margin: 0, paddingLeft: '18px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                {[
+                  en.wsTransferOwnership.warningTheyGain,
+                  en.wsTransferOwnership.warningYouLose,
+                  en.wsTransferOwnership.warningNoUndo,
+                ].map((line) => (
+                  <li key={line} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                    {line}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <label
+              htmlFor="transfer-password"
+              style={{ display: 'block', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)', marginBottom: '6px' }}
+            >
+              {en.wsTransferOwnership.passwordLabel}
+            </label>
+            <input
+              id="transfer-password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={en.wsTransferOwnership.passwordPlaceholder}
+              onKeyDown={(e) => e.key === 'Enter' && requestOtp()}
+              autoComplete="current-password"
+              style={{ ...inputStyle, marginBottom: '12px' }}
+              autoFocus
+            />
+
             {error && (
               <p style={{ fontSize: '13px', fontFamily: 'Plus Jakarta Sans, sans-serif', color: 'var(--danger)', marginBottom: '12px' }}>{error}</p>
             )}
@@ -175,16 +240,17 @@ function TransferOwnershipModal({ slug, target, onDone, onCancel }: TransferModa
               <button
                 type="button"
                 onClick={requestOtp}
-                disabled={loading}
+                disabled={loading || !password}
                 style={{
                   flex: 1, height: '44px',
                   background: 'var(--danger)', color: '#fff', border: 'none',
                   borderRadius: 'var(--radius-md)', fontSize: '14px',
                   fontFamily: 'Plus Jakarta Sans, sans-serif', fontWeight: 500,
-                  cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1,
+                  cursor: (loading || !password) ? 'not-allowed' : 'pointer',
+                  opacity: (loading || !password) ? 0.7 : 1,
                 }}
               >
-                {loading ? en.wsTransferOwnership.sendingCodeBtn : en.wsTransferOwnership.sendCodeBtn}
+                {loading ? en.wsTransferOwnership.continuingBtn : en.wsTransferOwnership.continueBtn}
               </button>
               <button
                 type="button"
@@ -279,6 +345,7 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
   // is allowed to grant, so the dropdown can never offer something the API
   // would reject - the API re-checks regardless.
   const [roleOptions, setRoleOptions] = useState<{ assignableRoles: RoleOption[]; roleNames: Record<string, string> }>({ assignableRoles: [], roleNames: {} });
+  const [viewerPermissions, setViewerPermissions] = useState<ViewerPermissions>({ transferOwnership: false });
   const [roleModal, setRoleModal] = useState<{ member: Member; roleKey: string; saving: boolean; error: string | null } | null>(null);
 
   const loadMembers = useCallback(
@@ -307,6 +374,9 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
         setRoleOptions({
           assignableRoles: (data.assignableRoles ?? []) as RoleOption[],
           roleNames: (data.roleNames ?? {}) as Record<string, string>,
+        });
+        setViewerPermissions({
+          transferOwnership: data.permissions?.transferOwnership === true,
         });
       }
       if (append) setLoadingMore(false);
@@ -679,7 +749,19 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
                               value={m.role}
                               onChange={(e) => {
                                 const next = e.target.value
-                                if (next !== m.role) setRoleModal({ member: m, roleKey: next, saving: false, error: null })
+                                if (next === m.role) return
+                                // Ownership is a TRANSFER, not an assignment: it
+                                // swaps two rows and demotes the person doing it,
+                                // so it goes through the OTP flow instead of the
+                                // role-change modal. PATCH .../role rejects
+                                // 'owner' outright, so this is the only path.
+                                // The select is controlled by m.role, so it snaps
+                                // back on the re-render if the modal is cancelled.
+                                if (next === 'owner') {
+                                  if (viewerPermissions.transferOwnership) setTransferTarget(m)
+                                  return
+                                }
+                                setRoleModal({ member: m, roleKey: next, saving: false, error: null })
                               }}
                               aria-label={en.wsPeople.roleSelectAria}
                               style={{ height: '32px', minWidth: '104px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-0)', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--navy)', padding: '0 6px', cursor: 'pointer' }}
@@ -706,11 +788,6 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
                           )}
                           {m.user_id && m.status === 'active' && m.employee_record_id && (
                             <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', textDecoration: 'none' }}>{en.wsPeople.editLink}</Link>
-                          )}
-                          {!isWorkspaceAdmin(m.role) && m.status === 'active' && (
-                            <button onClick={() => setTransferTarget(m)} title={en.wsPeople.makeOwnerTitle} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)', fontSize: '11px', fontFamily: 'Plus Jakarta Sans, sans-serif', cursor: 'pointer', padding: '3px 8px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                              <KeyRound size={13} /> {en.wsPeople.makeOwnerLabel}
-                            </button>
                           )}
                           {!isWorkspaceAdmin(m.role) && (
                             <button onClick={() => remove(m.member_id)} disabled={removingId === m.member_id} title={en.wsPeople.removeTitle} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: removingId === m.member_id ? 'not-allowed' : 'pointer', opacity: removingId === m.member_id ? 0.5 : 1, padding: '0 2px', display: 'flex', alignItems: 'center' }}>

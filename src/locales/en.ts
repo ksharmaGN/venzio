@@ -410,8 +410,24 @@ export const en = {
   /** Transfer ownership modal (src/app/ws/[slug]/people/PeopleClient.tsx) */
   wsTransferOwnership: {
     title: "Transfer ownership",
-    confirmBodyPrefix: "You are about to transfer admin ownership of this workspace to",
-    confirmBodySuffix: "You will become a regular member. This action requires verification.",
+    confirmBodyPrefix: "You are about to transfer ownership of this workspace to",
+    confirmBodySuffix: "Confirm your password to continue.",
+
+    /** Destructive warning callout - step 1 of the transfer modal. */
+    warningTitle: "This cannot be undone.",
+    warningTheyGain:
+      "They get full control of this workspace, including billing, archiving it, and transferring ownership again.",
+    warningYouLose:
+      "You immediately become a regular member and lose all admin access to this workspace.",
+    warningNoUndo:
+      "Only the new owner can give your access back. There is no way to reverse this yourself.",
+
+    passwordLabel: "Your password",
+    passwordPlaceholder: "Enter your account password",
+    continueBtn: "Verify and send code",
+    continuingBtn: "Verifying…",
+    errorPasswordRequired: "Enter your password to continue",
+
     otpBodyPrefix: "Enter the 6-digit code sent to",
     otpBodySuffix: "to confirm the transfer.",
     otpPlaceholder: "6-digit code",

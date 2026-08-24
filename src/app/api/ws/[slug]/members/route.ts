@@ -38,11 +38,26 @@ export async function GET(request: NextRequest, { params }: Props) {
   // an option that the server would reject - and the server re-checks anyway,
   // because a hidden option is still a craftable request.
   const mayAssign = can(ctx.role.permissions, 'members.role', 'write')
-  const assignableRoles = mayAssign
-    ? allRoles
-        .filter((r) => canGrant(ctx.role.key, r.key))
-        .map((r) => ({ key: r.key, name: r.name, description: r.description }))
+  const mayTransferOwnership = can(ctx.role.permissions, 'ownership', 'write')
+
+  const grantable = mayAssign
+    ? allRoles.filter((r) => canGrant(ctx.role.key, r.key))
     : []
+
+  // `owner` is a deliberate special case and can never arrive via the rank
+  // filter above: canGrant requires STRICTLY greater rank, so owner→owner is
+  // false and nobody can "grant" ownership. It is appended for holders of
+  // `ownership:write` because picking it in the dropdown does not assign a
+  // role at all - the People page routes that choice into the OTP-gated
+  // transfer flow. PATCH .../role still rejects 'owner' with USE_TRANSFER, so
+  // a craftable request gains nothing from this option being listed.
+  const ownerRole = mayTransferOwnership
+    ? allRoles.find((r) => r.key === 'owner')
+    : undefined
+
+  const assignableRoles = [...grantable, ...(ownerRole ? [ownerRole] : [])].map(
+    (r) => ({ key: r.key, name: r.name, description: r.description }),
+  )
 
   return NextResponse.json({
     members,
@@ -54,6 +69,11 @@ export async function GET(request: NextRequest, { params }: Props) {
       assignRoles: mayAssign,
       removeMembers: can(ctx.role.permissions, 'members', 'delete'),
       editMembers: can(ctx.role.permissions, 'members', 'write'),
+      // Owner-only in the seeded grids - admins deliberately lack
+      // `ownership:write` so they cannot hand the workspace to themselves.
+      // Drives whether `owner` appears in assignableRoles above, and is
+      // re-checked by POST /transfer-ownership.
+      transferOwnership: mayTransferOwnership,
     },
     pagination: {
       offset,
