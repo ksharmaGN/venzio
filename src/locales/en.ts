@@ -58,6 +58,25 @@ export const en = {
   workspace: {
     // Used on /ws and /ws/:slug pages
     brandLogo: brand,
+    pageTitle: "Workspace",
+  },
+
+  /** /me/orgs workspace list */
+  meOrgs: {
+    leaveConfirm: (wsName: string) =>
+      `Leave ${wsName}? You will no longer appear in their presence dashboard.`,
+    leaveError: "Could not leave workspace",
+    leaveFallbackName: "this workspace",
+    leavingBtn: "Leaving…",
+    leaveBtn: "Leave",
+    pendingInvitesTitle: "Pending invitations",
+    pendingInviteBody: "Wants to include your presence events in their dashboard.",
+    acceptBtn: "Accept",
+    declineBtn: "Decline",
+    activeTitle: "Active",
+    emptyTitle: "You're not part of any workspace yet.",
+    emptyBody: "Your employer needs to add you, or you'll be auto-enrolled if your email domain matches.",
+    createLink: "Or create your own workspace →",
   },
 
   /** Member workspace Today accordion (/me/ws/[slug]) */
@@ -103,6 +122,8 @@ export const en = {
     applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
     applyLeaveErrorHoliday: (names: string) =>
       `Leave cannot be applied on company holidays: ${names}.`,
+    applyLeaveHolidayWarning: (names: string) =>
+      `⚠ Your dates include company holidays: ${names}. Please adjust your dates.`,
     myLeavesEmpty: "No leave requests yet.",
     myLeavesActive: "Active",
     myLeavesUpcoming: "Upcoming",
@@ -325,9 +346,100 @@ export const en = {
   },
 
   wsPeople: {
+    pageTitle: "People",
     viewMore: "View more",
     loadingMore: "Loading more…",
     regularizationSectionTitle: "Regularization requests",
+
+    /** Invite panel */
+    inviteSectionTitle: "Invite someone",
+    inviteHelperText:
+      "They'll receive an email with an accept/decline link. Their presence data only flows to this workspace after they accept.",
+    invitePlaceholder: "colleague@company.com",
+    inviteSubmitting: "…",
+    inviteSubmit: "Send invite",
+    inviteSuccess: (email: string) => `Invite sent to ${email}`,
+    inviteError: "Failed to send invite",
+
+    /** People table */
+    peopleCount: (n: number) => `People (${n})`,
+    searchPlaceholder: "Search name or email",
+    searchButtonTitle: "Search",
+    emptyTitle: "No members yet.",
+    emptyBody: "Use the invite form above to add your team.",
+    colEmployee: "Employee",
+    colDesignation: "Designation",
+    colDepartment: "Department",
+    colWorkMode: "Work mode",
+    colJoined: "Joined",
+    colStatus: "Status",
+    workModeOffice: "On-site",
+    workModeRemote: "Remote",
+    workModeHybrid: "Hybrid",
+    statusOnboarding: "Onboarding",
+    statusProbation: "Probation",
+    statusActive: "Active",
+    statusInviteSent: "Invite sent",
+    statusDeclined: "Declined",
+    setUpLink: "+ Set up",
+    editLink: "Edit",
+    makeOwnerTitle: "Make owner",
+    makeOwnerLabel: "Owner",
+    removeTitle: "Remove",
+    removeConfirm: "Remove this member?",
+
+    /** Role assignment (owner only) */
+    roleColumn: "Role",
+    roleSelectAria: "Change this member's role",
+    roleModalTitle: (name: string) => `Change ${name}'s role?`,
+    roleModalTo: (role: string) => `They will become ${role}.`,
+    roleAdminGains:
+      "Can manage members, employee records, holidays, leave, approvals, signals, domains and workspace settings.",
+    roleAdminLimits:
+      "Cannot transfer ownership, archive the workspace, change billing, or assign roles.",
+    roleMemberEffect:
+      "Loses access to the workspace dashboard entirely. They keep their own timeline on /me.",
+    roleAppliesImmediately:
+      "Applies immediately — they do not need to sign in again.",
+    roleConfirmButton: "Change role",
+    roleSavingButton: "Saving…",
+    roleCancelButton: "Cancel",
+    roleChangeFailed: "Could not change the role. Please try again.",
+  },
+
+  /** Transfer ownership modal (src/app/ws/[slug]/people/PeopleClient.tsx) */
+  wsTransferOwnership: {
+    title: "Transfer ownership",
+    confirmBodyPrefix: "You are about to transfer ownership of this workspace to",
+    confirmBodySuffix: "Confirm your password to continue.",
+
+    /** Destructive warning callout - step 1 of the transfer modal. */
+    warningTitle: "This cannot be undone.",
+    warningTheyGain:
+      "They get full control of this workspace, including billing, archiving it, and transferring ownership again.",
+    warningYouLose:
+      "You immediately become a regular member and lose all admin access to this workspace.",
+    warningNoUndo:
+      "Only the new owner can give your access back. There is no way to reverse this yourself.",
+
+    passwordLabel: "Your password",
+    passwordPlaceholder: "Enter your account password",
+    continueBtn: "Verify and send code",
+    continuingBtn: "Verifying…",
+    errorPasswordRequired: "Enter your password to continue",
+
+    otpBodyPrefix: "Enter the 6-digit code sent to",
+    otpBodySuffix: "to confirm the transfer.",
+    otpPlaceholder: "6-digit code",
+    sendCodeBtn: "Send verification code",
+    sendingCodeBtn: "Sending code…",
+    cancelBtn: "Cancel",
+    confirmBtn: "Confirm transfer",
+    transferringBtn: "Transferring…",
+    successMsg: (adminName: string) =>
+      `Ownership transferred to ${adminName}. You are now a member.`,
+    errorRequestFailed: "Failed to send verification code",
+    errorTransferFailed: "Transfer failed",
   },
 
   /** Shared admin approval row (Overview widget, /ws/[slug]/approvals, People page section) */

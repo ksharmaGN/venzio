@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { getAllOpeningBalances } from '@/lib/db/queries/leaves'
 
 interface Props { params: Promise<{ slug: string }> }
@@ -8,7 +8,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(req, slug)
+  const ctx = await requireWsAccess(req, slug, 'leaves', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const balances = await getAllOpeningBalances(ctx.workspace.id)

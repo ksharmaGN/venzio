@@ -175,7 +175,7 @@ export async function getActiveWorkspaceAdmins(workspaceId: string, excludeUserI
   return db.query<{ user_id: string }>(
     `SELECT wm.user_id FROM workspace_members wm
      JOIN users u ON u.id = wm.user_id
-     WHERE wm.workspace_id = ? AND wm.role = 'admin' AND wm.status = 'active' AND u.deleted_at IS NULL
+     WHERE wm.workspace_id = ? AND wm.role IN ('owner','admin') AND wm.status = 'active' AND u.deleted_at IS NULL
      ${excludeUserId ? 'AND wm.user_id != ?' : ''}`,
     excludeUserId ? [workspaceId, excludeUserId] : [workspaceId],
   )
@@ -284,15 +284,17 @@ export async function getAdminWorkspacesForUser(userId: string): Promise<Workspa
   return db.query<Workspace>(
     `SELECT w.* FROM workspaces w
      JOIN workspace_members wm ON wm.workspace_id = w.id
-     WHERE wm.user_id = ? AND wm.role = 'admin' AND wm.status = 'active' AND w.archived_at IS NULL
+     WHERE wm.user_id = ? AND wm.role IN ('owner','admin') AND wm.status = 'active' AND w.archived_at IS NULL
      ORDER BY w.created_at ASC`,
     [userId]
   )
 }
 
 /**
- * Returns active (non-archived) workspaces where the given user is the ONLY
- * active admin. Used to block account deactivation.
+ * Returns active (non-archived) workspaces the user OWNS. Used to block
+ * account deactivation - deactivating would leave those workspaces with nobody
+ * who can transfer, archive, or manage billing. Having other admins does not
+ * help: admins deliberately cannot do any of those things.
  *
  * Archived workspaces are excluded - a deactivated account is fine as the
  * owner of an archived workspace since it can't affect any running team.
@@ -301,12 +303,8 @@ export async function getSoleAdminWorkspaces(userId: string): Promise<Workspace[
   return db.query<Workspace>(
     `SELECT w.* FROM workspaces w
      JOIN workspace_members wm ON wm.workspace_id = w.id
-     WHERE wm.user_id = ? AND wm.role = 'admin' AND wm.status = 'active'
-       AND w.archived_at IS NULL
-       AND (
-         SELECT COUNT(*) FROM workspace_members wm2
-         WHERE wm2.workspace_id = w.id AND wm2.role = 'admin' AND wm2.status = 'active'
-       ) = 1`,
+     WHERE wm.user_id = ? AND wm.role = 'owner' AND wm.status = 'active'
+       AND w.archived_at IS NULL`,
     [userId]
   )
 }
@@ -315,7 +313,7 @@ export async function getArchivedAdminWorkspacesForUser(userId: string): Promise
   return db.query<Workspace>(
     `SELECT w.* FROM workspaces w
      JOIN workspace_members wm ON wm.workspace_id = w.id
-     WHERE wm.user_id = ? AND wm.role = 'admin' AND wm.status = 'active' AND w.archived_at IS NOT NULL
+     WHERE wm.user_id = ? AND wm.role IN ('owner','admin') AND wm.status = 'active' AND w.archived_at IS NOT NULL
      ORDER BY w.archived_at DESC`,
     [userId]
   )
@@ -356,12 +354,14 @@ export async function getMembershipsByEmail(email: string): Promise<WorkspaceMem
 }
 
 export async function leaveWorkspace(workspaceId: string, userId: string): Promise<boolean> {
-  // Cannot leave if you are the sole admin
-  const admins = await db.query<{ user_id: string }>(
-    `SELECT user_id FROM workspace_members WHERE workspace_id = ? AND role = 'admin' AND status = 'active'`,
-    [workspaceId]
+  // The owner can NEVER leave - a workspace without an owner has no one who can
+  // transfer it, archive it, or manage billing. They must transfer ownership
+  // first. Admins may leave freely; the owner is always still there.
+  const self = await db.queryOne<{ role: string }>(
+    `SELECT role FROM workspace_members WHERE workspace_id = ? AND user_id = ? AND status = 'active'`,
+    [workspaceId, userId]
   )
-  if (admins.length === 1 && admins[0].user_id === userId) return false
+  if (self?.role === 'owner') return false
   await db.execute(
     `UPDATE workspace_members SET status = 'revoked' WHERE workspace_id = ? AND user_id = ?`,
     [workspaceId, userId]

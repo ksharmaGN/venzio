@@ -1,35 +1,80 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess, forbidden } from '@/lib/ws-access'
 import {
   getAllMembersWithDetailsPaged,
   getWorkspaceDomains,
   getWorkspaceMemberByEmail,
   upsertInvitedMember,
 } from "@/lib/db/queries/workspaces";
+import { listWorkspaceRoles } from '@/lib/db/queries/roles'
+import { can } from '@/lib/permissions/can'
+import { canGrant } from '@/lib/permissions/ranks'
 import { sendConsentEmail } from '@/lib/email'
 
 interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
-  if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
+  const ctx = await requireWsAccess(request, slug, 'members', 'read')
+  if (!ctx) return forbidden()
 
   const sp = request.nextUrl.searchParams;
   const limit = Math.min(parseInt(sp.get("limit") ?? "10", 10), 100);
   const offset = Math.max(0, parseInt(sp.get("offset") ?? "0", 10));
   const search = sp.get("search") ?? "";
 
-  const { members, total } = await getAllMembersWithDetailsPaged({
-    workspaceId: ctx.workspace.id,
-    limit,
-    offset,
-    search,
-  });
+  const [{ members, total }, allRoles] = await Promise.all([
+    getAllMembersWithDetailsPaged({
+      workspaceId: ctx.workspace.id,
+      limit,
+      offset,
+      search,
+    }),
+    listWorkspaceRoles(ctx.workspace.id),
+  ]);
+
+  // Only offer roles the caller is actually allowed to hand out, and only when
+  // their role permits assigning at all. The dropdown therefore never renders
+  // an option that the server would reject - and the server re-checks anyway,
+  // because a hidden option is still a craftable request.
+  const mayAssign = can(ctx.role.permissions, 'members.role', 'write')
+  const mayTransferOwnership = can(ctx.role.permissions, 'ownership', 'write')
+
+  const grantable = mayAssign
+    ? allRoles.filter((r) => canGrant(ctx.role.key, r.key))
+    : []
+
+  // `owner` is a deliberate special case and can never arrive via the rank
+  // filter above: canGrant requires STRICTLY greater rank, so owner→owner is
+  // false and nobody can "grant" ownership. It is appended for holders of
+  // `ownership:write` because picking it in the dropdown does not assign a
+  // role at all - the People page routes that choice into the OTP-gated
+  // transfer flow. PATCH .../role still rejects 'owner' with USE_TRANSFER, so
+  // a craftable request gains nothing from this option being listed.
+  const ownerRole = mayTransferOwnership
+    ? allRoles.find((r) => r.key === 'owner')
+    : undefined
+
+  const assignableRoles = [...grantable, ...(ownerRole ? [ownerRole] : [])].map(
+    (r) => ({ key: r.key, name: r.name, description: r.description }),
+  )
 
   return NextResponse.json({
     members,
     total,
+    viewerRole: { key: ctx.role.key, name: ctx.role.name },
+    assignableRoles,
+    roleNames: Object.fromEntries(allRoles.map((r) => [r.key, r.name])),
+    permissions: {
+      assignRoles: mayAssign,
+      removeMembers: can(ctx.role.permissions, 'members', 'delete'),
+      editMembers: can(ctx.role.permissions, 'members', 'write'),
+      // Owner-only in the seeded grids - admins deliberately lack
+      // `ownership:write` so they cannot hand the workspace to themselves.
+      // Drives whether `owner` appears in assignableRoles above, and is
+      // re-checked by POST /transfer-ownership.
+      transferOwnership: mayTransferOwnership,
+    },
     pagination: {
       offset,
       limit,
@@ -41,7 +86,7 @@ export async function GET(request: NextRequest, { params }: Props) {
 
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'members', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: { email?: string }

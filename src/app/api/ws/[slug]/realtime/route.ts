@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import { queryWorkspaceEvents } from '@/lib/signals'
 import { getSignalConfigs } from '@/lib/db/queries/workspaces'
 
@@ -25,7 +25,7 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'dashboard', 'read')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const now = Date.now()

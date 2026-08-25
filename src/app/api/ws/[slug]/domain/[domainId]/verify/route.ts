@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { requireWsAdmin } from '@/lib/ws-admin'
+import { requireWsAccess } from '@/lib/ws-access'
 import {
   getWorkspaceDomains,
   markDomainVerified,
@@ -12,7 +12,7 @@ interface Props { params: Promise<{ slug: string; domainId: string }> }
 
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug, domainId } = await params
-  const ctx = await requireWsAdmin(request, slug)
+  const ctx = await requireWsAccess(request, slug, 'domains', 'write')
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const domains = await getWorkspaceDomains(ctx.workspace.id)

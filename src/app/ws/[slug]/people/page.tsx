@@ -2,6 +2,8 @@ import { notFound, redirect } from 'next/navigation'
 import { getSessionFromCookies } from '@/lib/auth'
 import { getWorkspaceBySlug, getWorkspaceMember } from '@/lib/db/queries/workspaces'
 import PeopleClient from './PeopleClient'
+import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
+import { en } from '@/locales/en'
 
 interface Props {
   params: Promise<{ slug: string }>
@@ -17,7 +19,7 @@ export default async function PeoplePage({ params }: Props) {
   if (!workspace) notFound()
 
   const membership = await getWorkspaceMember(workspace.id, session.sub)
-  if (!membership || membership.role !== 'admin' || membership.status !== 'active') {
+  if (!membership || !isWorkspaceAdmin(membership.role) || membership.status !== 'active') {
     redirect('/me')
   }
 
@@ -33,9 +35,9 @@ export default async function PeoplePage({ params }: Props) {
           marginBottom: '20px',
         }}
       >
-        People
+        {en.wsPeople.pageTitle}
       </h1>
-      <PeopleClient slug={slug} />
+      <PeopleClient slug={slug} viewerUserId={session.sub} />
     </div>
     </div>
   )
