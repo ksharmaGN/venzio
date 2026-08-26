@@ -6,7 +6,7 @@ import { Lock, Search, Trash2 } from "lucide-react";
 import type { ApprovalItem } from "@/lib/approvals";
 import { ApprovalRow } from "@/components/ws/ApprovalRow";
 import { en } from "@/locales/en";
-import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
+import { canManage } from '@/lib/permissions/ranks'
 
 interface Member {
   member_id: string
@@ -29,6 +29,12 @@ interface RoleOption {
   key: string
   name: string
   description: string | null
+  /**
+   * Not a plain role assignment. Today only `owner`, which routes into the
+   * OTP-gated transfer flow rather than PATCH .../role. Rendered greyed with a
+   * padlock so it reads as special before it is picked.
+   */
+  restricted?: boolean
 }
 
 /**
@@ -38,6 +44,7 @@ interface RoleOption {
  */
 interface ViewerPermissions {
   transferOwnership: boolean
+  removeMembers: boolean
 }
 
 const AVATAR_COLORS = ['#4F46E5','#0EA5E9','#10B981','#F59E0B','#EF4444','#8B5CF6','#EC4899','#06B6D4']
@@ -345,7 +352,8 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
   // is allowed to grant, so the dropdown can never offer something the API
   // would reject - the API re-checks regardless.
   const [roleOptions, setRoleOptions] = useState<{ assignableRoles: RoleOption[]; roleNames: Record<string, string> }>({ assignableRoles: [], roleNames: {} });
-  const [viewerPermissions, setViewerPermissions] = useState<ViewerPermissions>({ transferOwnership: false });
+  const [viewerPermissions, setViewerPermissions] = useState<ViewerPermissions>({ transferOwnership: false, removeMembers: false });
+  const [viewerRoleKey, setViewerRoleKey] = useState<string>('member');
   const [roleModal, setRoleModal] = useState<{ member: Member; roleKey: string; saving: boolean; error: string | null } | null>(null);
 
   const loadMembers = useCallback(
@@ -377,7 +385,9 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
         });
         setViewerPermissions({
           transferOwnership: data.permissions?.transferOwnership === true,
+          removeMembers: data.permissions?.removeMembers === true,
         });
+        setViewerRoleKey(data.viewerRole?.key ?? 'member');
       }
       if (append) setLoadingMore(false);
       else setLoading(false);
@@ -767,7 +777,20 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
                               style={{ height: '32px', minWidth: '104px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'var(--surface-0)', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--navy)', padding: '0 6px', cursor: 'pointer' }}
                             >
                               {roleOptions.assignableRoles.map((r) => (
-                                <option key={r.key} value={r.key}>{r.name}</option>
+                                <option
+                                  key={r.key}
+                                  value={r.key}
+                                  // A native <option> cannot host an SVG, so the
+                                  // padlock is a text glyph. Grey marks it as
+                                  // set apart from the ordinary roles above it.
+                                  style={r.restricted
+                                    ? { color: 'var(--text-muted)' }
+                                    : undefined}
+                                >
+                                  {r.restricted
+                                    ? en.wsPeople.restrictedRoleOption(r.name)
+                                    : r.name}
+                                </option>
                               ))}
                             </select>
                           )
@@ -789,7 +812,15 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
                           {m.user_id && m.status === 'active' && m.employee_record_id && (
                             <Link href={`/ws/${slug}/people/${m.user_id}/details`} style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-secondary)', textDecoration: 'none' }}>{en.wsPeople.editLink}</Link>
                           )}
-                          {!isWorkspaceAdmin(m.role) && (
+                          {/* Two independent conditions, both required: does
+                              this viewer hold members:delete at all, and does
+                              rank let them act on THIS person? Testing the
+                              target's role alone showed the button to roles
+                              that cannot use it, and hid it from roles that
+                              can. DELETE re-checks both. */}
+                          {viewerPermissions.removeMembers &&
+                            canManage(viewerRoleKey, m.role) &&
+                            m.user_id !== viewerUserId && (
                             <button onClick={() => remove(m.member_id)} disabled={removingId === m.member_id} title={en.wsPeople.removeTitle} style={{ background: 'none', border: 'none', color: 'var(--danger)', cursor: removingId === m.member_id ? 'not-allowed' : 'pointer', opacity: removingId === m.member_id ? 0.5 : 1, padding: '0 2px', display: 'flex', alignItems: 'center' }}>
                               <Trash2 size={14} />
                             </button>

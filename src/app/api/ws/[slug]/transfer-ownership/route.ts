@@ -18,6 +18,7 @@ import {
 import { generateOtp, otpExpiresAt, verifyPassword } from '@/lib/auth'
 import { sendOtpEmail } from '@/lib/email'
 import { isWorkspaceOwner } from '@/lib/permissions/ranks'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -45,7 +46,7 @@ const PASSWORD_WINDOW_MINUTES = 15
  */
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'ownership', 'write')
+  const ctx = await requireWsAccess(request, slug, Resource.Ownership, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: { action?: string; targetMemberId?: string; code?: string; password?: string }

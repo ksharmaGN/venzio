@@ -3,12 +3,13 @@ import { requireWsAccess } from '@/lib/ws-access'
 import { getSignalConfigs, addSignalConfig, updateWorkspace } from '@/lib/db/queries/workspaces'
 import { timezoneFromCoords } from '@/lib/timezone-server'
 import { getIpGeo, extractIp } from '@/lib/geo'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'signals', 'read')
+  const ctx = await requireWsAccess(request, slug, Resource.Signals, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const signals = await getSignalConfigs(ctx.workspace.id)
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest, { params }: Props) {
 
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'signals', 'write')
+  const ctx = await requireWsAccess(request, slug, Resource.Signals, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: {

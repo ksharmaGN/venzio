@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireWsAccess } from '@/lib/ws-access'
 import { getPendingApprovalItems, type ApprovalItem } from '@/lib/approvals'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -11,7 +12,7 @@ export interface ApprovalsResponse {
 
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'approvals', 'read')
+  const ctx = await requireWsAccess(request, slug, Resource.Approvals, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const url = new URL(request.url)

@@ -6,23 +6,29 @@ import {
 } from '@/lib/db/queries/workspaces'
 import { getRoleByKey } from '@/lib/db/queries/roles'
 import { canManage, canGrant } from '@/lib/permissions/ranks'
+import { guardEscalation } from '@/lib/permissions/guards'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string; memberId: string }> }
 
 /**
  * PATCH /api/ws/[slug]/members/[memberId]/role   body: { role: "admin" }
  *
- * Assign a role to a member. Guarded on TWO axes, both required:
+ * Assign a role to a member. Guarded on THREE axes, all required:
  *
  *   1. can(...'members.role','write')  - does the caller's role permit
- *      assigning roles at all? Only the owner holds this.
+ *      assigning roles at all?
  *   2. rank - is the TARGET below the caller, AND is the role being GRANTED
  *      also below the caller? Without the second check an admin could promote
  *      someone to owner and be promoted straight back.
+ *   3. grid - are the GRANTED role's permissions a subset of the caller's?
+ *      Rank cannot answer this: every custom role shares CUSTOM_ROLE_RANK, so
+ *      rank alone lets any custom role with this permission hand out any other
+ *      custom role, however powerful.
  */
 export async function PATCH(request: NextRequest, { params }: Props) {
   const { slug, memberId } = await params
-  const ctx = await requireWsAccess(request, slug, 'members.role', 'write')
+  const ctx = await requireWsAccess(request, slug, Resource.AssignRoles, Action.Write)
   if (!ctx) return forbidden()
 
   let body: { role?: string }
@@ -84,6 +90,22 @@ export async function PATCH(request: NextRequest, { params }: Props) {
   if (!canGrant(ctx.role.key, newRoleKey)) {
     return NextResponse.json(
       { error: 'You cannot grant a role at or above your own', code: 'RANK_TOO_LOW' },
+      { status: 403 },
+    )
+  }
+
+  // Rank alone is not a ceiling. Every custom role shares CUSTOM_ROLE_RANK, so
+  // canGrant lets any custom role hand out any other one - and an admin outranks
+  // a custom role holding `ownership`, which no admin has. The grid is the real
+  // ceiling: you may only hand out a role whose permissions you already hold.
+  //
+  // Same guard the roles builder runs on create/edit. Without it here, the
+  // builder's escalation check is trivially bypassed by assigning the role
+  // instead of writing it.
+  const escalation = guardEscalation(ctx.role.permissions, newRole.permissions)
+  if (escalation) {
+    return NextResponse.json(
+      { error: escalation.message, code: escalation.code },
       { status: 403 },
     )
   }

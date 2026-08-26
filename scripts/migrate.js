@@ -196,68 +196,18 @@ CREATE INDEX IF NOT EXISTS idx_rate_limit_key_action ON rate_limit_log(key, acti
 
 // ─── System role seeds ────────────────────────────────────────────────────────
 //
-// DUPLICATED FROM src/lib/permissions/catalogue.ts ON PURPOSE.
-// This script is CommonJS and cannot import TypeScript, so the grids live in
-// two places. If you add a resource to the catalogue and want owner/admin to
-// hold it, update BOTH files. Nothing checks this for you.
+// Read from src/lib/permissions/system-roles.json - the SAME file the app reads
+// via src/lib/permissions/system-roles.ts. Plain JSON precisely so this
+// CommonJS script and the TypeScript app can share one definition: they used to
+// be separate copies, and the app half was never written, which shipped every
+// newly created workspace with no roles at all.
 //
-// admin = owner minus the things that destroy data or take the workspace away:
-// no `ownership` (transfer / archive / billing) and no `members.role`.
-// member  = deliberately empty. Members live on /me and have no org access.
+// admin = owner minus the things that take the workspace away: no `ownership`
+// (transfer / archive / billing).
+// member = deliberately empty. Members live on /me and have no org access.
 
-const SYSTEM_ROLE_SEED = [
-  {
-    key: 'owner',
-    name: 'Owner',
-    description: 'Full control, including ownership, billing and deleting the workspace.',
-    scope: 'all',
-    permissions: {
-      dashboard: ['read'],
-      analytics: ['read'],
-      activity: ['read'],
-      export: ['read'],
-      members: ['read', 'write', 'delete'],
-      employees: ['read', 'write', 'delete'],
-      holidays: ['read', 'write', 'delete'],
-      leaves: ['read', 'write', 'delete'],
-      approvals: ['read', 'write'],
-      signals: ['read', 'write', 'delete'],
-      domains: ['read', 'write', 'delete'],
-      settings: ['read', 'write'],
-      'members.role': ['write'],
-      roles: ['read', 'write', 'delete'],
-      ownership: ['write', 'delete'],
-    },
-  },
-  {
-    key: 'admin',
-    name: 'Admin',
-    description: 'Runs the workspace day to day. Cannot transfer ownership, archive the workspace, change billing, or assign roles.',
-    scope: 'all',
-    permissions: {
-      dashboard: ['read'],
-      analytics: ['read'],
-      activity: ['read'],
-      export: ['read'],
-      members: ['read', 'write', 'delete'],
-      employees: ['read', 'write', 'delete'],
-      holidays: ['read', 'write', 'delete'],
-      leaves: ['read', 'write', 'delete'],
-      approvals: ['read', 'write'],
-      signals: ['read', 'write', 'delete'],
-      domains: ['read', 'write', 'delete'],
-      settings: ['read', 'write'],
-      roles: ['read'],
-    },
-  },
-  {
-    key: 'member',
-    name: 'Member',
-    description: 'Records their own presence. No access to the org dashboard.',
-    scope: 'self',
-    permissions: {},
-  },
-]
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const SYSTEM_ROLE_SEED = require("../src/lib/permissions/system-roles.json");
 
 /**
  * Seed the three system roles into every workspace, then backfill owners.
@@ -275,7 +225,7 @@ const SYSTEM_ROLE_SEED = [
  */
 async function seedRolesAndOwners(all, exec) {
   const workspaces = await all(`SELECT id FROM workspaces`)
-  let seeded = 0, owners = 0, ownerless = 0
+  let seeded = 0, refreshed = 0, owners = 0, ownerless = 0
 
   for (const ws of workspaces) {
     for (const role of SYSTEM_ROLE_SEED) {
@@ -286,6 +236,27 @@ async function seedRolesAndOwners(all, exec) {
         [ws.id, role.key, role.name, role.description, JSON.stringify(role.permissions), role.scope]
       )
       if (res && res.changes) seeded += res.changes
+
+      // Refresh the grid on rows that already exist. The three system roles are
+      // Venzio's to define - when their permissions change (or a new resource is
+      // added to the catalogue) every workspace must pick it up, not just the
+      // ones created after the change. Scoped by key, so custom roles the
+      // customer created are never touched.
+      const upd = await exec(
+        `UPDATE workspace_roles
+            SET description = ?, permissions = ?, scope = ?, updated_at = datetime('now')
+          WHERE workspace_id = ? AND key = ? AND deleted_at IS NULL
+            AND permissions != ?`,
+        [
+          role.description,
+          JSON.stringify(role.permissions),
+          role.scope,
+          ws.id,
+          role.key,
+          JSON.stringify(role.permissions),
+        ]
+      )
+      if (upd && upd.changes) refreshed += upd.changes
     }
 
     const existingOwner = await all(
@@ -311,7 +282,7 @@ async function seedRolesAndOwners(all, exec) {
   }
 
   console.log(
-    `✓ Roles seeded - ${workspaces.length} workspace(s), ${seeded} role row(s) inserted, ${owners} owner(s) backfilled`
+    `✓ Roles seeded - ${workspaces.length} workspace(s), ${seeded} inserted, ${refreshed} system grid(s) refreshed, ${owners} owner(s) backfilled`
   )
   if (ownerless > 0) {
     console.warn(

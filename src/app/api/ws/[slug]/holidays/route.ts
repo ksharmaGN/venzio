@@ -10,6 +10,7 @@ import {
 } from '@/lib/db/queries/holidays'
 import type { HolidayImportRow } from '@/lib/db/queries/holidays'
 import { parseRawStr } from '@/lib/constants'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -20,7 +21,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'holidays', 'read')
+  const ctx = await requireWsAccess(req, slug, Resource.Holidays, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const yearParam = req.nextUrl.searchParams.get('year')
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest, { params }: Props) {
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'holidays', 'write')
+  const ctx = await requireWsAccess(req, slug, Resource.Holidays, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const contentType = req.headers.get('content-type') ?? ''

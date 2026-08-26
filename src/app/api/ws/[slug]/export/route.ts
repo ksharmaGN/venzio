@@ -14,6 +14,7 @@ import {
   nextDateKey,
 } from '@/lib/attendance-summary'
 import { localMidnightToUtc, todayInTz } from '@/lib/timezone'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -58,7 +59,7 @@ function cellFill(status: string | undefined, isWeekend: boolean): ExcelJS.Fill 
 
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'export', 'read')
+  const ctx = await requireWsAccess(request, slug, Resource.Export, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { workspace } = ctx

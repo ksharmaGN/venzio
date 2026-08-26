@@ -7,12 +7,13 @@ import {
   addWorkspaceMember,
 } from '@/lib/db/queries/workspaces'
 import { domainVerifyToken, checkDnsVerification } from '@/lib/domain-verify'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string; domainId: string }> }
 
 export async function POST(request: NextRequest, { params }: Props) {
   const { slug, domainId } = await params
-  const ctx = await requireWsAccess(request, slug, 'domains', 'write')
+  const ctx = await requireWsAccess(request, slug, Resource.Domains, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const domains = await getWorkspaceDomains(ctx.workspace.id)

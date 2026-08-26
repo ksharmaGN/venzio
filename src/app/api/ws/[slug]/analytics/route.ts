@@ -7,6 +7,7 @@ import { haversineMetres } from '@/lib/geo'
 import { countWorkdays, dateKeyInTimezone, isOfficeMatched, nextDateKey, summarizeAttendanceDays } from '@/lib/attendance-summary'
 import { listHolidayDatesInRange } from '@/lib/db/queries/holidays'
 import { localMidnightToUtc, todayInTz } from '@/lib/timezone'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -75,7 +76,7 @@ function countGpsClusters(latlngs: [number, number][]): number {
  */
 export async function GET(request: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'analytics', 'read')
+  const ctx = await requireWsAccess(request, slug, Resource.Analytics, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const url = new URL(request.url)

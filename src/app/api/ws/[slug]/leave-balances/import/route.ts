@@ -8,6 +8,7 @@ import {
   bulkUpsertOpeningBalances,
 } from '@/lib/db/queries/leaves'
 import { parseRawStr, parseRawNum } from '@/lib/constants'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 const MAX_FILE_BYTES = 2 * 1024 * 1024
 
@@ -20,7 +21,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'leaves', 'write')
+  const ctx = await requireWsAccess(req, slug, Resource.Leaves, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let formData: FormData

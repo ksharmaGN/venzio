@@ -9,6 +9,7 @@ import { listEmployeesPaged } from '@/lib/db/queries/employees-list'
 import type { CreateEmployeeInput } from '@/lib/types/employees'
 import { EmployeeStatus } from '@/lib/constants/employees'
 import { validateEmployeeFields } from './_validate'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -16,7 +17,7 @@ interface Props { params: Promise<{ slug: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'employees', 'read')
+  const ctx = await requireWsAccess(req, slug, Resource.Employees, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const sp = req.nextUrl.searchParams
@@ -49,7 +50,7 @@ export async function GET(req: NextRequest, { params }: Props) {
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'employees', 'write')
+  const ctx = await requireWsAccess(req, slug, Resource.Employees, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   let body: Record<string, unknown>
