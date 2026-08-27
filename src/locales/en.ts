@@ -316,6 +316,35 @@ export const en = {
     restoreError: "Restore failed",
   },
 
+  /**
+   * Org-surface navigation labels, keyed by the Screen / ScreenGroup /
+   * SubScreen enums in src/lib/permissions/screens.ts. The sidebar asserts
+   * these against `Record<Screen, string>`, so a screen added to the registry
+   * without a label here is a build error.
+   */
+  wsNav: {
+    groups: {
+      workforce: "Workforce",
+      manage: "Manage",
+    },
+    screens: {
+      overview: "Overview",
+      employees: "Employees",
+      analytics: "Analytics",
+      activity: "Activity",
+      holidays: "Holidays",
+      leave: "Leave",
+      approvals: "Approvals",
+      reports: "Reports",
+      roles: "Roles & Permissions",
+      settings: "Settings",
+    },
+    subScreens: {
+      leaveRequests: "Requests",
+      leaveApplied: "Applied leaves",
+    },
+  },
+
   /** Workspace admin sidebar shell (src/components/ws/WsSidebar.tsx) */
   wsSidebar: {
     signOutTitle: "Sign out?",
@@ -323,6 +352,69 @@ export const en = {
     cancelBtn: "Cancel",
     signOutConfirmBtn: "Sign out",
     signingOutBtn: "Signing out…",
+  },
+
+  /** Roles & Permissions tab (/ws/[slug]/roles) */
+  wsRoles: {
+    pageTitle: "Roles & Permissions",
+    pageSubtitle:
+      "Define what each role can see and change. Roles apply to this workspace only.",
+
+    listHeading: "Roles",
+    newRoleBtn: "+ New role",
+    memberCount: (n: number) => `${n} member${n === 1 ? "" : "s"}`,
+
+    systemLockedBanner: (name: string) =>
+      `${name} is a built-in role and can’t be edited or deleted. Duplicate it to make your own version.`,
+    inUseBanner: (n: number) =>
+      `${n} member${n === 1 ? "" : "s"} ${n === 1 ? "has" : "have"} this role. Changes apply immediately — no re-login.`,
+    unusedBanner: "No one holds this role yet.",
+
+    fieldName: "Role name",
+    fieldNamePlaceholder: "e.g. HR Manager",
+    fieldDescription: "Description",
+    fieldDescriptionPlaceholder: "What is this role for? (optional)",
+
+    colResource: "Resource",
+    colRead: "Read",
+    colWrite: "Write",
+    colDelete: "Delete",
+    colAll: "All",
+    toggleRowAria: (resource: string) => `Toggle every permission on ${resource}`,
+    cellAria: (resource: string, action: string) => `${action} on ${resource}`,
+    notApplicable: "Not available for this resource",
+    impliedRead: "Read is included automatically because Write or Delete is on",
+    beyondYourRole: "You cannot grant a permission you do not hold yourself",
+
+    saveBtn: "Save changes",
+    savingBtn: "Saving…",
+    cancelBtn: "Cancel",
+    duplicateBtn: "Duplicate role",
+    deleteBtn: "Delete role",
+
+    createTitle: "New role",
+    createSubmit: "Create role",
+    creatingSubmit: "Creating…",
+
+    deleteTitle: (name: string) => `Delete the “${name}” role?`,
+    deleteBodyWithMembers: (n: number) =>
+      `${n} member${n === 1 ? "" : "s"} hold${n === 1 ? "s" : ""} this role. They will fall back to Member and immediately lose access to everything this role granted.`,
+    deleteBodyEmpty: "No one currently holds this role.",
+    deleteIrreversible:
+      "This cannot be undone. The role can be recreated, but its permissions will need setting up again.",
+    deleteConfirm: "Delete role",
+    deletingConfirm: "Deleting…",
+
+    emptyStateTitle: "No custom roles yet",
+    emptyStateBody:
+      "Duplicate a built-in role to make your own version, or start from scratch.",
+
+    errorSaveFailed: "Could not save the role. Please try again.",
+    errorCreateFailed: "Could not create the role. Please try again.",
+    errorDeleteFailed: "Could not delete the role. Please try again.",
+    errorNameRequired: "A role name is required.",
+
+    backToRoles: "Roles",
   },
 
   /** /me/timeline workspace filter + per-workspace verification context */
@@ -390,6 +482,12 @@ export const en = {
 
     /** Role assignment (owner only) */
     roleColumn: "Role",
+    /**
+     * A role that is not a plain assignment - today only Owner, which goes
+     * through the ownership transfer flow. The padlock is a text glyph because
+     * a native <option> cannot host an icon component.
+     */
+    restrictedRoleOption: (name: string) => `🔒 ${name}`,
     roleSelectAria: "Change this member's role",
     roleModalTitle: (name: string) => `Change ${name}'s role?`,
     roleModalTo: (role: string) => `They will become ${role}.`,
@@ -440,6 +538,11 @@ export const en = {
       `Ownership transferred to ${adminName}. You are now a member.`,
     errorRequestFailed: "Failed to send verification code",
     errorTransferFailed: "Transfer failed",
+  },
+
+  /** Reports placeholder (/ws/[slug]/reports) */
+  wsReports: {
+    comingSoon: "Coming soon",
   },
 
   /** Shared admin approval row (Overview widget, /ws/[slug]/approvals, People page section) */

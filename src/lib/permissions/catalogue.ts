@@ -1,65 +1,109 @@
 /**
  * The permission catalogue - the single list of what can be permissioned.
  *
- * This file is DATA ONLY. It is imported by client components (the future
- * Roles grid), by route handlers, and by the seed grids below, so it must not
- * pull in server-side logic or database code.
+ * This file is DATA ONLY. It is imported by client components (the Roles
+ * grid), by route handlers and by server-side validation, so it must not pull
+ * in server-side logic or database code.
  *
  * A resource declares which actions are meaningful for it. Anything not
  * declared here does not exist: you cannot "delete" a dashboard, so the
- * dashboard resource simply has no delete action. Server validation and (in
- * phase 2) the checkbox grid both read this list, so they can never disagree
- * about which cells are real.
+ * dashboard resource simply has no delete action. Server validation and the
+ * Roles grid both read this list, so they can never disagree about which cells
+ * are real.
+ *
+ * The SCREEN half of the config - which pages exist and which resource each
+ * one reads - lives next door in ./screens.
  */
 
-export type Action = 'read' | 'write' | 'delete'
+/** Every verb the system can permission. */
+export enum Action {
+  Read = 'read',
+  Write = 'write',
+  Delete = 'delete',
+}
+
+/**
+ * Every resource the system can permission.
+ *
+ * These string values are persisted inside the `permissions` JSON column on
+ * workspace_roles, so changing one is a data migration, not a rename.
+ */
+export enum Resource {
+  Dashboard = 'dashboard',
+  Analytics = 'analytics',
+  Activity = 'activity',
+  Export = 'export',
+
+  Members = 'members',
+  Employees = 'employees',
+  Holidays = 'holidays',
+  Leaves = 'leaves',
+  Approvals = 'approvals',
+  Signals = 'signals',
+  Domains = 'domains',
+  Settings = 'settings',
+
+  // Split out from `Members` deliberately: inviting someone and changing
+  // someone's role are wildly different risk levels. Keeping them on separate
+  // rows means the grid stays three columns wide instead of five.
+  AssignRoles = 'members.role',
+  Roles = 'roles',
+
+  // Transfer ownership, archive/restore, plan and billing.
+  Ownership = 'ownership',
+}
 
 export interface ResourceDef {
-  key: string
-  /** Human label - shown in the phase 2 roles grid. */
+  key: Resource
+  /** Human label - shown as the row heading in the Roles grid. */
   label: string
   actions: readonly Action[]
 }
 
-export const RESOURCES = [
-  { key: 'dashboard', label: 'Dashboard',           actions: ['read'] },
-  { key: 'analytics', label: 'Analytics & insights', actions: ['read'] },
-  { key: 'activity',  label: 'Activity',            actions: ['read'] },
-  { key: 'export',    label: 'Export',              actions: ['read'] },
+const { Read, Write, Delete } = Action
 
-  { key: 'members',   label: 'Members',             actions: ['read', 'write', 'delete'] },
-  { key: 'employees', label: 'Employee records',    actions: ['read', 'write', 'delete'] },
-  { key: 'holidays',  label: 'Holidays',            actions: ['read', 'write', 'delete'] },
-  { key: 'leaves',    label: 'Leave',               actions: ['read', 'write', 'delete'] },
-  { key: 'approvals', label: 'Approvals',           actions: ['read', 'write'] },
-  { key: 'signals',   label: 'Signal config',       actions: ['read', 'write', 'delete'] },
-  { key: 'domains',   label: 'Domains',             actions: ['read', 'write', 'delete'] },
-  { key: 'settings',  label: 'Workspace settings',  actions: ['read', 'write'] },
+/**
+ * Keyed by Resource rather than a bare array so the compiler enforces
+ * exhaustiveness: adding a member to the enum without describing it here is a
+ * build error, not a resource that silently supports no actions.
+ */
+const RESOURCE_DEFS: Record<Resource, ResourceDef> = {
+  [Resource.Dashboard]: { key: Resource.Dashboard, label: 'Dashboard',            actions: [Read] },
+  [Resource.Analytics]: { key: Resource.Analytics, label: 'Analytics & insights', actions: [Read] },
+  [Resource.Activity]:  { key: Resource.Activity,  label: 'Activity',             actions: [Read] },
+  [Resource.Export]:    { key: Resource.Export,    label: 'Export',               actions: [Read] },
 
-  // Split out from `members` deliberately: inviting someone and changing
-  // someone's role are wildly different risk levels. Keeping them on separate
-  // rows means the grid stays three columns wide instead of five.
-  { key: 'members.role', label: 'Assign roles',     actions: ['write'] },
-  { key: 'roles',        label: 'Roles',            actions: ['read', 'write', 'delete'] },
+  [Resource.Members]:   { key: Resource.Members,   label: 'Members',              actions: [Read, Write, Delete] },
+  [Resource.Employees]: { key: Resource.Employees, label: 'Employee records',     actions: [Read, Write, Delete] },
+  [Resource.Holidays]:  { key: Resource.Holidays,  label: 'Holidays',             actions: [Read, Write, Delete] },
+  [Resource.Leaves]:    { key: Resource.Leaves,    label: 'Leave',                actions: [Read, Write, Delete] },
+  [Resource.Approvals]: { key: Resource.Approvals, label: 'Approvals',            actions: [Read, Write] },
+  [Resource.Signals]:   { key: Resource.Signals,   label: 'Signal config',        actions: [Read, Write, Delete] },
+  [Resource.Domains]:   { key: Resource.Domains,   label: 'Domains',              actions: [Read, Write, Delete] },
+  [Resource.Settings]:  { key: Resource.Settings,  label: 'Workspace settings',   actions: [Read, Write] },
 
-  // Transfer ownership, archive/restore, plan and billing.
-  { key: 'ownership',    label: 'Ownership & billing', actions: ['write', 'delete'] },
-] as const satisfies readonly ResourceDef[]
+  [Resource.AssignRoles]: { key: Resource.AssignRoles, label: 'Assign roles',     actions: [Write] },
+  [Resource.Roles]:       { key: Resource.Roles,       label: 'Roles',            actions: [Read, Write, Delete] },
 
-export type Resource = (typeof RESOURCES)[number]['key']
+  [Resource.Ownership]: { key: Resource.Ownership, label: 'Ownership & billing',  actions: [Write, Delete] },
+}
 
-const BY_KEY = new Map<string, ResourceDef>(
-  RESOURCES.map((r) => [r.key, r as ResourceDef])
-)
+/** Catalogue order - drives the row order of the Roles grid. */
+export const RESOURCES: readonly ResourceDef[] = Object.values(RESOURCE_DEFS)
+
+// A Map rather than indexing RESOURCE_DEFS directly: this is fed untrusted
+// request keys, and a plain object would resolve `constructor` or `toString`
+// to something truthy off the prototype.
+const RESOURCES_BY_KEY = new Map<string, ResourceDef>(RESOURCES.map((r) => [r.key, r]))
 
 export function getResource(key: string): ResourceDef | null {
-  return BY_KEY.get(key) ?? null
+  return RESOURCES_BY_KEY.get(key) ?? null
 }
 
 /** True when the action is meaningful for the resource (see file header). */
 export function resourceSupports(key: string, action: string): boolean {
-  const resource = BY_KEY.get(key)
-  return !!resource && (resource.actions as readonly string[]).includes(action)
+  const resource = RESOURCES_BY_KEY.get(key)
+  return !!resource && (resource.actions as readonly string[]).includes(action as Action)
 }
 
 // ─── Roles ────────────────────────────────────────────────────────────────────
@@ -70,50 +114,64 @@ export function resourceSupports(key: string, action: string): boolean {
  * role they would permanently lock every human out of their own workspace.
  *
  * There is no `is_system` column: lockedness is derived from the key, and this
- * constant is the one place that decides it.
+ * enum is the one place that decides it.
  */
-export const SYSTEM_ROLE_KEYS = ['owner', 'admin', 'member'] as const
-export type SystemRoleKey = (typeof SYSTEM_ROLE_KEYS)[number]
-
-export function isSystemRole(key: string): key is SystemRoleKey {
-  return (SYSTEM_ROLE_KEYS as readonly string[]).includes(key)
+export enum SystemRole {
+  Owner = 'owner',
+  Admin = 'admin',
+  Member = 'member',
 }
 
-/** How much of the workspace a role may see. `subtree` arrives with phase 3. */
-export type Scope = 'all' | 'self'
+const SYSTEM_ROLE_KEYS: readonly string[] = Object.values(SystemRole)
 
-export type PermissionGrid = Record<string, Action[]>
+export function isSystemRole(key: string): key is SystemRole {
+  return SYSTEM_ROLE_KEYS.includes(key)
+}
 
 /**
- * The seeded grids for the three system roles.
+ * How much of the workspace a role may see.
  *
- * Admin is "owner minus the things that destroy data or take the workspace
- * away from you": no ownership/billing, and no assigning roles.
- *
- * Member is deliberately empty. Members live on /me and have no org-surface
- * access at all; deny-by-default is the correct answer, not an oversight.
- *
- * NOTE: scripts/migrate.js keeps its own copy of these grids because it is
- * CommonJS and cannot import TypeScript. If you change them here, change them
- * there too - `npm run lint:permissions` is not a thing, so nothing catches it
- * for you.
+ * `Self` is NOT "the org surface, showing only your own rows" - that is what
+ * /me is, and every user already has it from being logged in, whatever their
+ * role. It means "no org surface at all", and only the seeded `member` role
+ * carries it. Every /ws role is therefore `All`, which is why the roles builder
+ * offers no choice: the only real alternative is the `Subtree` of phase 3.
  */
-export const SYSTEM_ROLE_GRIDS: Record<SystemRoleKey, PermissionGrid> = {
-  owner: Object.fromEntries(
-    RESOURCES.map((r) => [r.key, [...r.actions]])
-  ) as PermissionGrid,
-
-  admin: Object.fromEntries(
-    RESOURCES
-      .filter((r) => r.key !== 'ownership' && r.key !== 'members.role')
-      .map((r) => [r.key, r.key === 'roles' ? ['read'] : [...r.actions]])
-  ) as PermissionGrid,
-
-  member: {},
+export enum Scope {
+  All = 'all',
+  Self = 'self',
 }
 
-export const SYSTEM_ROLE_NAMES: Record<SystemRoleKey, string> = {
-  owner: 'Owner',
-  admin: 'Admin',
-  member: 'Member',
+/**
+ * Coerce a STORED scope value to a Scope. Not a request-body parser - routes
+ * decide scope themselves rather than accepting one from the client.
+ *
+ * Unrecognised values fall back to `self` so a corrupt column closes the org
+ * surface rather than opening it. When phase 3 adds `subtree`, that becomes the
+ * safer fallback: by then `self` blanks a role rather than narrowing it.
+ */
+export function parseScope(raw: unknown): Scope {
+  return raw === Scope.All ? Scope.All : Scope.Self
 }
+
+export type PermissionGrid = Partial<Record<Resource, Action[]>>
+
+/**
+ * `Object.entries` over a grid, typed.
+ *
+ * A Partial<Record<Resource, …>> widens its keys to plain strings under
+ * Object.entries and admits `undefined` values. Every caller wants neither, so
+ * the narrowing happens once here instead of with a cast at each use site.
+ */
+export function gridEntries(grid: PermissionGrid): Array<[Resource, Action[]]> {
+  return (Object.entries(grid) as Array<[Resource, Action[] | undefined]>)
+    .filter((entry): entry is [Resource, Action[]] => Array.isArray(entry[1]))
+}
+
+/**
+ * The seeded grids for the three system roles live in ./system-roles.json, not
+ * here - this file stays a pure catalogue, and the JSON is readable by both the
+ * app (./system-roles.ts) and the CommonJS migration script, which cannot
+ * import TypeScript. That one shared file is the source of truth for seeding,
+ * and its grids are written with the Resource/Action string values above.
+ */

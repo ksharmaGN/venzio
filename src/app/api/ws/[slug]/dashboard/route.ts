@@ -6,6 +6,7 @@ import type { PresenceEventWithMatch, MatchedBy } from '@/lib/signals'
 import type { MemberWithUser } from '@/lib/db/queries/workspaces'
 import { todayInTz, localMidnightToUtc } from '@/lib/timezone'
 import { isOfficeMatched } from '@/lib/attendance-summary'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 export interface DashboardMember {
   member_id: string
@@ -60,7 +61,7 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   const { slug } = await params
-  const ctx = await requireWsAccess(request, slug, 'dashboard', 'read')
+  const ctx = await requireWsAccess(request, slug, Resource.Dashboard, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
   const { workspace } = ctx
 

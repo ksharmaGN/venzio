@@ -1,8 +1,9 @@
 import {
+  Action,
   RESOURCES,
+  Resource,
   getResource,
   resourceSupports,
-  type Action,
   type PermissionGrid,
 } from './catalogue'
 
@@ -16,7 +17,7 @@ import {
  */
 export function can(
   permissions: PermissionGrid | null | undefined,
-  resource: string,
+  resource: Resource,
   action: Action
 ): boolean {
   if (!permissions) return false
@@ -27,7 +28,7 @@ export function can(
 /** True when the grid allows any action at all on the resource. */
 export function canAny(
   permissions: PermissionGrid | null | undefined,
-  resource: string
+  resource: Resource
 ): boolean {
   if (!permissions) return false
   const granted = permissions[resource]
@@ -47,6 +48,16 @@ export function hasAnyOrgAccess(permissions: PermissionGrid | null | undefined):
 }
 
 /**
+ * Every resource this grid can read. Serialised into the workspace layout so
+ * the sidebar can decide which screens to render without shipping the whole
+ * grid or the permission logic to the browser.
+ */
+export function readableResources(permissions: PermissionGrid | null | undefined): Resource[] {
+  if (!permissions) return []
+  return RESOURCES.filter((r) => can(permissions, r.key, Action.Read)).map((r) => r.key)
+}
+
+/**
  * Force read on any resource that has write or delete: if you can edit
  * holidays you can obviously see them. Applied when a grid is SAVED so the
  * stored row never disagrees with reality.
@@ -59,7 +70,8 @@ export function normalisePermissions(input: unknown): PermissionGrid {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return out
 
   for (const [resourceKey, rawActions] of Object.entries(input as Record<string, unknown>)) {
-    if (!getResource(resourceKey)) continue
+    const resource = getResource(resourceKey)
+    if (!resource) continue
     if (!Array.isArray(rawActions)) continue
 
     const actions = new Set<Action>()
@@ -73,15 +85,14 @@ export function normalisePermissions(input: unknown): PermissionGrid {
 
     // write or delete implies read - but only where read actually exists.
     if (
-      (actions.has('write') || actions.has('delete')) &&
-      resourceSupports(resourceKey, 'read')
+      (actions.has(Action.Write) || actions.has(Action.Delete)) &&
+      resourceSupports(resourceKey, Action.Read)
     ) {
-      actions.add('read')
+      actions.add(Action.Read)
     }
 
     // Keep the catalogue's declared order so stored grids are stable and diffable.
-    const declared = getResource(resourceKey)!.actions
-    out[resourceKey] = declared.filter((a) => actions.has(a))
+    out[resource.key] = resource.actions.filter((a) => actions.has(a))
   }
 
   return out

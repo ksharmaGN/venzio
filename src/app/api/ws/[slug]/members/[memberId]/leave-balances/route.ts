@@ -6,6 +6,7 @@ import {
   upsertOpeningBalance,
   getWorkspaceLeaveTypes,
 } from '@/lib/db/queries/leaves'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string; memberId: string }> }
 
@@ -13,7 +14,7 @@ interface Props { params: Promise<{ slug: string; memberId: string }> }
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug, memberId } = await params
-  const ctx = await requireWsAccess(req, slug, 'leaves', 'read')
+  const ctx = await requireWsAccess(req, slug, Resource.Leaves, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const member = await getWorkspaceMemberByRecordId(memberId, ctx.workspace.id)
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest, { params }: Props) {
 
 export async function PUT(req: NextRequest, { params }: Props) {
   const { slug, memberId } = await params
-  const ctx = await requireWsAccess(req, slug, 'leaves', 'write')
+  const ctx = await requireWsAccess(req, slug, Resource.Leaves, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const member = await getWorkspaceMemberByRecordId(memberId, ctx.workspace.id)

@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireWsAccess } from '@/lib/ws-access'
 import { getWorkspaceMembers, removeWorkspaceMember } from '@/lib/db/queries/workspaces'
 import { canManage } from '@/lib/permissions/ranks'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string; memberId: string }> }
 
 export async function DELETE(request: NextRequest, { params }: Props) {
   const { slug, memberId } = await params
-  const ctx = await requireWsAccess(request, slug, 'members', 'delete')
+  const ctx = await requireWsAccess(request, slug, Resource.Members, Action.Delete)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const members = await getWorkspaceMembers(ctx.workspace.id)

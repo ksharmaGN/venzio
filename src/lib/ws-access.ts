@@ -3,6 +3,8 @@ import { getWorkspaceBySlug, getActiveMemberIds } from './db/queries/workspaces'
 import { getMembershipWithRole, roleFromMembership, type ResolvedRole } from './db/queries/roles'
 import { can } from './permissions/can'
 import type { Action, Resource } from './permissions/catalogue'
+// Resource / Action are enums, not loose strings: every call site names a
+// catalogue entry the compiler has checked. See lib/permissions/catalogue.ts.
 import type { Workspace } from './db/queries/workspaces'
 
 export interface AccessContext {

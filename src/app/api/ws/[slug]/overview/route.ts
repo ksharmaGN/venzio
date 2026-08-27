@@ -9,6 +9,7 @@ import {
   type DepartmentBreakdown,
   type UpcomingCelebration,
 } from '@/lib/db/queries/employees'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 export interface OverviewWidgetsResponse {
   onLeaveToday: number
@@ -24,7 +25,7 @@ interface Props {
 
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug } = await params
-  const ctx = await requireWsAccess(req, slug, 'dashboard', 'read')
+  const ctx = await requireWsAccess(req, slug, Resource.Dashboard, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const today = todayInTz(ctx.workspace.display_timezone)

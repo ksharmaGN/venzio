@@ -6,13 +6,13 @@ import { en } from "@/locales/en";
 import { getServerUser } from "@/lib/auth";
 import {
   getWorkspaceBySlug,
-  getWorkspaceMember,
   getActiveMemberIds,
 } from "@/lib/db/queries/workspaces";
+import { getWsRole } from "@/lib/ws-access";
+import { hasAnyOrgAccess, readableResources } from "@/lib/permissions/can";
 import { getUserById } from "@/lib/db/queries/users";
 import { getPendingLeaveCount } from "@/lib/db/queries/leaves";
 import { getPendingRegularizationCount } from "@/lib/db/queries/regularizations";
-import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
 
 interface Props {
   children: React.ReactNode;
@@ -35,12 +35,11 @@ export default async function WsSlugLayout({ children, params }: Props) {
   const workspace = await getWorkspaceBySlug(slug);
   if (!workspace) notFound();
 
-  const membership = await getWorkspaceMember(workspace.id, user.userId);
-  if (
-    !membership ||
-    !isWorkspaceAdmin(membership.role) ||
-    membership.status !== "active"
-  ) {
+  // Admit anyone whose role grants ANY org-surface access, not just admins.
+  // A custom role with an entirely empty grid is legal, and that person belongs
+  // on /me rather than in a stripped shell with no navigation.
+  const role = await getWsRole(workspace.id, user.userId);
+  if (!role || !hasAnyOrgAccess(role.permissions)) {
     redirect("/me");
   }
 
@@ -66,7 +65,8 @@ export default async function WsSlugLayout({ children, params }: Props) {
         pendingLeaveCount={pendingLeaveCount}
         pendingApprovalsCount={pendingLeaveCount + pendingRegularizationCount}
         userName={dbUser?.full_name?.trim() || user.email}
-        userRole={membership.role}
+        userRoleName={role.name}
+        readableResources={readableResources(role.permissions)}
       >
         {children}
       </WsLayoutClient>

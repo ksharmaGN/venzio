@@ -12,9 +12,11 @@ interface Props {
   activeMemberships: WorkspaceMember[]
   pendingMemberships: WorkspaceMember[]
   wsMap: Record<string, Workspace>
+  /** Role display name per workspace id. */
+  roleNames: Record<string, string>
 }
 
-export default function OrgsClient({ activeMemberships, pendingMemberships, wsMap }: Props) {
+export default function OrgsClient({ activeMemberships, pendingMemberships, wsMap, roleNames }: Props) {
   const router = useRouter()
   const [activeList, setActiveList] = useState(activeMemberships)
   const [pendingList, setPendingList] = useState(pendingMemberships)
@@ -227,8 +229,10 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                   >
                     {ws?.name ?? m.workspace_id}
                   </p>
-                  <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', textTransform: 'capitalize', marginBottom: counts[m.workspace_id] ? '4px' : '0' }}>
-                    {m.role}
+                  {/* The role's display name as stored - never the raw key,
+                      which `capitalize` would render as e.g. "Hr-manager". */}
+                  <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '12px', color: 'var(--text-muted)', marginBottom: counts[m.workspace_id] ? '4px' : '0' }}>
+                    {roleNames[m.workspace_id] ?? m.role}
                   </p>
                   {counts[m.workspace_id] && (
                     <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '11px', color: 'var(--text-secondary)' }}>

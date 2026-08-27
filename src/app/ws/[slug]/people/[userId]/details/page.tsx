@@ -2,12 +2,13 @@ import { notFound, redirect } from 'next/navigation'
 import { getSessionFromCookies } from '@/lib/auth'
 import {
   getWorkspaceBySlug,
-  getWorkspaceMember,
   getActiveMemberWithDetails,
 } from '@/lib/db/queries/workspaces'
 import { findEmployeeByUserId } from '@/lib/db/queries/employees'
 import DetailsClient from './DetailsClient'
-import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
+import { getWsRole } from '@/lib/ws-access'
+import { can } from '@/lib/permissions/can'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props {
   params: Promise<{ slug: string; userId: string }>
@@ -22,12 +23,10 @@ export default async function EmployeeDetailsPage({ params }: Props) {
   const workspace = await getWorkspaceBySlug(slug)
   if (!workspace) notFound()
 
-  const adminMembership = await getWorkspaceMember(workspace.id, session.sub)
-  if (
-    !adminMembership ||
-    !isWorkspaceAdmin(adminMembership.role) ||
-    adminMembership.status !== 'active'
-  ) {
+  // This page shows and edits an employee record, so it is gated on the
+  // employees resource rather than on holding a built-in role.
+  const viewerRole = await getWsRole(workspace.id, session.sub)
+  if (!viewerRole || !can(viewerRole.permissions, Resource.Employees, Action.Read)) {
     redirect('/me')
   }
 

@@ -10,6 +10,7 @@ import {
 } from '@/lib/db/queries/employees'
 import type { UpdateEmployeeInput } from '@/lib/types/employees'
 import { validateEmployeeFields, FieldErrorCode } from '../_validate'
+import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props { params: Promise<{ slug: string; id: string }> }
 
@@ -20,7 +21,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 export async function GET(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
 
-  const adminCtx = await requireWsAccess(req, slug, 'employees', 'read')
+  const adminCtx = await requireWsAccess(req, slug, Resource.Employees, Action.Read)
   if (adminCtx) {
     const employee = await getEmployee(id, adminCtx.workspace.id)
     if (!employee) return NextResponse.json({ error: 'Not found', code: 'NOT_FOUND' }, { status: 404 })
@@ -42,7 +43,7 @@ export async function GET(req: NextRequest, { params }: Props) {
 
 export async function PATCH(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
-  const ctx = await requireWsAccess(req, slug, 'employees', 'write')
+  const ctx = await requireWsAccess(req, slug, Resource.Employees, Action.Write)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const existing = await getEmployee(id, ctx.workspace.id)
@@ -105,7 +106,7 @@ export async function PATCH(req: NextRequest, { params }: Props) {
 
 export async function DELETE(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
-  const ctx = await requireWsAccess(req, slug, 'employees', 'delete')
+  const ctx = await requireWsAccess(req, slug, Resource.Employees, Action.Delete)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
   const existing = await getEmployee(id, ctx.workspace.id)
