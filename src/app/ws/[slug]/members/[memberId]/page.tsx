@@ -9,7 +9,7 @@ import type { MatchedBy } from "@/lib/signals";
 const SIGNAL_BADGE: Record<MatchedBy, { label: string; color: string }> = {
   verified: { label: "Verified", color: "var(--teal)" },
   partial:  { label: "Partial",  color: "var(--amber)" },
-  override: { label: "Override", color: "#8B5CF6" },
+  override: { label: "Override", color: "var(--info)" },
   none:     { label: "—",        color: "var(--text-muted)" },
 };
 
@@ -914,16 +914,15 @@ export default function MemberDetailPage() {
         {[1, 2, 3, 4].map((i) => (
           <div
             key={i}
+            className="vnz-pulse"
             style={{
               height: "72px",
               background: "var(--surface-2)",
               borderRadius: "var(--radius-md)",
               marginBottom: "8px",
-              animation: "vnz-pulse 1.5s ease-in-out infinite",
             }}
           />
         ))}
-        <style>{`@keyframes vnz-pulse{0%,100%{opacity:1}50%{opacity:.5}}`}</style>
       </div>
     );
 
@@ -1211,12 +1210,12 @@ export default function MemberDetailPage() {
               {[1, 2, 3].map((i) => (
                 <div
                   key={`tl-sk-${i}`}
+                  className="vnz-pulse"
                   style={{
                     height: "72px",
                     background: "var(--surface-2)",
                     borderRadius: "var(--radius-md)",
                     marginBottom: "8px",
-                    animation: "vnz-pulse 1.5s ease-in-out infinite",
                   }}
                 />
               ))}
@@ -1276,7 +1275,7 @@ export default function MemberDetailPage() {
           {loadingEmployee ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
               {[1, 2, 3].map((i) => (
-                <div key={i} style={{ height: "40px", background: "var(--surface-2)", borderRadius: "6px", animation: "vnz-pulse 1.5s ease-in-out infinite" }} />
+                <div key={i} className="vnz-pulse" style={{ height: "40px", background: "var(--surface-2)", borderRadius: "6px" }} />
               ))}
             </div>
           ) : employee ? (

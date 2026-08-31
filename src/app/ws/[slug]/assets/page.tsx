@@ -4,20 +4,21 @@ import { getWorkspaceBySlug } from '@/lib/db/queries/workspaces'
 import { getWsRole } from '@/lib/ws-access'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
-import LeavesClient from './LeavesClient'
+import AssetsClient from './AssetsClient'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
 /**
- * Leave administration - requests, applied history and maternity cases.
+ * The equipment register.
  *
- * The layout beside this file already sends workspaces with `leaves_enabled`
- * off back to the workspace root; this page adds the permission half. Maternity
- * is filed under `leaves` server-side too, so one gate covers all three tabs.
+ * Gated on `assets:read`; write actions (add, assign, return, repair, retire)
+ * additionally need `assets:write`, and the assign modal needs `employees:read`
+ * because it lists people. All three are resolved here and passed down, so the
+ * client never reasons about permissions itself. The routes re-check.
  */
-export default async function LeavesPage({ params }: Props) {
+export default async function AssetsPage({ params }: Props) {
   const { slug } = await params
 
   const session = await getSessionFromCookies()
@@ -27,14 +28,14 @@ export default async function LeavesPage({ params }: Props) {
   if (!workspace) notFound()
 
   const role = await getWsRole(workspace.id, session.sub)
-  if (!role || !can(role.permissions, Resource.Leaves, Action.Read)) {
+  if (!role || !can(role.permissions, Resource.Assets, Action.Read)) {
     redirect('/me')
   }
 
   return (
-    <LeavesClient
+    <AssetsClient
       slug={slug}
-      canWrite={can(role.permissions, Resource.Leaves, Action.Write)}
+      canWrite={can(role.permissions, Resource.Assets, Action.Write)}
       canReadEmployees={can(role.permissions, Resource.Employees, Action.Read)}
     />
   )

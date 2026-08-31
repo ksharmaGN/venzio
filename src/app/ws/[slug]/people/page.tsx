@@ -5,12 +5,19 @@ import PeopleClient from './PeopleClient'
 import { getWsRole } from '@/lib/ws-access'
 import { can } from '@/lib/permissions/can'
 import { en } from '@/locales/en'
+import { wsPeopleUi } from '@/locales/en/ws-people'
 import { Action, Resource } from '@/lib/permissions/catalogue'
 
 interface Props {
   params: Promise<{ slug: string }>
 }
 
+/**
+ * Membership, not HR. Who is in the workspace, what they may do, and how they
+ * leave. The employee RECORD - designation, bank details, documents - lives on
+ * /ws/:slug/employees; these are two screens on purpose, because inviting
+ * someone and holding their Aadhaar are different jobs with different risks.
+ */
 export default async function PeoplePage({ params }: Props) {
   const { slug } = await params
 
@@ -29,21 +36,10 @@ export default async function PeoplePage({ params }: Props) {
   }
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--surface-1)', padding: '24px 20px' }}>
-    <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-      <h1
-        style={{
-          fontFamily: 'Playfair Display, serif',
-          fontSize: '22px',
-          fontWeight: 700,
-          color: 'var(--navy)',
-          marginBottom: '20px',
-        }}
-      >
-        {en.wsPeople.pageTitle}
-      </h1>
+    <div>
+      <h1 className="t-h1">{en.wsPeople.pageTitle}</h1>
+      <p className="t-secondary" style={{ margin: '4px 0 16px' }}>{wsPeopleUi.subtitle}</p>
       <PeopleClient slug={slug} viewerUserId={session.sub} />
-    </div>
     </div>
   )
 }
