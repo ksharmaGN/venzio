@@ -64,6 +64,26 @@ function computeAge(dob: string | null): number | null {
   return age
 }
 
+/**
+ * Decrypt one stored field, degrading to `null` when it cannot be read.
+ *
+ * A corrupt, truncated or pre-encryption-era value must not take down the whole
+ * request: every employee finder runs `toPublic(row, true)`, so a single bad
+ * ciphertext would otherwise 500 routes that only wanted to check the employee
+ * exists. The log names the field and the employee so the row can be found and
+ * repaired — never the ciphertext, and never a decrypted value.
+ */
+function safeDecrypt(value: string | null, field: string, employeeId: string): string | null {
+  if (value == null) return null
+  try {
+    return decryptFieldOrNull(value)
+  } catch (err) {
+    const reason = err instanceof Error ? err.message : 'unknown error'
+    console.error(`[employees] could not decrypt ${field} for employee ${employeeId}: ${reason}`)
+    return null
+  }
+}
+
 export function toPublic(row: EmployeeRow, includeSensitive = false): EmployeePublic {
   return {
     id: row.id, workspace_id: row.workspace_id, user_id: row.user_id,
@@ -93,11 +113,11 @@ export function toPublic(row: EmployeeRow, includeSensitive = false): EmployeePu
       exit_reason: row.exit_reason ?? null,
     },
     sensitive: includeSensitive ? {
-      pan: decryptFieldOrNull(row.pan_encrypted ?? null),
-      aadhaar: decryptFieldOrNull(row.aadhaar_encrypted ?? null),
+      pan: safeDecrypt(row.pan_encrypted ?? null, 'pan', row.id),
+      aadhaar: safeDecrypt(row.aadhaar_encrypted ?? null, 'aadhaar', row.id),
       uan: row.uan ?? null,
       passport_number: row.passport_number ?? null,
-      bank_account: decryptFieldOrNull(row.bank_account_encrypted ?? null),
+      bank_account: safeDecrypt(row.bank_account_encrypted ?? null, 'bank_account', row.id),
       bank_ifsc: row.bank_ifsc ?? null,
       bank_name: row.bank_name ?? null,
     } : null,
