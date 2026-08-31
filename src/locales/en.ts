@@ -3,7 +3,38 @@
 
 const brand = 'Venzio'
 
+import { me } from './en/me'
+import { meScreens } from './en/me-screens'
+import { meSettings } from './en/me-settings'
+import { marketing } from './en/marketing'
+import { documents, assets, maternity } from './en/documents'
+import { wsAdmin as wsAdminWorkforce } from './en/ws-overview'
+import { wsAdmin as wsAdminManage } from './en/ws-settings'
+import { wsEmployees, wsAssets, wsLeaveScreen, wsPeopleUi } from './en/ws-people'
+import { wsReminders } from './en/ws-reminders'
+
 export const en = {
+  // ── Per-area copy modules (src/locales/en/*.ts) ───────────────────────────
+  // New copy belongs in a module, not inline below. The inline groups that
+  // follow are the original single-file copy, kept so existing `en.x` call
+  // sites keep working; move them into modules as their screens are touched.
+  // Both `en.me.x` and a direct `import { me } from '@/locales/en/me'` resolve
+  // to the same object.
+  me,
+  meScreens,
+  meSettings,
+  marketing,
+  documents,
+  assets,
+  maternity,
+  wsEmployees,
+  wsAssets,
+  wsLeaveScreen,
+  wsPeopleUi,
+  wsReminders,
+  // Two agents each owned half of the admin copy; sub-keys are disjoint.
+  wsAdmin: { ...wsAdminWorkforce, ...wsAdminManage },
+
   brand: {
     name: brand,
     shortName: brand,
@@ -79,69 +110,7 @@ export const en = {
     createLink: "Or create your own workspace →",
   },
 
-  /** Member workspace Today accordion (/me/ws/[slug]) */
-  meWsToday: {
-    tabPeopleInOffice: "People in Office Today",
-    tabPeopleRemote: "People working Remotely Today",
-    tabPeopleNotCheckedIn: "People not Checked in Today",
-    tabHolidayCalendar: "Holiday Calendar",
-    badgeRemote: "Remote",
-    errorFailedToLoad: "Failed to load",
-    errorWorkspaceNotFound: "Workspace not found",
-    emptyNoHolidaysConfigured: (year: number) =>
-      `No holidays configured for ${year}`,
-    badgeToday: "Today",
-    emptyNoOneHereYet: "No one here yet",
-    leaveWorkspaceButtonAria: "Leave this workspace",
-    leaveWorkspaceTitle: "Leave workspace?",
-    leaveWorkspaceMessage: (workspaceName: string) =>
-      `Leave ${workspaceName}? You will no longer appear in their presence dashboard.`,
-    leaveWorkspaceConfirm: "Leave",
-    leaveWorkspaceCancel: "Cancel",
-    leaveWorkspaceLoading: "Leaving…",
-    leaveWorkspaceError: "Could not leave workspace. Try again.",
-    leaveWorkspaceSoleAdmin:
-      "You are the only workspace admin. Transfer ownership before leaving.",
-    tabMyLeaves: "My Applied Leaves",
-    tabPeopleOnLeave: "People on Leave Today",
-    onLeaveBadgeLabel: "On Leave",
-    onLeaveEmpty: "No one is on leave today",
-    applyLeaveButtonAria: "Apply for leave",
-    applyLeaveTitle: "Apply for Leave",
-    applyLeaveFieldLeaveType: "Leave Type",
-    applyLeaveFieldStartDate: "Start Date",
-    applyLeaveFieldEndDate: "End Date",
-    applyLeaveFieldReason: "Reason",
-    applyLeaveFieldReasonPlaceholder: "Optional reason…",
-    applyLeaveNoTypes: "No leave types configured. Ask your workspace admin.",
-    applyLeaveSubmit: "Submit Leave",
-    applyLeaveSubmitting: "Submitting…",
-    applyLeaveSuccess: "Leave request submitted — pending HR approval.",
-    applyLeaveCancel: "Cancel",
-    applyLeaveErrorGeneric: "Could not submit leave. Try again.",
-    applyLeaveErrorOverlap: "You already have a leave request covering these dates.",
-    applyLeaveErrorHoliday: (names: string) =>
-      `Leave cannot be applied on company holidays: ${names}.`,
-    applyLeaveHolidayWarning: (names: string) =>
-      `⚠ Your dates include company holidays: ${names}. Please adjust your dates.`,
-    myLeavesEmpty: "No leave requests yet.",
-    myLeavesActive: "Active",
-    myLeavesUpcoming: "Upcoming",
-    myLeavesPast: "Past",
-    applyLeaveButtonText: "Apply Leave",
-    applyLeaveSelectPlaceholder: "Select leave type…",
-    applyLeaveTypeOption: (name: string, days: number) => {
-      const formatted = Number.isInteger(days) ? days.toString() : days.toFixed(1)
-      return `${name} — ${formatted} day${days !== 1 ? 's' : ''} left`
-    },
-    leaveDaysLabel: (days: number) => `${days} day${days !== 1 ? 's' : ''}`,
-    leaveStatusPending: "Submitted",
-    leaveStatusApproved: "Approved",
-    leaveStatusRejected: "Rejected",
-    leaveRejectedPrefix: "Rejected:",
-  },
-
-  /** Member regularization ("request correction") tab + modal (/me/ws/[slug], /me/timeline) */
+  /** Member workspace Today accordion (/me/ws/[slug]) *//** Member regularization ("request correction") tab + modal (/me/ws/[slug], /me/timeline) */
   meWsRegularization: {
     tabLabel: "My Corrections",
     newRequestButton: "+ Request correction",
@@ -330,6 +299,9 @@ export const en = {
     screens: {
       overview: "Overview",
       employees: "Employees",
+      assets: "Assets",
+      attendance: "Attendance",
+      people: "People",
       analytics: "Analytics",
       activity: "Activity",
       holidays: "Holidays",
@@ -417,12 +389,8 @@ export const en = {
     backToRoles: "Roles",
   },
 
-  /** /me/timeline workspace filter + per-workspace verification context */
+  /** /me/timeline - per-workspace verification context */
   meTimeline: {
-    workspaceLabel: "Workspace",
-    workspaceAll: "All workspaces",
-    transparencyHint:
-      "All workspaces shows your events without org-specific verification. Pick a workspace to see how your check-ins evaluate against that workspace’s signals.",
     matchedVerified: "Verified",
     matchedPartial: "Partial match",
     matchedNone: "Unverified",
@@ -540,12 +508,7 @@ export const en = {
     errorTransferFailed: "Transfer failed",
   },
 
-  /** Reports placeholder (/ws/[slug]/reports) */
-  wsReports: {
-    comingSoon: "Coming soon",
-  },
-
-  /** Shared admin approval row (Overview widget, /ws/[slug]/approvals, People page section) */
+  /** Reports placeholder (/ws/[slug]/reports) *//** Shared admin approval row (Overview widget, /ws/[slug]/approvals, People page section) */
   wsApprovals: {
     pageTitle: "Pending Approvals",
     pageSubtitle: "Leave and attendance correction requests waiting on your review.",
@@ -613,6 +576,10 @@ export const en = {
     cookieSession: "vnz_session",
     cookieOtp: "vnz_otp_ok",
     cookieUI: "vnz_ui",
+    // Active `/me` workspace. A UI preference, not a credential, so it is
+    // readable by client code - and always re-validated against the caller's
+    // real memberships server-side before anything is scoped to it.
+    cookieWorkspace: "vnz_ws",
 
     // ── Domain verification ───────────────────────────────────────────────────
     // DNS TXT: _venzio-verify.{domain}  IN TXT  "venzio-verify={token}"
