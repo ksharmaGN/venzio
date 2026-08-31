@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireWsAccess, forbidden } from '@/lib/ws-access'
 import { Action, Resource } from '@/lib/permissions/catalogue'
 import { getAsset, assignAsset, unassignAsset } from '@/lib/db/queries/assets'
-import { getEmployee } from '@/lib/db/queries/employees'
+import { ensureEmployeeForMember, findEmployeeByUserId } from '@/lib/db/queries/employees'
+import { assets as assetsCopy, hrRecord } from '@/locales/en/documents'
 
 interface Props { params: Promise<{ slug: string; id: string }> }
 
@@ -11,7 +12,7 @@ function notFound() {
 }
 
 // ─── POST /api/ws/[slug]/assets/[id]/assign ───────────────────────────────────
-// Body: { employee_id }
+// Body: { user_id }  - a workspace MEMBER, not an employee record.
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug, id } = await params
@@ -21,42 +22,54 @@ export async function POST(req: NextRequest, { params }: Props) {
   const asset = await getAsset(id, ctx.workspace.id)
   if (!asset) return notFound()
 
-  let body: { employee_id?: unknown }
+  let body: { user_id?: unknown }
   try { body = await req.json() } catch {
     return NextResponse.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 })
   }
 
-  const employeeId = typeof body.employee_id === 'string' ? body.employee_id.trim() : ''
-  if (!employeeId) {
+  // A member, because most members have no HR record: `employees` is written
+  // only when an admin fills in the directory form, so an employee-id body
+  // could name barely anyone. The record is found or created below.
+  const userId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
+  if (!userId) {
     return NextResponse.json(
-      { error: 'employee_id is required', code: 'VALIDATION_ERROR' },
+      { error: hrRecord.errors.memberRequired, code: 'VALIDATION_ERROR' },
       { status: 422 },
     )
   }
 
-  // The employee id comes from the client, so it is resolved against THIS
-  // workspace before it is written - otherwise an asset could be handed to an
-  // employee of another tenant.
-  const employee = await getEmployee(employeeId, ctx.workspace.id)
-  if (!employee) {
-    return NextResponse.json({ error: 'Employee not found', code: 'EMPLOYEE_NOT_FOUND' }, { status: 404 })
-  }
-
   if (asset.status === 'retired') {
     return NextResponse.json(
-      { error: 'A retired asset cannot be assigned', code: 'ASSET_RETIRED' },
+      { error: assetsCopy.errors.retired, code: 'ASSET_RETIRED' },
       { status: 409 },
     )
   }
 
-  if (asset.assigned_employee_id && asset.assigned_employee_id !== employeeId) {
-    return NextResponse.json(
-      { error: 'Asset is already assigned - return it first', code: 'ALREADY_ASSIGNED' },
-      { status: 409 },
-    )
+  // RETURN_FIRST: an asset with a holder can only be handed on via DELETE
+  // /assign. Re-assigning it to the person already holding it stays a no-op,
+  // which is why this compares records rather than rejecting outright - and it
+  // reads with findEmployeeByUserId rather than ensure, so a request that is
+  // about to 409 never creates an HR record as a side effect.
+  if (asset.assigned_employee_id) {
+    const holder = await findEmployeeByUserId(ctx.workspace.id, userId)
+    if (!holder || holder.id !== asset.assigned_employee_id) {
+      return NextResponse.json(
+        { error: assetsCopy.errors.alreadyAssigned, code: 'ALREADY_ASSIGNED' },
+        { status: 409 },
+      )
+    }
   }
 
-  const updated = await assignAsset(id, ctx.workspace.id, employeeId)
+  // Resolved against THIS workspace - the id came from the client, and an
+  // active membership here is the only thing that authorises a record.
+  const resolved = await ensureEmployeeForMember(ctx.workspace.id, userId)
+  if (!resolved.ok) {
+    return resolved.reason === 'NOT_A_MEMBER'
+      ? NextResponse.json({ error: hrRecord.errors.notAMember, code: 'MEMBER_NOT_FOUND' }, { status: 404 })
+      : NextResponse.json({ error: hrRecord.errors.workEmailTaken, code: 'WORK_EMAIL_TAKEN' }, { status: 409 })
+  }
+
+  const updated = await assignAsset(id, ctx.workspace.id, resolved.employee.id)
   return NextResponse.json({ asset: updated })
 }
 

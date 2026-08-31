@@ -170,12 +170,28 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
     },
   ]
 
-  const deptMax = overview?.departmentBreakdown[0]?.count || 1
-  const deptItems: DeptBarItem[] = (overview?.departmentBreakdown ?? []).map((d) => ({
-    label: d.department,
-    count: d.count,
-    percent: Math.round((d.count / deptMax) * 100),
-  }))
+  // Bars are a share of HEADCOUNT, not of the biggest bar: with one department
+  // filled in out of 34 members, scaling to the largest bar would draw a full-
+  // width bar and read as "this workspace has one department". The trailing
+  // "No HR details" segment keeps the denominator on screen.
+  const dept = overview?.departmentBreakdown
+  const deptTotal = (dept?.withDepartment ?? 0) + (dept?.withoutDepartment ?? 0)
+  const deptShare = (count: number) => (deptTotal > 0 ? Math.round((count / deptTotal) * 100) : 0)
+  const deptItems: DeptBarItem[] = [
+    ...(dept?.departments ?? []).map((d) => ({
+      label: d.department,
+      count: d.count,
+      percent: deptShare(d.count),
+    })),
+    ...(dept && dept.withoutDepartment > 0
+      ? [{
+          label: wsAdmin.overview.departmentUnknown,
+          count: dept.withoutDepartment,
+          percent: deptShare(dept.withoutDepartment),
+          color: 'var(--text-muted)',
+        }]
+      : []),
+  ]
 
   const recentActivity = (dash?.all_members ?? [])
     .filter((m) => m.latest_event)
@@ -217,9 +233,9 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
           <StatCard
             className="hoverlift"
             style={{ flex: 1, marginTop: 0 }}
-            label={wsAdmin.overview.totalEmployeesTitle}
-            value={dashLoading ? <Skeleton width={48} height={28} /> : counts.total}
-            hint={wsAdmin.overview.totalEmployeesHint}
+            label={wsAdmin.overview.headcountTitle}
+            value={overview ? overview.activeMembers : <Skeleton width={48} height={28} />}
+            hint={wsAdmin.overview.headcountHint}
             icon={<Users size={17} />}
           />
         </Link>
@@ -332,9 +348,28 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
         <Card fixedHeight style={{ flex: '1 1 280px', marginTop: 0 }}>
           <p className="t-h2" style={{ marginBottom: '14px' }}>{en.wsOverview.departmentTitle}</p>
           <div className="scroll-body">
-            {deptItems.length === 0
-              ? <EmptyState title={wsAdmin.overview.departmentEmpty} />
-              : <DeptBars items={deptItems} label={wsAdmin.overview.departmentChartLabel} />}
+            {!dept ? (
+              <Skeleton height={140} />
+            ) : dept.departments.length === 0 ? (
+              <EmptyState
+                title={wsAdmin.overview.departmentEmpty}
+                hint={
+                  <>
+                    {wsAdmin.overview.departmentEmptyHint}{' '}
+                    <Link href={`/ws/${slug}/employees`} style={{ fontWeight: 600 }}>
+                      {wsAdmin.overview.departmentEmptyAction}
+                    </Link>
+                  </>
+                }
+              />
+            ) : (
+              <>
+                <DeptBars items={deptItems} label={wsAdmin.overview.departmentChartLabel} />
+                <p className="t-muted" style={{ margin: '12px 0 0' }}>
+                  {wsAdmin.overview.departmentCoverage(dept.withDepartment, deptTotal)}
+                </p>
+              </>
+            )}
           </div>
         </Card>
       </div>
@@ -377,7 +412,10 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
           </p>
           <div className="scroll-body">
             {overview && overview.celebrations.length === 0 ? (
-              <EmptyState title={en.wsOverview.celebrationsEmpty} />
+              <EmptyState
+                title={en.wsOverview.celebrationsEmpty}
+                hint={wsAdmin.overview.celebrationsEmptyHint}
+              />
             ) : (
               overview?.celebrations.map((c) => (
                 <div key={`${c.employeeId}-${c.kind}`} style={rowStyle}>

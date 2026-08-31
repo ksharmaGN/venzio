@@ -33,8 +33,12 @@ export const wsAdmin = {
     exporting: 'Exporting…',
     exportFailed: 'Export failed',
 
-    totalEmployeesTitle: 'Total employees',
-    totalEmployeesHint: 'Active personnel count',
+    /**
+     * The tile counts active workspace members, not `employees` rows - HR
+     * records are optional, so "employees" would name the wrong set.
+     */
+    headcountTitle: 'Total headcount',
+    headcountHint: 'Active workspace members',
     inOfficeTitle: 'In office',
     inOfficeHint: 'currently in office',
     remoteTitle: 'Remote',
@@ -56,7 +60,19 @@ export const wsAdmin = {
     planLimitNear: (used: number, max: number, plan: string) =>
       `Approaching member limit - ${used}/${max} on the ${plan} plan.`,
     departmentChartLabel: 'Headcount by department',
-    departmentEmpty: 'No departments recorded yet.',
+    /** The bar covering members with no department on file. */
+    departmentUnknown: 'No HR details',
+    departmentCoverage: (withDept: number, total: number) =>
+      `${withDept} of ${total} member(s) have a department on file`,
+    departmentEmpty: 'No departments on file yet',
+    departmentEmptyHint: 'Departments come from HR details, which are optional.',
+    departmentEmptyAction: 'Add HR details ›',
+
+    /**
+     * Celebrations read birthdays and joining dates off HR records, so an empty
+     * fortnight and "nobody has HR details" look identical. Say which.
+     */
+    celebrationsEmptyHint: 'Birthdays and work anniversaries come from HR details.',
   },
 
   /** /ws/:slug/attendance - today's roster and the regularization queue. */

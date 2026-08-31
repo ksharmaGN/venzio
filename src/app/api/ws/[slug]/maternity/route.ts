@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireWsAccess, forbidden } from '@/lib/ws-access'
 import { Action, Resource } from '@/lib/permissions/catalogue'
-import { getEmployee } from '@/lib/db/queries/employees'
+import { ensureEmployeeForMember, findEmployeeByUserId } from '@/lib/db/queries/employees'
 import {
   listMaternityCases,
   createMaternityCase,
@@ -9,7 +9,7 @@ import {
   isMaternityStatus,
   MaternityCaseOpenError,
 } from '@/lib/db/queries/maternity'
-import { maternity as maternityCopy } from '@/locales/en/documents'
+import { hrRecord, maternity as maternityCopy } from '@/locales/en/documents'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -46,7 +46,12 @@ export async function GET(req: NextRequest, { params }: Props) {
 }
 
 // ─── POST /api/ws/[slug]/maternity ────────────────────────────────────────────
-// Body: { employee_id, due_date?, start_date?, end_date?, weeks?, notes? }
+// Body: { user_id, due_date?, start_date?, end_date?, weeks?, notes? }
+//
+// `user_id` is a workspace MEMBER. Most members have no HR record - `employees`
+// is written only when an admin fills in the directory form - so a body keyed
+// by employee id could name barely anyone in a real workspace. The record is
+// found, or created, once the request is known to be good.
 
 export async function POST(req: NextRequest, { params }: Props) {
   const { slug } = await params
@@ -58,18 +63,12 @@ export async function POST(req: NextRequest, { params }: Props) {
     return NextResponse.json({ error: 'Invalid JSON body', code: 'INVALID_BODY' }, { status: 400 })
   }
 
-  const employeeId = typeof body.employee_id === 'string' ? body.employee_id.trim() : ''
-  if (!employeeId) {
+  const userId = typeof body.user_id === 'string' ? body.user_id.trim() : ''
+  if (!userId) {
     return NextResponse.json(
-      { error: 'employee_id is required', code: 'VALIDATION_ERROR' },
+      { error: hrRecord.errors.memberRequired, code: 'VALIDATION_ERROR' },
       { status: 422 },
     )
-  }
-
-  // Resolved against this workspace: the id came from the client.
-  const employee = await getEmployee(employeeId, ctx.workspace.id)
-  if (!employee) {
-    return NextResponse.json({ error: 'Employee not found', code: 'EMPLOYEE_NOT_FOUND' }, { status: 404 })
   }
 
   const fields: Record<string, string> = {}
@@ -103,19 +102,35 @@ export async function POST(req: NextRequest, { params }: Props) {
   // no failed INSERT behind it. The GUARANTEE is the partial unique index
   // idx_maternity_cases_one_open, because this check and the insert below are
   // two statements and two simultaneous requests can both pass it.
-  const open = await findOpenCaseForEmployee(ctx.workspace.id, employeeId)
-  if (open) {
-    return NextResponse.json(
-      { error: maternityCopy.errors.caseOpen, code: 'CASE_OPEN' },
-      { status: 409 },
-    )
+  //
+  // Read with findEmployeeByUserId, not ensure: a member with no HR record
+  // cannot have a case, and a request about to 409 must not leave a record
+  // behind it.
+  const existing = await findEmployeeByUserId(ctx.workspace.id, userId)
+  if (existing) {
+    const open = await findOpenCaseForEmployee(ctx.workspace.id, existing.id)
+    if (open) {
+      return NextResponse.json(
+        { error: maternityCopy.errors.caseOpen, code: 'CASE_OPEN' },
+        { status: 409 },
+      )
+    }
+  }
+
+  // Resolved against this workspace: the id came from the client, and an
+  // active membership here is the only thing that authorises a record.
+  const resolved = await ensureEmployeeForMember(ctx.workspace.id, userId)
+  if (!resolved.ok) {
+    return resolved.reason === 'NOT_A_MEMBER'
+      ? NextResponse.json({ error: hrRecord.errors.notAMember, code: 'MEMBER_NOT_FOUND' }, { status: 404 })
+      : NextResponse.json({ error: hrRecord.errors.workEmailTaken, code: 'WORK_EMAIL_TAKEN' }, { status: 409 })
   }
 
   let maternityCase
   try {
     maternityCase = await createMaternityCase({
       workspaceId: ctx.workspace.id,
-      employeeId,
+      employeeId: resolved.employee.id,
       due_date: dueDate ?? null,
       start_date: startDate ?? null,
       end_date: endDate ?? null,

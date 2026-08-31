@@ -9,8 +9,9 @@ import {
 } from '@/components/ui'
 import { useToast } from '@/components/shared/Toast'
 import { wsLeaveScreen } from '@/locales/en/ws-people'
+import { hrRecord } from '@/locales/en/documents'
 import type { MaternityCaseWithEmployee, MaternityStatus } from '@/lib/db/queries/maternity'
-import type { EmployeePublic } from '@/lib/types/employees'
+import type { MemberWithUserFull } from '@/lib/db/queries/workspaces'
 import { formatLongDate } from './leave-shared'
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
@@ -66,6 +67,43 @@ function caseName(c: MaternityCaseWithEmployee): string {
   return `${c.employee_first_name} ${c.employee_last_name}`.trim() || c.employee_work_email
 }
 
+/** A member with an account behind it - the only kind a case can be filed for. */
+type PickableMember = MemberWithUserFull & { user_id: string }
+
+/**
+ * Every active member of the workspace, paged 100 at a time.
+ *
+ * The form offers MEMBERS, not employee records. Most members have no HR
+ * record - one is written only when an admin fills in the directory form - so
+ * an employee-backed list showed a real 34-person workspace a single name.
+ * POST /maternity takes the member and creates the record if the case needs
+ * one.
+ *
+ * /members returns every membership status, so pending invites and departed
+ * people are dropped here; the server rejects them anyway.
+ */
+async function fetchActiveMembers(slug: string): Promise<PickableMember[]> {
+  const collected: MemberWithUserFull[] = []
+  let offset = 0
+  let total = Infinity
+  while (collected.length < total) {
+    const res = await fetch(`/api/ws/${slug}/members?limit=100&offset=${offset}`)
+    if (!res.ok) break
+    const data = await res.json() as { members?: MemberWithUserFull[]; total?: number }
+    const page = data.members ?? []
+    total = data.total ?? page.length
+    collected.push(...page)
+    offset += 100
+    if (page.length === 0) break
+  }
+  return collected.filter((m): m is PickableMember => m.status === 'active' && m.user_id !== null)
+}
+
+/** Name if they have one, otherwise the email they signed in with. */
+function memberLabel(m: PickableMember): string {
+  return (m.full_name ?? '').trim() || m.email
+}
+
 // ─── Tab ──────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -83,7 +121,7 @@ export default function MaternityTab({ slug, canWrite, canReadEmployees }: Props
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [showForm, setShowForm] = useState(false)
-  const [employees, setEmployees] = useState<EmployeePublic[]>([])
+  const [members, setMembers] = useState<PickableMember[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -103,10 +141,8 @@ export default function MaternityTab({ slug, canWrite, canReadEmployees }: Props
     if (!canReadEmployees || !showForm) return
     let cancelled = false
     void (async () => {
-      const res = await fetch(`/api/ws/${slug}/employees?limit=100`)
-      if (!res.ok || cancelled) return
-      const data = await res.json() as { employees: EmployeePublic[] }
-      if (!cancelled) setEmployees(data.employees ?? [])
+      const rows = await fetchActiveMembers(slug)
+      if (!cancelled) setMembers(rows)
     })()
     return () => { cancelled = true }
   }, [slug, canReadEmployees, showForm])
@@ -151,7 +187,7 @@ export default function MaternityTab({ slug, canWrite, canReadEmployees }: Props
       {canWrite && showForm && (
         <NewCaseForm
           slug={slug}
-          employees={employees}
+          members={members}
           onCancel={() => setShowForm(false)}
           onCreated={async () => { setShowForm(false); await load() }}
         />
@@ -265,24 +301,24 @@ function deriveDates(dueDate: string, weeks: number): { start: string; end: stri
 }
 
 function NewCaseForm({
-  slug, employees, onCancel, onCreated,
+  slug, members, onCancel, onCreated,
 }: {
   slug: string
-  employees: EmployeePublic[]
+  members: PickableMember[]
   onCancel: () => void
   onCreated: () => void | Promise<void>
 }) {
   // Destructured: `show` is a stable useCallback, the context object is not,
   // so this is what makes it safe in a useCallback/useEffect dep array.
   const { show: toast } = useToast()
-  const [employeeId, setEmployeeId] = useState('')
+  const [userId, setUserId] = useState('')
   const [dueDate, setDueDate] = useState('')
   const [weeks, setWeeks] = useState('26')
   const [saving, setSaving] = useState(false)
 
   async function submit() {
     const parsedWeeks = Math.max(1, parseInt(weeks, 10) || 26)
-    if (!employeeId || !dueDate) {
+    if (!userId || !dueDate) {
       toast(wsLeaveScreen.maternityEmployeeRequired, 'error')
       return
     }
@@ -293,7 +329,7 @@ function NewCaseForm({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          employee_id: employeeId,
+          user_id: userId,
           due_date: dueDate,
           start_date: start,
           end_date: end,
@@ -317,13 +353,20 @@ function NewCaseForm({
       <p className="t-eyebrow" style={{ marginBottom: '12px' }}>{wsLeaveScreen.maternityFormTitle}</p>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '10px', alignItems: 'end' }}>
         <Field label={wsLeaveScreen.maternityEmployee} htmlFor="mat-employee">
+          {/* Members, not HR records: the case creates the record if the
+              person does not have one yet. */}
           <Select
             id="mat-employee"
-            value={employeeId}
-            onChange={e => setEmployeeId(e.target.value)}
+            value={userId}
+            onChange={e => setUserId(e.target.value)}
             options={[
-              { value: '', label: wsLeaveScreen.maternityEmployeePlaceholder },
-              ...employees.map(e => ({ value: e.id, label: `${e.first_name} ${e.last_name}`.trim() || e.work_email })),
+              {
+                value: '',
+                label: members.length === 0
+                  ? hrRecord.noMembers
+                  : wsLeaveScreen.maternityEmployeePlaceholder,
+              },
+              ...members.map(m => ({ value: m.user_id, label: memberLabel(m) })),
             ]}
           />
         </Field>

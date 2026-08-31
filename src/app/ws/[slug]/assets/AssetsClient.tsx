@@ -9,8 +9,9 @@ import {
 } from '@/components/ui'
 import { useToast } from '@/components/shared/Toast'
 import { wsAssets } from '@/locales/en/ws-people'
+import { hrRecord } from '@/locales/en/documents'
 import type { AssetStatus, AssetStatusCount, AssetWithAssignee } from '@/lib/db/queries/assets'
-import type { EmployeePublic } from '@/lib/types/employees'
+import type { MemberWithUserFull } from '@/lib/db/queries/workspaces'
 
 // ─── Presentation ─────────────────────────────────────────────────────────────
 
@@ -53,6 +54,43 @@ function countFor(counts: AssetStatusCount[], status: AssetStatus): number {
   return counts.find(c => c.status === status)?.count ?? 0
 }
 
+/** A member with an account behind it - the only kind that can hold an asset. */
+type PickableMember = MemberWithUserFull & { user_id: string }
+
+/**
+ * Every active member of the workspace, paged 100 at a time.
+ *
+ * The picker offers MEMBERS, not employee records. Most members have no HR
+ * record - one is written only when an admin fills in the directory form - so
+ * an employee-backed list showed a real 34-person workspace a single name.
+ * POST /assign takes the member and creates the record if the assignment needs
+ * one.
+ *
+ * /members returns every membership status, so pending invites and departed
+ * people are dropped here; the server rejects them anyway.
+ */
+async function fetchActiveMembers(slug: string): Promise<PickableMember[]> {
+  const collected: MemberWithUserFull[] = []
+  let offset = 0
+  let total = Infinity
+  while (collected.length < total) {
+    const res = await fetch(`/api/ws/${slug}/members?limit=100&offset=${offset}`)
+    if (!res.ok) break
+    const data = await res.json() as { members?: MemberWithUserFull[]; total?: number }
+    const page = data.members ?? []
+    total = data.total ?? page.length
+    collected.push(...page)
+    offset += 100
+    if (page.length === 0) break
+  }
+  return collected.filter((m): m is PickableMember => m.status === 'active' && m.user_id !== null)
+}
+
+/** Name if they have one, otherwise the email they signed in with. */
+function memberLabel(m: PickableMember): string {
+  return (m.full_name ?? '').trim() || m.email
+}
+
 // ─── Screen ───────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -76,7 +114,7 @@ export default function AssetsClient({ slug, canWrite, canReadEmployees }: Props
 
   const [showAdd, setShowAdd] = useState(false)
   const [assigning, setAssigning] = useState<AssetWithAssignee | null>(null)
-  const [employees, setEmployees] = useState<EmployeePublic[]>([])
+  const [members, setMembers] = useState<PickableMember[]>([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -99,16 +137,14 @@ export default function AssetsClient({ slug, canWrite, canReadEmployees }: Props
 
   useEffect(() => { void load() }, [load])
 
-  // Loaded once and only when the viewer may see employees; the assign modal
-  // is the only thing that needs it.
+  // Loaded once and only when the viewer may see people; the assign modal is
+  // the only thing that needs it.
   useEffect(() => {
     if (!canReadEmployees) return
     let cancelled = false
     void (async () => {
-      const res = await fetch(`/api/ws/${slug}/employees?limit=100`)
-      if (!res.ok || cancelled) return
-      const data = await res.json() as { employees: EmployeePublic[] }
-      if (!cancelled) setEmployees(data.employees ?? [])
+      const rows = await fetchActiveMembers(slug)
+      if (!cancelled) setMembers(rows)
     })()
     return () => { cancelled = true }
   }, [slug, canReadEmployees])
@@ -162,13 +198,13 @@ export default function AssetsClient({ slug, canWrite, canReadEmployees }: Props
     }
   }
 
-  async function assign(asset: AssetWithAssignee, employeeId: string) {
+  async function assign(asset: AssetWithAssignee, userId: string) {
     setBusyId(asset.id)
     try {
       const res = await fetch(`/api/ws/${slug}/assets/${asset.id}/assign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ employee_id: employeeId }),
+        body: JSON.stringify({ user_id: userId }),
       })
       const data = await res.json().catch(() => ({})) as { asset?: AssetWithAssignee; error?: string }
       if (res.ok && data.asset) {
@@ -376,10 +412,10 @@ export default function AssetsClient({ slug, canWrite, canReadEmployees }: Props
         <AssignAssetModal
           key={assigning.id}
           asset={assigning}
-          employees={employees}
+          members={members}
           busy={busyId === assigning.id}
           onClose={() => setAssigning(null)}
-          onAssign={id => void assign(assigning, id)}
+          onAssign={userId => void assign(assigning, userId)}
         />
       )}
     </div>
@@ -481,18 +517,19 @@ function AddAssetForm({
 // ─── Assign modal ─────────────────────────────────────────────────────────────
 
 function AssignAssetModal({
-  asset, employees, busy, onClose, onAssign,
+  asset, members, busy, onClose, onAssign,
 }: {
   asset: AssetWithAssignee
-  employees: EmployeePublic[]
+  members: PickableMember[]
   busy: boolean
   onClose: () => void
-  onAssign: (employeeId: string) => void
+  /** The MEMBER's user id - the API finds or creates the HR record behind it. */
+  onAssign: (userId: string) => void
 }) {
   // Destructured: `show` is a stable useCallback, the context object is not,
   // so this is what makes it safe in a useCallback/useEffect dep array.
   const { show: toast } = useToast()
-  const [employeeId, setEmployeeId] = useState('')
+  const [userId, setUserId] = useState('')
 
   return (
     <Modal
@@ -507,8 +544,8 @@ function AssignAssetModal({
             size="sm"
             loading={busy}
             onClick={() => {
-              if (!employeeId) { toast(wsAssets.assignEmployeeRequired, 'error'); return }
-              onAssign(employeeId)
+              if (!userId) { toast(wsAssets.assignEmployeeRequired, 'error'); return }
+              onAssign(userId)
             }}
           >
             {wsAssets.assignSubmit}
@@ -521,19 +558,22 @@ function AssignAssetModal({
         {[asset.category, asset.serial_number].filter(Boolean).join(' · ') || '—'}
       </p>
       <div className="divider" />
-      {employees.length === 0 ? (
-        <p className="t-muted">{wsAssets.noEmployees}</p>
+      {members.length === 0 ? (
+        // Not "add an employee record first" any more: the record is created
+        // by the assignment, so the only way to have nobody is to have no
+        // members.
+        <p className="t-muted">{hrRecord.noMembers}</p>
       ) : (
         <Field label={wsAssets.assignEmployeeLabel} htmlFor="assign-employee">
           <Select
             id="assign-employee"
-            value={employeeId}
-            onChange={e => setEmployeeId(e.target.value)}
+            value={userId}
+            onChange={e => setUserId(e.target.value)}
             options={[
               { value: '', label: wsAssets.assignEmployeePlaceholder },
-              ...employees.map(e => ({
-                value: e.id,
-                label: [`${e.first_name} ${e.last_name}`.trim(), e.employment.department].filter(Boolean).join(' · '),
+              ...members.map(m => ({
+                value: m.user_id,
+                label: [memberLabel(m), m.department].filter(Boolean).join(' · '),
               })),
             ]}
           />

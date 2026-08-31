@@ -15,8 +15,18 @@
 
 export const wsEmployees = {
   title: 'Employees',
-  subtitle: (total: number, active: number) =>
-    `${total} ${total === 1 ? 'person' : 'people'} · ${active} active`,
+  /**
+   * Counts PEOPLE, not records. The directory lists every active member, so a
+   * count of `employees` rows would under-report the workforce by whatever HR
+   * has not filled in yet - which is the whole reason the second number is
+   * there rather than being quietly folded into the first.
+   */
+  subtitle: (total: number, withRecord: number) => {
+    const people = `${total} ${total === 1 ? 'person' : 'people'}`
+    if (total === 0) return people
+    if (withRecord === total) return `${people} · all with HR details`
+    return `${people} · ${withRecord} with HR details`
+  },
   addButton: 'Add employee',
   editButton: 'Edit profile',
   backToDirectory: 'Back to directory',
@@ -30,6 +40,18 @@ export const wsEmployees = {
   loadMore: 'Load more',
   loadingMore: 'Loading…',
 
+  // People without an HR record
+  noRecordLabel: 'No HR details',
+  addDetails: 'Add details',
+  addDetailsFor: (name: string) => `Add HR details for ${name}`,
+  /**
+   * Department and status are columns on the HR record, so filtering by one
+   * can only ever match people who have a record. Said out loud, because a
+   * directory that silently drops two thirds of the workforce reads as a bug.
+   */
+  recordOnlyFilterNote:
+    'Department and status come from the HR record, so people without one are hidden while these filters are on.',
+
   colEmployee: 'Employee',
   colJobTitle: 'Job title',
   colRole: 'Role',
@@ -38,12 +60,12 @@ export const wsEmployees = {
   colJoined: 'Joined',
   colStatus: 'Status',
 
-  emptyTitle: 'No employees match your filters',
+  emptyTitle: 'Nobody matches your filters',
   emptyHint: 'Clear the search or pick a different department.',
-  emptyDirectoryTitle: 'No employee records yet',
-  emptyDirectoryHint: 'Add someone to start the HR directory.',
+  emptyDirectoryTitle: 'No people in this workspace yet',
+  emptyDirectoryHint: 'Invite someone from the People screen to start the directory.',
 
-  loadFailed: 'Could not load employees.',
+  loadFailed: 'Could not load the directory.',
   notFound: 'That employee record no longer exists.',
 
   // Detail view

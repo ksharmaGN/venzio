@@ -48,6 +48,24 @@ export const documents = {
   },
 } as const
 
+/**
+ * Copy for the lazily-created HR record.
+ *
+ * Shared by the asset and maternity pickers because both now name a MEMBER and
+ * let the server find or create the employee record behind them - so both can
+ * fail in the same two ways.
+ */
+export const hrRecord = {
+  errors: {
+    memberRequired: 'Pick who this is for',
+    notAMember: 'That person is not an active member of this workspace',
+    workEmailTaken:
+      'Another employee record already uses this work email. Open the Employees directory and link that record to their account first.',
+  },
+  /** Shown where a picker has nobody to offer. */
+  noMembers: 'Invite someone to this workspace first.',
+} as const
+
 export const assets = {
   status: {
     available: 'Available',
