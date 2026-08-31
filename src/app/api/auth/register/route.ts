@@ -19,16 +19,6 @@ function apiError(message: string, code: string, status: number) {
   return NextResponse.json({ error: message, code }, { status })
 }
 
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, '')
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 48)
-}
-
 export async function POST(request: NextRequest) {
   let body: {
     email?: string

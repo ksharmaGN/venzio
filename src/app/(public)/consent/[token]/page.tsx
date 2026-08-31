@@ -1,3 +1,4 @@
+import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getMemberByConsentToken, acceptConsent, declineConsent, getWorkspaceById } from '@/lib/db/queries/workspaces'
@@ -56,10 +57,9 @@ function ResultCard({ title, body, cta }: { title: string; body: string; cta?: R
           borderRadius: 'var(--radius-lg)',
           padding: '32px 28px',
           textAlign: 'center',
-          boxShadow: '0 0 40px rgba(29,158,117,0.08)',
         }}
       >
-        <img src="/logo.png" alt="Venzio" style={{ height: '42px', width: 'auto', marginBottom: '24px' }} />
+        <Image src="/logo.png" alt="Venzio" width={75} height={42} style={{ height: '42px', width: 'auto', marginBottom: '24px' }} />
         <h1 style={{ fontFamily: 'Playfair Display, serif', fontSize: '20px', fontWeight: 700, color: 'var(--navy)', marginBottom: '8px' }}>
           {title}
         </h1>

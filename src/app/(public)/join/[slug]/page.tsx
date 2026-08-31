@@ -1,9 +1,9 @@
+import Image from 'next/image'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getSessionFromCookies } from '@/lib/auth'
 import {
   getWorkspaceBySlug,
-  getMembershipsByEmail,
   addWorkspaceMember,
   getVerifiedDomainsForEmail,
   getWorkspaceMemberByEmail,
@@ -60,10 +60,9 @@ function InfoCard({ children }: { children: React.ReactNode }) {
           border: '1px solid var(--border)',
           borderRadius: 'var(--radius-lg)',
           padding: '32px 28px',
-          boxShadow: '0 0 40px rgba(29,158,117,0.08)',
         }}
       >
-        <img src="/logo.png" alt="Venzio" style={{ height: '42px', width: 'auto', marginBottom: '24px' }} />
+        <Image src="/logo.png" alt="Venzio" width={75} height={42} style={{ height: '42px', width: 'auto', marginBottom: '24px' }} />
         {children}
       </div>
     </div>
