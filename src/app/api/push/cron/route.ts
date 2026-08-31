@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenEventsForCron, updatePushRemindersSent, autoCheckoutEvent } from '@/lib/db/queries/events'
 import { sendPushToUser } from '@/lib/push'
+import { runReminderPass, type ReminderPassResult } from '@/lib/reminders'
 
 const MILESTONES_H = [4, 8, 12, 16, 18, 20, 22]
 
@@ -86,5 +87,18 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  return NextResponse.json({ processed: events.length })
+  // 4. Wall-clock check-in / check-out reminders.
+  //
+  // A second, workspace-anchored pass. The loop above starts from open events,
+  // so it can only ever see people who are already checked in - it is
+  // structurally incapable of noticing someone who never checked in at all.
+  // Wrapped separately so a failure here cannot discard the work above.
+  let reminders: ReminderPassResult | null = null
+  try {
+    reminders = await runReminderPass(new Date(now))
+  } catch (err) {
+    console.error('[cron] reminder pass failed:', err)
+  }
+
+  return NextResponse.json({ processed: events.length, reminders })
 }

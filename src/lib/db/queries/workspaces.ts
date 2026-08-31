@@ -16,6 +16,9 @@ export interface Workspace {
   leaves_enabled: number
   working_days: string   // JSON array e.g. '[1,2,3,4,5]'
   leave_cutover_date: string | null
+  /** 'HH:MM' in display_timezone, or null when the reminder is off. */
+  checkin_reminder_at: string | null
+  checkout_reminder_at: string | null
   created_at: string
   updated_at: string
 }
@@ -117,7 +120,7 @@ export async function getWorkspaceById(id: string): Promise<Workspace | null> {
 
 export async function updateWorkspace(
   workspaceId: string,
-  updates: Partial<Pick<Workspace, 'name' | 'display_timezone' | 'allow_remote' | 'leaves_enabled' | 'working_days' | 'leave_cutover_date'>>
+  updates: Partial<Pick<Workspace, 'name' | 'display_timezone' | 'allow_remote' | 'leaves_enabled' | 'working_days' | 'leave_cutover_date' | 'checkin_reminder_at' | 'checkout_reminder_at'>>
 ): Promise<void> {
   const fields = Object.keys(updates).map((k) => `${k} = ?`)
   const values = Object.values(updates)

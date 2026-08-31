@@ -3,6 +3,32 @@ import { requireWsAccess } from '@/lib/ws-access'
 import { updateWorkspace } from '@/lib/db/queries/workspaces'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
+import { wsReminders } from '@/locales/en/ws-reminders'
+
+/**
+ * Strict 24-hour 'HH:MM'. The value is wall-clock in the workspace's own
+ * timezone and is compared against the clock by the reminder cron, so anything
+ * looser ('9:00', '25:00', '09:00:00') would silently never fire - a 400 is
+ * kinder than a reminder that quietly does nothing.
+ */
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/
+
+/** Sentinel for "the caller sent something that is not a valid time". */
+const INVALID = Symbol('invalid-reminder-time')
+
+/**
+ * Normalise one reminder field. Returns `undefined` when the key is absent,
+ * `null` for "turn it off" (empty string counts, because that is what an
+ * emptied <input type="time"> sends), or the validated 'HH:MM' string.
+ */
+function readReminderTime(value: unknown): string | null | undefined | typeof INVALID {
+  if (value === undefined) return undefined
+  if (value === null) return null
+  if (typeof value !== 'string') return INVALID
+  const trimmed = value.trim()
+  if (trimmed === '') return null
+  return HHMM.test(trimmed) ? trimmed : INVALID
+}
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -23,6 +49,8 @@ export async function GET(request: NextRequest, { params }: Props) {
     leaves_enabled: !!ctx.workspace.leaves_enabled,
     working_days,
     leave_cutover_date: ctx.workspace.leave_cutover_date,
+    checkin_reminder_at: ctx.workspace.checkin_reminder_at,
+    checkout_reminder_at: ctx.workspace.checkout_reminder_at,
     // Archive / restore are ownership-level, so only the owner should see the
     // control. The routes enforce this independently - this flag only stops us
     // showing a button we would immediately 403 on.
@@ -42,6 +70,8 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     leavesEnabled?: boolean
     workingDays?: number[]
     leaveCutoverDate?: string | null
+    checkinReminderAt?: string | null
+    checkoutReminderAt?: string | null
   }
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid body', code: 'INVALID_BODY' }, { status: 400 })
@@ -54,6 +84,8 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     leaves_enabled?: number
     working_days?: string
     leave_cutover_date?: string | null
+    checkin_reminder_at?: string | null
+    checkout_reminder_at?: string | null
   } = {}
   if (body.name?.trim()) updates.name = body.name.trim()
   if (body.displayTimezone?.trim()) updates.display_timezone = body.displayTimezone.trim()
@@ -82,6 +114,26 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     }
     updates.leave_cutover_date = d ?? null
   }
+
+  // Reminder times. Absent key = leave as-is; null or '' = turn the reminder
+  // off; 'HH:MM' = set it. Anything else is a 400 rather than a silent no-op.
+  const checkinReminder = readReminderTime(body.checkinReminderAt)
+  if (checkinReminder === INVALID) {
+    return NextResponse.json(
+      { error: wsReminders.api.invalidReminderTime('checkinReminderAt'), code: 'VALIDATION_ERROR' },
+      { status: 400 },
+    )
+  }
+  if (checkinReminder !== undefined) updates.checkin_reminder_at = checkinReminder
+
+  const checkoutReminder = readReminderTime(body.checkoutReminderAt)
+  if (checkoutReminder === INVALID) {
+    return NextResponse.json(
+      { error: wsReminders.api.invalidReminderTime('checkoutReminderAt'), code: 'VALIDATION_ERROR' },
+      { status: 400 },
+    )
+  }
+  if (checkoutReminder !== undefined) updates.checkout_reminder_at = checkoutReminder
 
   if (Object.keys(updates).length > 0) {
     await updateWorkspace(ctx.workspace.id, updates)
