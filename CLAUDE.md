@@ -8,7 +8,47 @@ Venzio is a **presence intelligence platform**. Two PWA surfaces:
 
 **Core USP:** Multi-signal presence verification (AND, not OR). When a workspace has GPS + WiFi + IP signals configured, ALL must match for a check-in to count as verified. This makes faking presence extremely difficult.
 
-**Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On **`/me/timeline`**, the default **All workspaces** view uses `GET /api/events` (global history, no per-workspace `matched_by`). Selecting a workspace uses `GET /api/me/ws/[slug]/events`, which calls `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics.
+**Multi-workspace users:** One account can hold multiple active workspace memberships. `presence_events` rows do not store `workspace_id`; verification is always computed for a chosen workspace. On `/me` that workspace is the **active workspace** (see below), and **`/me/timeline`** is always scoped to it: it calls `GET /api/me/ws/[slug]/events`, which runs `queryWorkspaceEvents()` for that workspace and the current user so transparency matches admin-side AND semantics. The timeline's old **All workspaces** view is gone; `GET /api/events` (unscoped global history, no per-workspace `matched_by`) still exists as an endpoint but has no UI consumer.
+
+---
+
+## The `/me` Surface Conventions
+
+### One workspace selector
+
+The top-bar pill in `src/components/user/MeTopbar.tsx` is the **single source of truth** for the active workspace on `/me`. Every screen below it — home, Timeline, Leave, Profile, Documents, the roster — reads `useWorkspaceScope()` from `src/app/me/workspace-scope.tsx` and scopes its fetches to that slug.
+
+It is backed by the `vnz_ws` cookie (`en.constants.cookieWorkspace`), written from the browser by `workspace-scope.tsx` and read on the server by `resolveActiveWorkspaceSlug()` in `src/app/me/active-workspace.ts`. **Deliberately not httpOnly** — it is a UI preference, not a credential, and `src/app/me/layout.tsx` is a Server Component that must read it to paint the pill correctly on first render. `localStorage` cannot do that.
+
+Resolution order, everywhere: **`?ws=` → cookie → first active membership.** The server validates the value against the memberships it just loaded before seeding the provider, and the provider only ever resolves to a slug in that server-supplied list — a stale or forged value falls back to a real membership rather than naming someone else's workspace. This is UI hygiene, not access control: every `/api/me/ws/[slug]/*` route re-resolves the slug through `requireWsMember()` regardless.
+
+**No screen may add its own workspace picker.** `/me/timeline` used to have one — a second dropdown under the pill, which could disagree with it — and no longer does.
+
+### Workspace naming
+
+Inside content already scoped to the active workspace, **do not print the workspace name**. The pill above already answers "which one", and repeating it is noise (the profile sheet shows the role name, not the workspace).
+
+Where the user is *choosing between* or *comparing* workspaces, the name **stays** — there it is the information, not decoration:
+- the switcher sheet in `MeTopbar`
+- `/me/orgs` (invites + memberships)
+- the `/ws` workspace picker
+- the workspace name editor in Settings
+- consent invitation emails
+- the sole-admin deactivation blocker in `/me/settings` — it lists *which* workspaces are blocking
+- the leave-workspace confirm dialog on `/me/orgs` (`en.meOrgs.leaveConfirm(wsName)`)
+
+Scoped to `/me`. The `/ws` admin surface keeps its workspace name in the topbar — it is a different surface with a different question.
+
+### Notification split
+
+Both entry points land on `/me/notifications`; the `?ws=` query param is what distinguishes them.
+
+| Entry point | URL | Shows |
+|---|---|---|
+| Top-bar bell | `/me/notifications?ws=<active slug>` | The active workspace only, no per-row badges — the heading already names it. Polls `GET /api/me/ws/[slug]/notifications/unread-count` |
+| Avatar sheet → Notifications | `/me/notifications` | Every workspace, each row badged with its workspace colour. Polls `GET /api/me/notifications/unread-count` |
+
+`?ws=` is validated server-side in `src/app/me/notifications/page.tsx` against real memberships; a bogus slug falls back to the unified view. The client never reads `?ws=` itself. With no workspace at all the bell falls back to the global feed — that is where a pending invitation shows up.
 
 ---
 
@@ -24,7 +64,9 @@ The client sends data. The server decides truth. Never trust:
 - `otpVerified: true` from client (always verify `cm_otp_ok` cookie server-side)
 
 ### 3. All mutations scoped by workspace_id at DB level
-Every query that touches workspace data must include `AND workspace_id = ?`. No exceptions. Use `requireWsAdmin()` to resolve slug → verified workspace ID before any query.
+Every query that touches workspace data must include `AND workspace_id = ?`. No exceptions. Use `requireWsAccess(request, slug, Resource, Action)` from `@/lib/ws-access` to resolve slug → verified workspace ID before any query.
+
+> `requireWsAdmin()` **no longer exists.** It was a binary "is this person an admin?" check and was removed when the permission model landed; `src/lib/ws-admin.ts` keeps only `requireWsMember()`, which authenticates an ordinary member for the `/me` surface and carries no permission meaning. Re-adding an admin-shaped gate bypasses the role system entirely.
 
 ### 4. Event data is immutable
 `presence_events` rows are never deleted or modified. Notes are the only editable field on a user's event. Admin corrections live in `admin_overrides`, not in the event itself.
@@ -42,12 +84,14 @@ Every query that touches workspace data must include `AND workspace_id = ?`. No 
 Signal types: GPS, WiFi, IP
 If workspace has [GPS, WiFi] configured:
   → event must match GPS AND WiFi to be verified
-  → matching only GPS = unverified
-  → matching nothing = not counted at all
+  → matching only GPS = 'partial'
+  → matching nothing = 'none' (still returned, just not verified)
 
 Config-light mode (no signals configured):
-  → all events from active members pass through
+  → every event from an active member is 'verified' — NOT 'none'
 ```
+
+Config-light is a deliberate choice, not a fallback: a workspace that has configured nothing has nothing to fail against, so showing its whole team as unverified would be noise. See `src/lib/signals.ts` (`signals.length === 0` branch).
 
 `MatchedBy` values: `'verified'` (all configured signals matched) | `'partial'` (some matched) | `'none'` (no signals matched) | `'override'` (admin override bypassed matching)
 
@@ -91,32 +135,180 @@ Rows with a missing/invalid name or date are skipped and returned in the `errors
 
 ## Leave System
 
-Workspace admins configure per-workspace leave types (`workspace_leave_types` table). Employees submit leave requests (`leave_requests` table) from `/me/ws/[slug]`. Submissions are instantly `approved` — no approval workflow.
+Workspace admins configure per-workspace leave types (`workspace_leave_types` table). Employees submit leave requests (`leave_requests` table) from `/me/ws/[slug]`. **Submissions land as `pending`, not `approved`** — an admin approves or rejects them from the Approvals queue. Only `approved` requests consume balance.
 
 ### Tables
-- `workspace_leave_types`: `id, workspace_id, name, accrual_frequency ('monthly'|'quarterly'), accrual_credits, created_at, deleted_at` — soft-deleted, unique `(workspace_id, name) WHERE deleted_at IS NULL`
-- `leave_requests`: `id, workspace_id, user_id, leave_type_id, start_date, end_date, reason, status DEFAULT 'approved', created_at` — immutable after insert
+- `workspace_leave_types`: `id, workspace_id, name, accrual_frequency ('monthly'|'quarterly'|'half-yearly'|'yearly'), accrual_credits, credit_timing ('start'|'end'), created_at, deleted_at` — soft-deleted, unique `(workspace_id, name) WHERE deleted_at IS NULL`
+- `leave_requests`: `id, workspace_id, user_id, leave_type_id, start_date, end_date, reason, status DEFAULT 'pending', rejection_reason, actioned_by_user_id, created_at` — dates and type are fixed at insert; only the approve/reject columns ever change
+- `leave_opening_balances`: `id, workspace_id, user_id, leave_type_id, balance_days, note, created_at, updated_at` — unique `(workspace_id, user_id, leave_type_id)`; migrated-in balances from whatever system the workspace used before
 
 ### Balance computation (no stored balance — always computed)
 ```
-periods_elapsed = complete calendar months (or quarter-groups) since member.added_at
-total_accrued   = periods_elapsed × accrual_credits
-used_days       = SUM(end_date − start_date + 1) for approved requests of this type
-available_days  = max(0, total_accrued − used_days)
+available_days = max(0, opening_balance + total_accrued − used_days)
 ```
-Logic lives in `lib/db/queries/leaves.ts → getLeaveTypesWithBalance()`. Uses calendar month arithmetic (not day approximations).
+Logic lives in `lib/db/queries/leaves.ts` — `getLeaveTypesWithBalance()` and `computeTotalAccrued()`.
+
+- **Four frequencies**, 1 / 3 / 6 / 12 months per period: `monthly | quarterly | half-yearly | yearly`.
+- **Periods are calendar-aligned, not join-date-anchored.** Quarterly boundaries fall on Jan/Apr/Jul/Oct, half-yearly on Jan/Jul, yearly on Jan.
+- **The first period is pro-rata**: `accrual_credits × (time from the accrual start to the next period boundary ÷ length of that period)`.
+- **`credit_timing` decides when a period's credits land.** `'start'` front-loads — the pro-rata first-period credits are available immediately, and each later period's credits at its start (the in-progress period counts). `'end'` back-loads — nothing until a period completes, so a brand-new member has `0`.
+- **Accrual start** is `workspace_members.added_at`, unless the workspace's `leave_cutover_date` is later, in which case that date is used for *every* leave type (Venzio takes over accrual from the cutover).
+- **`opening_balance`** is added on top and is independent of the cutover.
+- **`used_days` counts *working* days**, not calendar days: `countWorkdays()` from `src/lib/attendance-summary.ts` against the workspace's `working_days`. Only `status = 'approved'` requests count.
+- Accrued totals are rounded to one decimal place.
 
 ### Admin API (`/api/ws/[slug]/leave-types`)
 - `GET` — list active leave types
-- `POST` JSON `{ name, accrual_frequency, accrual_credits }` — create
+- `POST` JSON `{ name, accrual_frequency, accrual_credits, credit_timing? }` — create (`credit_timing` defaults to `'start'`)
 - `DELETE /[id]` — soft-delete; existing requests unaffected
+
+### Admin approve / reject (`/api/ws/[slug]/leaves`)
+- `GET` — all requests for the workspace
+- `PATCH /[id]` JSON `{ action: 'approve' | 'reject', rejection_reason? }` — `rejection_reason` is required on reject. `actionLeaveRequest()` updates atomically with `WHERE status = 'pending'`, so a concurrent second action returns `409 ALREADY_ACTIONED` rather than double-processing. Also surfaced through the Approvals queue (`kind: 'leave'`).
 
 ### Employee API
 - `GET /api/me/ws/[slug]/leave-types` — list types with `available_days` for current user
-- `POST /api/me/ws/[slug]/leave` JSON `{ leave_type_id, start_date, end_date, reason? }` — submit; returns `400 INSUFFICIENT_BALANCE` if requested days exceed balance
+- `POST /api/me/ws/[slug]/leave` JSON `{ leave_type_id, start_date, end_date, reason? }` — submit as `pending`; returns `400 INSUFFICIENT_BALANCE` if the requested *working* days exceed the balance
 
-### Leave requests are immutable
-Never modify or delete `leave_requests` rows. Same principle as `presence_events`.
+### Leave requests are append-only
+Never delete a `leave_requests` row, and never edit its `start_date`, `end_date`, `leave_type_id` or `user_id`. The **only** mutation allowed is the approve/reject transition out of `pending` — `status`, `rejection_reason`, `actioned_by_user_id` — and it goes through `actionLeaveRequest()`. A correction is a reject plus a new request, never an edit.
+
+---
+
+## Approvals
+
+**`/ws/:slug/disputes` does not exist.** It was superseded by **`/ws/:slug/approvals`** — one queue holding three kinds of pending item, discriminated by `kind`:
+
+| `kind` | What it is | Backing table |
+|---|---|---|
+| `leave` | A leave request awaiting action | `leave_requests` |
+| `regularization` | An employee asking to correct a past day (`office` / `remote`) | `regularization_requests` |
+| `doc` | An employee-uploaded document awaiting verification | `employee_documents` |
+
+`getPendingApprovalItems()` in `src/lib/approvals.ts` is the single source of truth, reused by the Overview widget, the Approvals page and the People page so all three always agree. Routes: `GET /api/ws/[slug]/approvals`, `PATCH /api/ws/[slug]/approvals/[kind]/[id]` — `Resource.Approvals` (`Read` / `Write`; it has no `Delete`).
+
+Approving a regularization does **not** edit a `presence_events` row: it writes an `admin_overrides` row and, where needed, a new regularized event. Invariant 7 still holds.
+
+`kind: 'doc'` items are gated separately: `approvals:read` does **not** imply `documents:read`, so `getPendingApprovalItems()` takes the viewer's role and includes doc items only for a role holding `documents:read`. It is **fail-closed** — omitting the viewer hides the doc items rather than showing them, and the returned `doc` array and `items` are the same shortened truth so every count stays honest.
+
+For a `doc` item, `user_full_name` / `user_email` come from the **employee record**, not the users table — a document can belong to an employee with no linked login yet, and the queue still has to name them.
+
+---
+
+## Assets
+
+Workspace hardware register (`workspace_assets`). Soft-deleted, scoped by `workspace_id`, so a retired laptop's assignment history survives.
+
+Status is one of `assigned | available | repair | retired`, mirrored by a `CHECK` on the column and by `isAssetStatus()` in `lib/db/queries/assets.ts`.
+
+- `GET /api/ws/[slug]/assets` — list + category list + status counts (`?category=`, `?status=`). An unrecognised `status` is *dropped*, not 400'd: otherwise a stale bookmark becomes an error page.
+- `POST /api/ws/[slug]/assets` — create. Validation lives in the route's `_validate.ts`; failures return `422 VALIDATION_ERROR` with a `fields` map.
+- `PATCH /api/ws/[slug]/assets/[id]` — update · `DELETE` — soft delete
+- `POST|DELETE /api/ws/[slug]/assets/[id]/assign` — assign to / unassign from an employee
+- `GET /api/ws/[slug]/assets/export` — CSV
+
+**Only the assign endpoint moves a holder.** `PATCH` changes fields; it never sets or clears `assigned_employee_id`. So it refuses both directions of the assignment boundary:
+
+| Attempt | Answer |
+|---|---|
+| `PATCH` sets `status: 'assigned'` on an asset with no holder | `409 ASSIGN_VIA_ENDPOINT` |
+| `PATCH` sets **any** other status on an asset that still has a holder | `409 RETURN_FIRST` |
+
+The second check is keyed on `assigned_employee_id`, **not** on the current status, so a row already in a broken state cannot be patched further sideways. `assigned → retired` is therefore **not** a legal direct edge: `DELETE .../assign` is the only thing that clears a holder, and it is the only way out. `POST .../assign` additionally refuses a `retired` asset (`409 ASSET_RETIRED`) and one already held by someone else (`409 ALREADY_ASSIGNED`).
+
+Guarded by `Resource.Assets` (`Read` / `Write` / `Delete`).
+
+---
+
+## Employee Documents
+
+Two tables, deliberately split: `employee_documents` holds *metadata* (name, type, size, verification state) and is what every list query reads; `employee_document_blobs` holds the bytes and is touched only on upload and download. A join would drag megabytes through every folder view. Metadata is soft-deleted; the blob is **hard**-deleted alongside it — orphaned megabytes for a file nobody can reach are a storage leak, not an audit trail.
+
+### The `DocumentStore` seam — `src/lib/storage.ts`
+
+Bytes live in the database as base64 TEXT today. That is a deliberate trade (one Turso connection, no bucket, no signed URLs, no second failure domain), not a permanent decision, so **every byte enters and leaves through the `DocumentStore` interface**. Swapping in S3 becomes a config change plus one class in that file, touching no query file and no route.
+
+Two rules keep the seam honest:
+1. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Callers hand over and receive `Buffer`.
+2. Bytes and metadata stay in separate tables (above).
+
+Also in `storage.ts`: `MAX_FILE_BYTES` (2 MB), `ALLOWED_MIME_TYPES` (`application/pdf`, `image/png`, `image/jpeg`) and `sniffMimeType()`. **MIME type is decided by sniffing magic bytes, never by trusting `File.type`** — that string is attacker-controlled and would let an HTML or SVG payload be stored and served back under a benign `Content-Type`. Anything off the allowlist is a `415`.
+
+`workspaceId` is a parameter on every `DocumentStore` method rather than being implied by the document id: it keeps the tenant boundary visible at the storage layer and would become the S3 key prefix.
+
+### Lifecycle
+`owner` is `admin` (company-issued: offer letter, contract → starts `issued`) or `employee` (employee-supplied: ID proof, payslips → `missing` → `pending` on upload → admin verifies). Status: `missing | pending | verified | rejected | issued`.
+
+### Write order — a metadata row never names bytes that are not stored
+
+The blob write and the metadata write cannot be one transaction (they are separate statements today and would be separate *systems* under S3), so the **order** is the correctness argument instead. Both upload routes follow it exactly:
+
+1. **Clear or create the slot with no `file_name`** — an existing slot goes through `clearDocumentFile()`; a new one is created by `createDocument()` with `status: 'missing'` and `file_name` NULL.
+2. `documentStore.put()` — write the bytes.
+3. `markDocumentUploaded()` — only now does the row claim `file_name` / `mime_type` / `size_bytes`.
+
+A crash at any point leaves either an honest empty slot or the truth — never a download that 404s, and never yesterday's rejected file wearing today's name.
+
+**Delete is the mirror:** soft-delete the metadata first, *then* `documentStore.delete()`. Once the row is soft-deleted nothing can serve the file, so a failed byte delete leaves unreachable orphans rather than a live row pointing at shredded bytes.
+
+Uploading into an occupied slot **replaces** the file on the existing row — a slot is a slot, and a partial unique index on `(workspace_id, employee_id, doc_key)` would reject a second insert anyway. Two uploads racing for the same *new* slot are answered `409 DUPLICATE_SLOT` (`DuplicateDocumentSlotError`), not a 500: the index, not the pre-read, is what decides the winner.
+
+### Upload limits (the `/me` route)
+- **20 uploads per hour per user** — `rate_limit_log`, key `documents:<userId>`, action `document_upload`. Checked *before* the body is read, so a rate-limited caller cannot push 2 MB through first. `429 RATE_LIMITED`.
+- **40 live slots per employee** — `doc_key` is member-chosen and every unseen key mints a row, so without a ceiling one member can exhaust storage. Replacing the file in a slot they already own is never blocked by it.
+- Re-uploading over a `verified` slot is refused (`409 ALREADY_VERIFIED`) — an admin deletes the slot if it genuinely needs replacing.
+- The `owner` form field is **ignored** on the `/me` route: always `owner='employee'`, `status='pending'`. Letting a member self-declare a document company-issued would skip verification entirely.
+
+### Routes
+- Admin: `GET|POST /api/ws/[slug]/employees/[id]/documents`, `PATCH|DELETE .../[docId]`, `GET .../[docId]/file` — `Resource.Documents`
+- Member: `GET|POST /api/me/ws/[slug]/documents`, `GET /api/me/ws/[slug]/documents/[docId]/file` — `requireWsMember()`, self only
+
+The `.../file` routes are the *only* way bytes reach a browser, and they return real bytes with a `Content-Type`. No JSON route ever carries a payload.
+
+---
+
+## Maternity
+
+`maternity_cases` — statutory maternity leave tracked as a **case with stages**, not as a leave request. Deliberately not modelled on `leave_requests`: those are immutable rows booked against an accrued balance, whereas a maternity case spans months, its dates shift as the due date moves, and an admin walks it through a lifecycle. Forcing it into an immutable table would mean deleting and re-creating rows, which those tables forbid.
+
+Stages: `requested → approved → onleave → returned`. Forward-only, one step at a time, so a case cannot jump straight to `returned` and leave no record of the leave starting. The single backward edge `approved → requested` exists because an approval given in error must be revocable before the leave begins. Enforced by `canTransition()` in `lib/db/queries/maternity.ts`.
+
+**One open case per employee**, guaranteed by the partial unique index `idx_maternity_cases_one_open`. `findOpenCaseForEmployee()` in the POST route is only a courtesy that turns the common case into a clean `409 CASE_OPEN` with no failed INSERT behind it — the pre-check and the insert are two statements, so the index is what actually holds. A lost race raises `MaternityCaseOpenError` and gets the same 409. Closed (`returned`) cases are history and do not block a later pregnancy.
+
+**An open case may not have its `start_date` / `end_date` cleared.** The dates, not the status, are the reminder gate: `getActiveMaternityUserIds()` matches `start_date <= today <= end_date`, so a case that keeps its status but loses a date drops silently out of the gate and the daily check-in reminder starts nagging someone on maternity leave. Dates may be *moved* while a case is open; clearing one returns `422 VALIDATION_ERROR` with `REQUIRED_WHILE_OPEN`. Only `returned` — where the gate no longer looks at the case — may hold nulls.
+
+- `GET|POST /api/ws/[slug]/maternity`, `PATCH|DELETE /api/ws/[slug]/maternity/[id]`
+- Guarded by **`Resource.Leaves`** — maternity has no resource of its own.
+
+---
+
+## Billing
+
+There is **no payment integration in this codebase and none is being added.** The plan is a column on the workspace row; "Manage billing" in `src/app/ws/[slug]/settings/BillingTab.tsx` is a deliberate no-op that says so.
+
+Archive and restore live in the same tab because they are gated on the same resource — `Resource.Ownership`, labelled "Ownership & billing" in the catalogue — and it is the only Settings tab shown to owners alone.
+
+---
+
+## Scheduled reminders
+
+Two independent passes, both driven by `POST /api/push/cron` (Bearer `CRON_SECRET`, called from GitHub Actions at :00 and :30).
+
+1. **Event-anchored** (in the cron route): starts from an open `presence_events` row, counts elapsed hours, fires milestone / auto-checkout-warning pushes. Dedupes on `presence_events.push_reminders_sent`.
+2. **Wall-clock** (`src/lib/reminders.ts` → `runReminderPass()`): anchors on *workspaces* instead. The event-anchored design structurally cannot notice somebody who never checked in — there is no row to iterate. This pass reads `workspaces.checkin_reminder_at` / `checkout_reminder_at`, works out whether now is that time in the workspace's own timezone, then finds who still owes a check-in or check-out. Dedupes on the `reminder_log` table (unique on `workspace_id, user_id, kind, local_date`).
+
+Everything in pass 2 is about **not nagging**. A reminder that fires on someone's approved leave, on a public holiday or on a Sunday is how a user disables push permanently — which also costs them the approval notifications that work today. Gates, in order:
+
+```
+1. workspace archived           → excluded by the query
+2. today not a working day      → skip the whole workspace
+3. today is a company holiday   → skip the whole workspace
+4. now is not near the set time → skip this kind
+5. member on approved leave     → skip the member
+6. already reminded today       → skip the member (reminder_log)
+```
+
+`REMINDER_GRACE_MIN = 90` — how late a reminder may still be delivered. The workflow ticks every 30 min, but GitHub Actions cron is best-effort and routinely runs late; 90 minutes absorbs a skipped tick plus that lag while still refusing to deliver a 10:00 reminder in the afternoon, at which point it is a nag rather than a reminder. `reminder_log` guarantees at most one notification per person, per kind, per local day even with a wide window.
 
 ---
 
@@ -142,12 +334,22 @@ import { db } from '@/lib/db'
 - `holidays.ts` - workspace holiday calendar
 - `leaves.ts` - workspace leave types + leave requests (balance computed from member join date)
 - `employees.ts` - employee records; sensitive fields (PAN, Aadhaar, bank account) AES-256-GCM encrypted via `src/lib/encryption.ts`
+- `employees-list.ts` - the directory/list read path, kept out of `employees.ts` so a list query can never accidentally decrypt sensitive columns
+- `assets.ts` - workspace asset register (hardware, assignment history)
+- `documents.ts` - employee document metadata **and** the blob helpers; the only file outside `src/lib/storage.ts` allowed to see base64
+- `maternity.ts` - maternity cases + their stage machine
+- `regularizations.ts` - employee requests to correct a past day
+- `roles.ts` - workspace roles and permission grids
+- `notifications.ts` - in-app notifications
+- `reminders.ts` - the wall-clock reminder pass's reads/writes (`reminder_log`)
 
 ### Migration
 `scripts/migrate.js` - **single migration script** and must always be **fully up-to-date**.
 - Fresh DB: creates every table/column.
 - Existing DB: additive `ALTER TABLE` statements add missing columns (wrapped to skip duplicates).
 Run: `npm run migrate`.
+
+> **`src/lib/db/schema.ts` was deleted.** There is no TypeScript schema file and no ORM model. `scripts/migrate.js` is the *only* description of the database. To learn what columns a table has, read that script — nothing else in the repo knows. Row shapes are hand-written interfaces inside each query file, and they are documentation, not enforcement: the compiler never checks them against the DB, so a column rename that only touches the interface will typecheck and then fail at runtime.
 
 ---
 
@@ -168,15 +370,20 @@ Run: `npm run migrate`.
 Password: bcryptjs cost 12, minimum 8 chars. Never store plaintext.
 WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 
+> **Known gap — OTP codes are stored in plaintext.** `otp_codes.code` is a plain `TEXT` column: there is no `code_hash` and no bcrypt anywhere in the OTP path. `getValidOtp()` in `lib/db/queries/users.ts` looks the code up with a literal `AND code = ?`. Anyone with read access to the database can read every live OTP and complete a registration, a login or an ownership transfer as that email. The 10-minute expiry (`otpExpiresAt()` in `src/lib/auth.ts`) and the `used` flag limit the window; they do not close it. Do not describe OTPs as hashed. Fixing this means storing a hash and comparing in code (the `AND code = ?` lookup has to become a fetch-by-email-then-compare), which is a real change to that query — not a doc edit.
+
 ---
 
 ## Architecture
 
 ### Route handlers
 - Read user ID from `getServerUser()` (never from request body)
-- Validate admin role via `requireWsAdmin(req, slug)` for workspace routes
+- Gate workspace routes with `requireWsAccess(req, slug, Resource.X, Action.Y)`; on `null` return `forbidden()` (both from `@/lib/ws-access`)
+- Gate `/api/me/ws/[slug]/*` routes with `requireWsMember(req, slug)` from `@/lib/ws-admin` — membership, not permission
 - Call query functions, return JSON
 - Errors: `{ error: "Human message", code: "MACHINE_CODE" }`, consistent HTTP status
+
+`Resource` and `Action` are enums in `src/lib/permissions/catalogue.ts`, not loose strings, so the compiler rejects a guard that names a resource nobody can grant. The screen a route backs is registered in `src/lib/permissions/screens.ts` against the *same* resource — sidebar visibility and route enforcement must agree, and they only do because both read that registry.
 
 ### Server vs Client components
 - Default: Server Components
@@ -184,12 +391,18 @@ WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 - Never put business logic in Client Components - fetch from API routes instead
 
 ### Copy (strings)
-- English UI and marketing copy lives in `src/locales/en.ts` — import `en` and use nested keys. Prefer adding keys there instead of hardcoding user-visible strings in components or routes.
+- English UI and marketing copy is assembled in `src/locales/en.ts`, but **new copy goes in a per-area module** under `src/locales/en/<area>.ts` (`me.ts`, `me-screens.ts`, `me-settings.ts`, `marketing.ts`, `documents.ts`, `ws-overview.ts`, `ws-people.ts`, `ws-settings.ts`, `ws-reminders.ts`). `en.ts` imports each module and spreads it onto the `en` object.
+- Both `en.me.x` and `import { me } from '@/locales/en/me'` resolve to the same object, so either import style works at a call site. Prefer the direct module import in new code — it keeps two agents editing two different areas out of the same file.
+- The groups still written inline in `en.ts` are the original single-file copy, kept so existing `en.x` call sites keep working. Move a group into a module as its screens are touched; do not add to them.
+- Technical identifiers (cookie names, DNS prefixes, DB filenames) live under `en.constants`.
 
 ### Layouts
 - `src/app/(public)/layout.tsx` - passthrough, public pages
-- `src/app/me/layout.tsx` - user PWA shell (header + bottom nav)
-- `src/app/ws/[slug]/layout.tsx` - org PWA shell (header + tab nav)
+- `src/app/me/layout.tsx` - `.shell-me`: 460px column, `.me-topbar`, `.me-content`, fixed `.me-bottomnav`. Safe-area insets on `html` (top/left/right) and on the bottom nav's padding
+- `src/app/ws/[slug]/layout.tsx` → `src/components/ws/WsLayoutClient.tsx` - `.shell-ws`: a sticky **228px sidebar** beside a column carrying the 64px `.ws-topbar` and the 1180px `.ws-content`. **Under 860px the sidebar becomes a horizontally scrolling tab strip** across the top, `.sidebar-foot` is hidden and `.topbar-account` takes over the account menu. The *page* scrolls (sidebar is `position: sticky`), not an inner div, so the topbar's own sticky works and browser scroll restoration behaves
+- Sidebar entries come from `visibleScreenGroups()` in `src/lib/permissions/screens.ts` — never a hardcoded nav list. Hiding a tab is a courtesy; the matching route enforces the same permission independently
+
+See `docs/design/shells.md` for the full anatomy.
 
 ### SEO and indexing
 - Root metadata lives in `src/app/layout.tsx`.
@@ -202,28 +415,47 @@ WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 
 ## Design System
 
-CSS variables in `src/app/globals.css`:
+Full documentation: **`docs/design/`**. The tokens below are the authoritative summary; the source of truth is `src/app/globals.css`.
+
+The palette is **green**, not blue. Anything in an old doc, mock or component citing `#1B4DFF`, Syne or DM Sans is stale.
 
 | Variable | Value | Use |
 |----------|-------|-----|
-| `--brand` | `#1B4DFF` | Primary buttons, links |
-| `--navy` | `#0D1B2A` | Headings, dark text |
-| `--teal` | `#00D4AA` | Present/verified status |
-| `--amber` | `#F59E0B` | Warnings, IP signal |
-| `--danger` | `#EF4444` | Errors, destructive |
-| `--surface-0` | `#FFFFFF` | Card backgrounds |
-| `--surface-1` | `#F8FAFC` | Page backgrounds |
-| `--surface-2` | `#F1F5F9` | Input backgrounds |
-| `--border` | `#E2E8F0` | All borders |
+| `--brand` | `#1d9e75` | Primary buttons, links, active nav, verified state |
+| `--brand-hover` | `#157a56` | Hover fill on `.btn-primary` only |
+| `--navy` | `#0a2318` | Headings, `.stat-num`, dark text |
+| `--teal` | `#00D4AA` | Success accent (toast success dot) |
+| `--amber` | `#F59E0B` | Warnings, `partial` status, IP signal |
+| `--danger` | `#EF4444` | Errors, destructive, `none` status |
+| `--info` | `#2563EB` | `override` status — the one non-green semantic |
+| `--surface-0` | `#FFFFFF` | Card and panel backgrounds |
+| `--surface-1` | `#f0faf5` | Page backgrounds |
+| `--surface-2` | `#e4f5ec` | Inputs, tracks, hover fills |
+| `--text-primary` | `#0a2318` | Body text |
+| `--text-secondary` | `#3d6b52` | Labels, secondary text |
+| `--text-muted` | `#7aab92` | Hints, eyebrows, empty states |
+| `--border` | `rgba(29,158,117,0.18)` | All borders — a translucent green, not a grey |
+| `--header-bg` | `#0d2118` | Dark chrome (toast background) |
+| `--ring` | `rgba(29,158,117,0.28)` | Focus rings, signal-dot halos, stepper glow |
+| `--green-glow` | `rgba(29,158,117,0.18)` | Marketing ambient blobs **only** — weaker on purpose |
+| `--radius-sm/md/lg/xl` | `6 / 10 / 16 / 22px` | Chips+icon buttons / controls / cards / overlay panels |
+| `--shadow-sm` | `0 1px 2px rgba(10,35,24,0.06)` | Active tab pill |
+| `--shadow-md` | `0 4px 16px rgba(10,35,24,0.08)` | Modal, dropdown, toast |
+| `--ease-out` | `cubic-bezier(0.23,1,0.32,1)` | Default exit/settle |
+| `--ease-inout` | `cubic-bezier(0.77,0,0.175,1)` | Long symmetric moves (check-in rings) |
+| `--ease-spring` | `cubic-bezier(0.34,1.56,0.64,1)` | Overshoot — toggle knob, modal, toast |
+| `--ease-drawer` | `cubic-bezier(0.32,0.72,0,1)` | Bottom sheet only |
 
-Fonts: Syne (headings), DM Sans (body), JetBrains Mono (code/timestamps).
+Fonts: **Playfair Display** (headings), **Plus Jakarta Sans** (body), **JetBrains Mono** (`.stat-num`, code, timestamps).
 
 Rules:
-- No drop shadows - borders only
-- No gradients - flat fills
-- Minimum touch target: 44px height
-- Skeleton loaders for async, never spinners
-- Tailwind CSS v4, utility-only - no component libraries
+- **No shadows on inline surfaces.** Cards, inputs, chips, rows and tables are separated by `--border` alone. Elevation exists only where something floats *above* the page: toasts, modals, slide-overs, bottom sheets, dropdowns and the active `.tabbar` pill. A shadow on a card is a bug; a shadow on a modal is the design.
+- No gradients — flat fills. (The marketing surface under `src/app/(public)/` and `src/components/*` landing components is exempt and keeps its own Tailwind styling.)
+- **Minimum touch target 44px, enforced globally and uniformly** — `.btn`, `.btn-sm`, `.icon-btn`, `.tabbar button`, `.dropzone`, `.me-navitem` all carry `min-height: 44px` (`.icon-btn` also `min-width`). This is stricter than WCAG 2.2 AA (24px) and matches Apple HIG / WCAG 2.1 AAA. It applies on desktop too: an admin clearing an approvals queue on a phone gets the same target as a member checking in, and it deliberately costs some of the mock's table density.
+  - **One exception, `.toggle`:** it keeps its 42×25 visual and gets a 44×44 hit area from a transparent `::after` overlay. Stretching a switch track to 44px tall reads as a broken control. The rule governs the *hit area*, not the paint.
+- Skeleton loaders for async, never spinners. `Button` deliberately has no spinner — it sets `aria-busy` and dims its label.
+- Tailwind CSS v4, utility-only — no component libraries.
+- **Styling lives in `globals.css` or in a `src/components/ui/` primitive.** Never a per-component `<style>` block, never an ad-hoc inline style object. See invariant 15.
 
 ---
 
@@ -235,14 +467,16 @@ Rules:
 | `starter` | unlimited | 12 months | 1 | Yes |
 | `growth` | unlimited | 7 years | 5 | Yes |
 
-Enforce in `queryWorkspaceEvents()` - plan gate applied before signal matching.
+`maxUsers` and `historyMonths` are enforced in `queryWorkspaceEvents()` - the plan gate is applied before signal matching.
+
+**`maxLocations` is advisory today, not enforced.** It exists in `src/lib/plans.ts` and is displayed by `src/app/ws/[slug]/settings/BillingTab.tsx`, but `POST /api/ws/[slug]/signals` never counts existing rows, so any workspace can add any number of location signals. Treat the column as a marketing figure until that route grows a count check.
 
 ---
 
 ## Key Invariants
 
 1. **User ID never from client** - always from `x-user-id` header (proxy-set from JWT)
-2. **Workspace scoping** - slug → workspace.id via `requireWsAdmin()`, then all queries use workspace.id
+2. **Workspace scoping** - slug → workspace.id via `requireWsAccess(req, slug, Resource, Action)`, then all queries use `ctx.workspace.id`. Never `requireWsAdmin()` — it does not exist.
 3. **OTP registration** - `cm_otp_ok` cookie must be present + valid before account creation
 4. **Consent validation** - 3 checks: status=pending_consent, token not expired, logged-in email matches invited email
 5. **Location labels** - set asynchronously post-check-in via Nominatim. May be NULL - that's acceptable, not a bug
@@ -255,6 +489,9 @@ Enforce in `queryWorkspaceEvents()` - plan gate applied before signal matching.
 12. **One definition of the seeded grids** - `src/lib/permissions/system-roles.json`, read by both the app (`system-roles.ts`) and `scripts/migrate.js`. Never write a second copy: the app and the migration drifting apart is exactly what shipped every new workspace with no roles.
 13. **You can only hand out permissions you hold** - `guardEscalation()` runs on role *create*, role *edit* AND role *assignment* (`PATCH /members/[id]/role`). Rank is not a ceiling on its own: every custom role shares `CUSTOM_ROLE_RANK`, so rank alone lets any custom role with `members.role:write` assign any other custom role, however powerful. Never gate an assignment on rank alone.
 14. **Data scope is the surface, not the role** - `/me/*` is always self-only, for every role, decided by the session user ID with no role lookup. So `Scope.Self` means "no org surface at all" (only the seeded `member` role carries it) and every `/ws` role is `Scope.All`. The roles builder offers no choice, and routes set scope server-side rather than accepting one from the client.
+15. **Styling has exactly two homes** - a class in `src/app/globals.css`, or a primitive in `src/components/ui/`. Never a per-component `<style>` block and never an ad-hoc inline style object. The reason is mechanical, not aesthetic: the reduced-motion guard, the 44px touch-target rule and the elevation rule are all written as selector lists in `globals.css`, so a style declared anywhere else is invisible to them and silently exempt. If a primitive needs a class the stylesheet does not have, add the class — do not inline it. (Known exceptions, all pre-dating this rule: `src/components/shared/Toast.tsx` and `TopProgressBar.tsx`, `src/app/ws/[slug]/members/[memberId]/page.tsx`, and the marketing components, which are outside the app design system.)
+16. **Copy lives in a locale module** - new user-facing strings go in `src/locales/en/<area>.ts` and are composed into `en` by `src/locales/en.ts`. Never a literal in a component or route, and never a new inline group in `en.ts`.
+17. **Document bytes never appear in a JSON response** - every file goes in and out through the `DocumentStore` seam in `src/lib/storage.ts` as a `Buffer`, and comes back to the browser from a dedicated `.../file` route with real bytes and a `Content-Type`. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Putting a payload into a JSON body would also drag megabytes through every list query and turn the S3 swap from a one-file change into a rewrite.
 
 ---
 
@@ -264,10 +501,18 @@ Enforce in `queryWorkspaceEvents()` - plan gate applied before signal matching.
 - Never accept `userId` or `workspaceId` from request body/params without verification
 - Never delete presence_events rows
 - Never store raw WiFi SSIDs
-- Never skip `requireWsAdmin()` for workspace admin routes
-- Never add drop shadows or gradients to UI
+- Never skip `requireWsAccess(req, slug, Resource, Action)` on a `/api/ws/[slug]/*` route — and never reintroduce `requireWsAdmin()`
+- Never put a shadow on an inline surface (cards, inputs, chips, rows); shadows are for overlays only
+- Never add gradients to app UI
+- Never write a `<style>` block in a component or an ad-hoc inline style object — add a class to `globals.css`
+- Never return document bytes (or base64) in a JSON response body
 - Never trust `otpVerified: true` from client
 - Never use spinners - use skeleton loaders
+- Never add a second workspace picker to a `/me` screen — the top-bar pill is the only one
+- Never print the workspace name inside `/me` content already scoped to the active workspace
+- Never seed a workspace colour on the slug — `swatchColor()` takes the workspace **id**
+- Never change an asset's status while it still has a holder — return it via `DELETE .../assign` first
+- Never look for `src/lib/db/schema.ts` — it is deleted; read `scripts/migrate.js`
 
 ---
 
