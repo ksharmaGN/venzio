@@ -548,6 +548,133 @@ const ADDITIVE_MIGRATIONS = [
   `DROP INDEX IF EXISTS idx_regularization_ws_user_date_pending`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_regularization_ws_user_date_active
    ON regularization_requests(workspace_id, user_id, target_date) WHERE status IN ('pending','approved')`,
+
+  // workspace_assets - company hardware/equipment register, optionally assigned
+  // to an employee. Soft-deleted so an asset's history survives retirement.
+  `CREATE TABLE IF NOT EXISTS workspace_assets (
+  id                   TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id         TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  category             TEXT,
+  name                 TEXT NOT NULL,
+  serial_number        TEXT,
+  condition            TEXT,
+  status               TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('assigned','available','repair','retired')),
+  assigned_employee_id TEXT REFERENCES employees(id),
+  assigned_at          TEXT,
+  purchase_value       REAL,
+  notes                TEXT,
+  deleted_at           TEXT,
+  created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at           TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_assets_ws       ON workspace_assets(workspace_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_assets_status   ON workspace_assets(workspace_id, status)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_assets_assignee ON workspace_assets(assigned_employee_id)`,
+
+  // employee_documents - METADATA ONLY. Bytes never live here; they live in
+  // employee_document_blobs so listing a folder never drags megabytes of
+  // base64 through the query.
+  `CREATE TABLE IF NOT EXISTS employee_documents (
+  id            TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id  TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  employee_id   TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  doc_key       TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  owner         TEXT NOT NULL CHECK(owner IN ('admin','employee')),
+  status        TEXT NOT NULL CHECK(status IN ('missing','pending','verified','rejected','issued')),
+  file_name     TEXT,
+  mime_type     TEXT,
+  size_bytes    INTEGER,
+  reject_reason TEXT,
+  uploaded_by   TEXT,
+  verified_by   TEXT,
+  uploaded_at   TEXT,
+  deleted_at    TEXT,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_employee_documents_slot
+   ON employee_documents(workspace_id, employee_id, doc_key)
+   WHERE deleted_at IS NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_employee_documents_employee ON employee_documents(employee_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_employee_documents_status   ON employee_documents(workspace_id, status)`,
+
+  // employee_document_blobs - the bytes, base64-encoded, one row per document.
+  // Split from the metadata table on purpose (see lib/storage.ts): every list
+  // query reads employee_documents and never touches this table.
+  `CREATE TABLE IF NOT EXISTS employee_document_blobs (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  document_id  TEXT NOT NULL UNIQUE REFERENCES employee_documents(id) ON DELETE CASCADE,
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  data_base64  TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_employee_document_blobs_ws ON employee_document_blobs(workspace_id)`,
+
+  // maternity_cases - maternity leave tracking, separate from leave_requests
+  // because a case spans months and moves through stages rather than being a
+  // single immutable request.
+  `CREATE TABLE IF NOT EXISTS maternity_cases (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  employee_id  TEXT NOT NULL REFERENCES employees(id) ON DELETE CASCADE,
+  due_date     TEXT,
+  start_date   TEXT,
+  end_date     TEXT,
+  weeks        INTEGER NOT NULL DEFAULT 26,
+  status       TEXT NOT NULL DEFAULT 'requested' CHECK(status IN ('requested','approved','onleave','returned')),
+  returned_on  TEXT,
+  notes        TEXT,
+  deleted_at   TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_maternity_cases_ws       ON maternity_cases(workspace_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_maternity_cases_employee ON maternity_cases(employee_id, deleted_at)`,
+  `CREATE INDEX IF NOT EXISTS idx_maternity_cases_status   ON maternity_cases(workspace_id, status)`,
+  // "One running case per employee" - the rule the POST route documents, given
+  // an actual constraint. The route's findOpenCaseForEmployee() check is
+  // check-then-act: two concurrent POSTs both read "no open case" and both
+  // inserted. Partial on purpose - a 'returned' case is history and a
+  // soft-deleted one is gone, so an employee may accumulate any number of
+  // either; only the OPEN statuses are constrained. Keep the status list in
+  // step with OPEN_MATERNITY_STATUSES in lib/db/queries/maternity.ts.
+  //
+  // If this statement ever fails on an existing database it is because that
+  // database already holds two open cases for one employee. That is a data
+  // problem to be looked at, not one to be papered over, so it is left to fail
+  // loudly rather than being added to the tolerated-error list below.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_maternity_cases_one_open
+   ON maternity_cases(workspace_id, employee_id)
+   WHERE deleted_at IS NULL AND status IN ('requested','approved','onleave')`,
+
+  // workspaces - scheduled check-in / check-out reminder times.
+  // 'HH:MM' wall-clock in the workspace's display_timezone. NULL means the
+  // reminder is off, and NULL is deliberately the default: migrating an
+  // existing workspace must never silently start notifying its members.
+  `ALTER TABLE workspaces ADD COLUMN checkin_reminder_at TEXT`,
+  `ALTER TABLE workspaces ADD COLUMN checkout_reminder_at TEXT`,
+
+  // reminder_log - dedupe anchor for the wall-clock reminder pass in
+  // /api/push/cron. The event-anchored reminders dedupe on
+  // presence_events.push_reminders_sent, but a "you never checked in" reminder
+  // has no event to hang that column off, and the cron ticks every 30 minutes.
+  // One row per (workspace, user, kind, local_date) is what stops it nagging.
+  `CREATE TABLE IF NOT EXISTS reminder_log (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind         TEXT NOT NULL CHECK(kind IN ('checkin','checkout')),
+  local_date   TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  // The dedupe guarantee itself. Partial so it only constrains the rows that
+  // carry a real kind - a row that somehow lands with a NULL kind is a bug to
+  // be seen, not a row that silently blocks a legitimate reminder.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_reminder_log_once
+   ON reminder_log(workspace_id, user_id, kind, local_date)
+   WHERE kind IS NOT NULL`,
+  `CREATE INDEX IF NOT EXISTS idx_reminder_log_ws_date ON reminder_log(workspace_id, local_date)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────
