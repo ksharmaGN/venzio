@@ -36,6 +36,8 @@ export enum Resource {
 
   Members = 'members',
   Employees = 'employees',
+  Assets = 'assets',
+  Documents = 'documents',
   Holidays = 'holidays',
   Leaves = 'leaves',
   Approvals = 'approvals',
@@ -75,6 +77,8 @@ const RESOURCE_DEFS: Record<Resource, ResourceDef> = {
 
   [Resource.Members]:   { key: Resource.Members,   label: 'Members',              actions: [Read, Write, Delete] },
   [Resource.Employees]: { key: Resource.Employees, label: 'Employee records',     actions: [Read, Write, Delete] },
+  [Resource.Assets]:    { key: Resource.Assets,    label: 'Assets',               actions: [Read, Write, Delete] },
+  [Resource.Documents]: { key: Resource.Documents, label: 'Employee documents',   actions: [Read, Write, Delete] },
   [Resource.Holidays]:  { key: Resource.Holidays,  label: 'Holidays',             actions: [Read, Write, Delete] },
   [Resource.Leaves]:    { key: Resource.Leaves,    label: 'Leave',                actions: [Read, Write, Delete] },
   [Resource.Approvals]: { key: Resource.Approvals, label: 'Approvals',            actions: [Read, Write] },

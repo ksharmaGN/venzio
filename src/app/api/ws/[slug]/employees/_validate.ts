@@ -72,15 +72,15 @@ export function validateEmployeeFields(
   }
 
   // ── first_name / last_name: alphabets + space ─────────────────────────────
-  if (body.first_name) {
-    const trimmed = String(body.first_name).trim()
-    if (!trimmed) fields.first_name = FieldErrorCode.REQUIRED
-    else if (!NAME_RE.test(trimmed)) fields.first_name = FieldErrorCode.INVALID_NAME
-  }
-  if (body.last_name) {
-    const trimmed = String(body.last_name).trim()
-    if (!trimmed) fields.last_name = FieldErrorCode.REQUIRED
-    else if (!NAME_RE.test(trimmed)) fields.last_name = FieldErrorCode.INVALID_NAME
+  // Both are NOT NULL columns, so a supplied blank or null is REQUIRED, not a
+  // key to skip - the truthy guard this replaced let `''` and `null` through to
+  // the UPDATE and blanked a required name (or failed the insert outright).
+  for (const key of ['first_name', 'last_name'] as const) {
+    const value = body[key]
+    if (value === undefined) continue
+    const trimmed = typeof value === 'string' ? value.trim() : ''
+    if (!trimmed) fields[key] = FieldErrorCode.REQUIRED
+    else if (!NAME_RE.test(trimmed)) fields[key] = FieldErrorCode.INVALID_NAME
   }
 
   // ── date_of_birth: past date, age ≥ 18 ───────────────────────────────────
@@ -117,7 +117,9 @@ export function validateEmployeeFields(
   }
 
   // ── date_of_joining ───────────────────────────────────────────────────────
-  if (body.date_of_joining !== undefined) {
+  // Nullable, like every other date here: PATCH sends `null` for a field the
+  // admin left blank, and that means "no joining date", not a bad format.
+  if (body.date_of_joining !== undefined && body.date_of_joining !== null) {
     const doj = body.date_of_joining
     if (typeof doj !== 'string' || !DATE_RE.test(doj)) {
       fields.date_of_joining = FieldErrorCode.INVALID_FORMAT
@@ -132,10 +134,15 @@ export function validateEmployeeFields(
     if (typeof exitDate !== 'string' || !DATE_RE.test(exitDate)) {
       fields.exit_date = FieldErrorCode.INVALID_FORMAT
     } else {
+      // An explicit `null` clears the joining date, so there is nothing left to
+      // compare against - falling back to the stored one would test the exit
+      // date against a value this same request is removing.
       const doj =
         typeof body.date_of_joining === 'string' && DATE_RE.test(body.date_of_joining)
           ? body.date_of_joining
-          : (opts.existingDoj ?? null)
+          : body.date_of_joining === null
+            ? null
+            : (opts.existingDoj ?? null)
       if (doj && exitDate < doj) fields.exit_date = FieldErrorCode.MUST_BE_AFTER_DOJ
     }
   }
@@ -147,15 +154,24 @@ export function validateEmployeeFields(
   }
 
   // ── Aadhaar: 12 numeric digits ───────────────────────────────────────────
+  // An empty string is "no value", exactly as for PAN, passport and bank
+  // account above - the storage layer already maps it to NULL.
   if (body.aadhaar !== undefined && body.aadhaar !== null) {
-    const raw = typeof body.aadhaar === 'string' ? body.aadhaar.replace(/[\s-]/g, '') : ''
-    if (!AADHAAR_RE.test(raw)) fields.aadhaar = FieldErrorCode.INVALID_FORMAT
+    if (typeof body.aadhaar !== 'string') {
+      fields.aadhaar = FieldErrorCode.INVALID_FORMAT
+    } else {
+      const raw = body.aadhaar.replace(/[\s-]/g, '')
+      if (raw && !AADHAAR_RE.test(raw)) fields.aadhaar = FieldErrorCode.INVALID_FORMAT
+    }
   }
 
   // ── UAN: 12 numeric digits ────────────────────────────────────────────────
   if (body.uan !== undefined && body.uan !== null) {
-    if (typeof body.uan !== 'string' || !UAN_RE.test(body.uan)) {
+    if (typeof body.uan !== 'string') {
       fields.uan = FieldErrorCode.INVALID_FORMAT
+    } else {
+      const trimmed = body.uan.trim()
+      if (trimmed && !UAN_RE.test(trimmed)) fields.uan = FieldErrorCode.INVALID_FORMAT
     }
   }
 

@@ -32,7 +32,13 @@ export async function GET(req: NextRequest, { params }: Props) {
 
   const [onLeaveMembers, approvals, departmentBreakdown, celebrations] = await Promise.all([
     getMembersOnLeaveToday(ctx.workspace.id, today),
-    getPendingApprovalItems(ctx.workspace.id, { leavesEnabled: !!ctx.workspace.leaves_enabled }),
+    // ctx.role decides whether the document items are in this feed at all -
+    // this route is gated on dashboard:read, which does not imply
+    // documents:read. See getPendingApprovalItems.
+    getPendingApprovalItems(ctx.workspace.id, {
+      leavesEnabled: !!ctx.workspace.leaves_enabled,
+      viewer: ctx.role,
+    }),
     getDepartmentBreakdown(ctx.workspace.id),
     getUpcomingCelebrations(ctx.workspace.id, today, 14),
   ])
