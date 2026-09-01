@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS workspace_members (
   status                   TEXT NOT NULL DEFAULT 'active',
   consent_token            TEXT,
   consent_token_expires_at TEXT,
+  manager_user_id          TEXT REFERENCES users(id),
   added_at                 TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(workspace_id, email)
 );
@@ -321,6 +322,18 @@ const ADDITIVE_MIGRATIONS = [
 
   // workspaces
   `ALTER TABLE workspaces ADD COLUMN archived_at TEXT`,
+
+  // workspace_members - reporting hierarchy
+  //
+  // One nullable column IS the org chart: no join table, one manager per person.
+  // NULL means "not explicitly assigned" and is resolved to the workspace owner
+  // at READ time (src/lib/hierarchy.ts), never written here - storing the
+  // owner's id on every unassigned row would need a rewrite of them all on each
+  // ownership transfer, and would make "never assigned" indistinguishable from
+  // "deliberately reports to the owner".
+  `ALTER TABLE workspace_members ADD COLUMN manager_user_id TEXT REFERENCES users(id)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_members_manager
+     ON workspace_members(workspace_id, manager_user_id)`,
 
   // presence_events - feedback round 1
   `ALTER TABLE presence_events ADD COLUMN checkout_location_mismatch INTEGER`,
