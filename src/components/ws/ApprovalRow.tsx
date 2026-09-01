@@ -112,7 +112,7 @@ export function ApprovalRow({
         </div>
       ) : item.kind === 'doc' ? (
         <Link
-          href={`/ws/${slug}/employees?employee=${encodeURIComponent(item.employee_id)}`}
+          href={`/ws/${slug}/people/${encodeURIComponent(item.employee_id)}/details?tab=documents`}
           className="btn btn-secondary btn-sm pressable"
           style={{ textDecoration: 'none', flexShrink: 0 }}
         >

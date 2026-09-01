@@ -298,7 +298,7 @@ export const en = {
     },
     screens: {
       overview: "Overview",
-      employees: "Employees",
+      organisation: "Organisation",
       assets: "Assets",
       attendance: "Attendance",
       people: "People",
@@ -564,6 +564,15 @@ export const en = {
         `${workspaceName} wants to track your work presence`,
       heading: (workspaceName: string) =>
         `You've been invited to ${workspaceName}`,
+      /**
+       * Used when the admin filled the person's profile in before inviting
+       * them, which is now the normal order. Greeting someone by the name
+       * already on their record is the difference between an invitation and a
+       * mail-merge.
+       */
+      headingNamed: (name: string, workspaceName: string) =>
+        `${name}, you've been invited to ${workspaceName}`,
+      profileReady: `Your profile has already been set up - accepting takes you straight in.`,
       body: (workspaceName: string) =>
         `<strong>${workspaceName}</strong> has added your email to their ${brand} workspace. This means they can see your work presence events (office check-ins, client visits, etc.) after you consent.`,
       revoke: `Your data always belongs to you. You can revoke access at any time from your ${brand} profile.`,

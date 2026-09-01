@@ -249,6 +249,11 @@ interface Props {
 /**
  * The 5-step employee form. Owns only the step cursor and the draft - the
  * caller owns the request, so the same wizard drives both POST and PATCH.
+ *
+ * Every step is reachable from every other by clicking its number. Per-step
+ * validation is a MONITOR, not a gate: it marks the dots, while submit()'s
+ * validateAll is what actually refuses. Editing an existing record therefore
+ * does not mean clicking Continue four times to reach the bank details.
  */
 export default function EmployeeWizard({
   mode, subject, initial, saving, serverErrors, error, onCancel, onSubmit,
@@ -272,6 +277,30 @@ export default function EmployeeWizard({
     setErrors({})
     setStep(s => s + 1)
   }
+
+  /**
+   * Jump straight to any step by clicking its number.
+   *
+   * Continue still gates - this does not. Validation of the step being LEFT is
+   * merged in rather than blocking, so the dot can be marked and the user can
+   * still go and fix something else first. Nothing is lost by allowing it:
+   * submit() re-runs validateAll and refuses, landing on the earliest broken
+   * step, so the guarantee lives at the submit boundary rather than on every
+   * forward edge.
+   */
+  function jumpTo(target: number) {
+    if (target === step) return
+    const found = validateStep(step, form)
+    setErrors(prev => ({ ...prev, ...found }))
+    setStep(target)
+  }
+
+  // Which dots to mark. Recomputed from `merged`, so clearing a field's error
+  // un-marks its step without any extra bookkeeping.
+  const invalidSteps = EMPLOYEE_STEPS.reduce<number[]>((acc, s, i) => {
+    if (s.fields.some(k => merged[k])) acc.push(i)
+    return acc
+  }, [])
 
   function submit() {
     // Re-run every step: a user can walk back and empty a required field, and
@@ -306,9 +335,8 @@ export default function EmployeeWizard({
             <WizardSteps
               steps={STEP_LABELS}
               currentIndex={step}
-              // Only backwards: jumping forward would skip the validation that
-              // gates each step.
-              onStepClick={i => { if (i < step) { setErrors({}); setStep(i) } }}
+              onStepClick={jumpTo}
+              invalidIndexes={invalidSteps}
             />
           </div>
         </div>

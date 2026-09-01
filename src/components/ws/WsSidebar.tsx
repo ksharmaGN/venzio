@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard, Users, BarChart2, Calendar, CalendarDays, CalendarOff, ClipboardCheck,
-  FileText, SlidersHorizontal, ShieldCheck, Laptop, UserCheck, Contact,
+  FileText, SlidersHorizontal, ShieldCheck, Laptop, UserCheck, Network,
 } from 'lucide-react'
 import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-overview'
@@ -27,7 +27,7 @@ import {
  */
 const SCREEN_ICONS: Record<Screen, React.ReactNode> = {
   [Screen.Overview]:   <LayoutDashboard size={18} />,
-  [Screen.Employees]:  <Contact size={18} />,
+  [Screen.Organisation]: <Network size={18} />,
   [Screen.Assets]:     <Laptop size={18} />,
   [Screen.Attendance]: <UserCheck size={18} />,
   [Screen.Leave]:      <CalendarOff size={18} />,

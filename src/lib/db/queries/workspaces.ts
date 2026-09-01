@@ -235,6 +235,21 @@ export async function getWorkspaceMemberByRecordId(
   )
 }
 
+/**
+ * One membership row by its primary key, unscoped.
+ *
+ * Unscoped because the id IS the scope: it names exactly one workspace. Callers
+ * that hold a session rather than a workspace - the consent endpoints - use it
+ * to find out WHICH workspace they are being asked to act on, and must still
+ * check the row belongs to the caller before acting.
+ */
+export async function getWorkspaceMemberById(memberId: string): Promise<WorkspaceMember | null> {
+  return db.queryOne<WorkspaceMember>(
+    `SELECT * FROM workspace_members WHERE id = ?`,
+    [memberId]
+  )
+}
+
 export async function getWorkspaceMemberByEmail(
   workspaceId: string,
   email: string
@@ -596,15 +611,74 @@ export interface MemberWithUserFull {
   work_mode: string | null
   date_of_joining: string | null
   probation_end_date: string | null
+  employee_status: string | null
+  manager_user_id: string | null
 }
 
+/**
+ * Membership joined to its HR record.
+ *
+ * The email fallback is load-bearing, not defensive. An INVITED person has
+ * `wm.user_id IS NULL`, and the employee record created for them by the add
+ * flow has `e.user_id IS NULL` too - and `NULL = NULL` is not true in SQL, so
+ * the id join alone silently drops their HR data until they accept. Matching on
+ * work email covers exactly that window. `idx_employees_ws_work_email` is
+ * UNIQUE per workspace where `deleted_at IS NULL`, so the fallback can never
+ * fan one member out into two rows.
+ */
 const MEMBER_EMPLOYEE_JOIN = `
-  LEFT JOIN employees e ON e.workspace_id = wm.workspace_id AND e.user_id = wm.user_id AND e.deleted_at IS NULL
+  LEFT JOIN employees e
+    ON e.workspace_id = wm.workspace_id
+   AND e.deleted_at IS NULL
+   AND (e.user_id = wm.user_id
+        OR (wm.user_id IS NULL AND lower(e.work_email) = lower(wm.email)))
   LEFT JOIN employment_details ed ON ed.employee_id = e.id`
 
-const MEMBER_EMPLOYEE_COLS = `, e.id as employee_record_id, e.employee_id, ed.designation, ed.department, ed.work_mode, ed.date_of_joining, ed.probation_end_date`
+const MEMBER_EMPLOYEE_COLS = `, e.id as employee_record_id, e.employee_id, e.employee_status, wm.manager_user_id, ed.designation, ed.department, ed.work_mode, ed.date_of_joining, ed.probation_end_date`
 
 const FULL_NAME_EXPR = `COALESCE(NULLIF(TRIM(COALESCE(e.first_name,'') || ' ' || COALESCE(e.last_name,'')), ''), u.full_name)`
+
+/**
+ * One membership row by its own id, with the display name resolved.
+ *
+ * Keyed on `workspace_members.id` rather than a user id so it can address an
+ * INVITED person, who has no user row yet. That is the whole reason the person
+ * details page moved off a userId route.
+ */
+export async function getMemberWithUserByRecordId(
+  memberId: string,
+  workspaceId: string,
+): Promise<MemberWithUserFull | null> {
+  return db.queryOne<MemberWithUserFull>(
+    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, ${FULL_NAME_EXPR} as full_name${MEMBER_EMPLOYEE_COLS}
+     FROM workspace_members wm
+     LEFT JOIN users u ON u.id = wm.user_id AND u.deleted_at IS NULL
+     ${MEMBER_EMPLOYEE_JOIN}
+     WHERE wm.id = ? AND wm.workspace_id = ?`,
+    [memberId, workspaceId],
+  )
+}
+
+/**
+ * A membership row by email, with the display name resolved.
+ *
+ * The way back from an employee record to a membership when the record has no
+ * `user_id` yet. Work email is the join key that survives that window - the
+ * same one the directory falls back to.
+ */
+export async function getMemberByEmailWithUser(
+  workspaceId: string,
+  email: string,
+): Promise<MemberWithUserFull | null> {
+  return db.queryOne<MemberWithUserFull>(
+    `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, wm.status, wm.added_at, ${FULL_NAME_EXPR} as full_name${MEMBER_EMPLOYEE_COLS}
+     FROM workspace_members wm
+     LEFT JOIN users u ON u.id = wm.user_id AND u.deleted_at IS NULL
+     ${MEMBER_EMPLOYEE_JOIN}
+     WHERE wm.workspace_id = ? AND lower(wm.email) = lower(?)`,
+    [workspaceId, email],
+  )
+}
 
 export async function getAllMembersWithDetails(workspaceId: string): Promise<MemberWithUserFull[]> {
   return db.query<MemberWithUserFull>(
@@ -618,20 +692,103 @@ export async function getAllMembersWithDetails(workspaceId: string): Promise<Mem
   )
 }
 
+/**
+ * The one status control on the People screen, over two columns.
+ *
+ * Membership status and employment status are different facts - somebody can be
+ * an active member with no HR record at all - but a reader filtering a directory
+ * does not care which table the answer lives in. `invited` and `declined` read
+ * `workspace_members.status`; everything else reads `employees.employee_status`
+ * and additionally requires an active membership, so a terminated employee who
+ * was also removed does not surface under "Terminated".
+ */
+export type DirectoryStatusFilter =
+  | 'invited'
+  | 'declined'
+  | 'active'
+  | 'terminated'
+  | 'suspended'
+  | 'on_leave'
+  | 'notice_period'
+
+const MEMBERSHIP_STATUS_FILTERS: Record<string, string> = {
+  invited: 'pending_consent',
+  declined: 'declined',
+}
+
+const DIRECTORY_STATUS_VALUES: readonly string[] = [
+  'invited', 'declined', 'active', 'terminated', 'suspended', 'on_leave', 'notice_period',
+]
+
+/**
+ * Coerce a query-string value. An unrecognised filter is DROPPED rather than
+ * 400'd - a stale bookmark should show the unfiltered directory, not an error
+ * page. Same call the assets route makes for its status param.
+ */
+export function parseDirectoryStatus(raw: string | null): DirectoryStatusFilter | undefined {
+  return raw && DIRECTORY_STATUS_VALUES.includes(raw)
+    ? (raw as DirectoryStatusFilter)
+    : undefined
+}
+
+/** Neutralise the wildcards so a search for `100%` cannot match everything. */
+function likeTerm(value: string): string {
+  return `%${value.trim().toLowerCase().replace(/[\\%_]/g, (c) => `\\${c}`)}%`
+}
+
 export async function getAllMembersWithDetailsPaged(params: {
   workspaceId: string;
   limit: number;
   offset: number;
   search?: string;
+  department?: string;
+  status?: DirectoryStatusFilter;
 }): Promise<{ members: MemberWithUserFull[]; total: number }> {
-  const q = (params.search ?? "").trim().toLowerCase();
-  const hasSearch = q.length > 0;
-  const where = hasSearch
-    ? `WHERE wm.workspace_id = ? AND (lower(wm.email) LIKE ? OR lower(COALESCE(${FULL_NAME_EXPR},'')) LIKE ?)`
-    : `WHERE wm.workspace_id = ?`;
-  const args = hasSearch
-    ? [params.workspaceId, `%${q}%`, `%${q}%`]
-    : [params.workspaceId];
+  const conditions: string[] = ['wm.workspace_id = ?']
+  const args: unknown[] = [params.workspaceId]
+
+  const q = (params.search ?? '').trim()
+  if (q) {
+    const term = likeTerm(q)
+    conditions.push(
+      `(lower(wm.email) LIKE ? ESCAPE '\\'
+        OR lower(COALESCE(${FULL_NAME_EXPR},'')) LIKE ? ESCAPE '\\'
+        OR lower(COALESCE(ed.designation,'')) LIKE ? ESCAPE '\\')`,
+    )
+    args.push(term, term, term)
+  }
+
+  // Reads a column only an HR record carries, so switching it on necessarily
+  // hides everyone without one. That is the honest behaviour - the alternative
+  // is claiming somebody is in "Engineering" on the strength of no data at all.
+  if (params.department) {
+    conditions.push('ed.department = ?')
+    args.push(params.department)
+  }
+
+  if (params.status) {
+    const membershipStatus = MEMBERSHIP_STATUS_FILTERS[params.status]
+    if (membershipStatus) {
+      conditions.push('wm.status = ?')
+      args.push(membershipStatus)
+    } else if (params.status === 'active') {
+      // `active` has to match exactly the rows the table LABELS Active, and the
+      // table's fallback for a member with no HR record is Active - a member
+      // nobody has filled in is not "unknown", they are just a member. Treating
+      // a missing record as non-active here would return an empty list on a
+      // workspace that has not started using HR at all, while every row on
+      // screen said Active. A filter that disagrees with its own column is
+      // worse than no filter.
+      conditions.push(`wm.status = 'active' AND (e.employee_status IS NULL OR e.employee_status = 'active')`)
+    } else {
+      // The other employment states are stored, never derived, so they can only
+      // exist where there is a record to store them on.
+      conditions.push(`wm.status = 'active' AND e.employee_status = ?`)
+      args.push(params.status)
+    }
+  }
+
+  const where = `WHERE ${conditions.join(' AND ')}`
 
   const totalRow = await db.queryOne<{ total: number }>(
     `SELECT COUNT(*) as total
@@ -653,6 +810,26 @@ export async function getAllMembersWithDetailsPaged(params: {
     [...args, params.limit, params.offset],
   );
   return { members, total };
+}
+
+/**
+ * Every department in the workspace, for the directory filter.
+ *
+ * A separate query on purpose: deriving the list from the loaded page means a
+ * department that only exists on page two never appears in the dropdown, which
+ * is the bug the Employees screen shipped with.
+ */
+export async function getWorkspaceDepartments(workspaceId: string): Promise<string[]> {
+  const rows = await db.query<{ department: string }>(
+    `SELECT DISTINCT ed.department
+     FROM employment_details ed
+     JOIN employees e ON e.id = ed.employee_id AND e.deleted_at IS NULL
+     WHERE ed.workspace_id = ?
+       AND ed.department IS NOT NULL AND TRIM(ed.department) != ''
+     ORDER BY lower(ed.department) ASC`,
+    [workspaceId],
+  )
+  return rows.map((r) => r.department)
 }
 
 /**

@@ -229,7 +229,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
         className="fx-spring-stagger"
         style={{ display: 'flex', gap: '14px', marginTop: '16px', flexWrap: 'wrap' }}
       >
-        <Link href={`/ws/${slug}/employees`} style={{ flex: '1 1 200px', display: 'flex', textDecoration: 'none' }}>
+        <Link href={`/ws/${slug}/people`} style={{ flex: '1 1 200px', display: 'flex', textDecoration: 'none' }}>
           <StatCard
             className="hoverlift"
             style={{ flex: 1, marginTop: 0 }}
@@ -356,7 +356,7 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
                 hint={
                   <>
                     {wsAdmin.overview.departmentEmptyHint}{' '}
-                    <Link href={`/ws/${slug}/employees`} style={{ fontWeight: 600 }}>
+                    <Link href={`/ws/${slug}/people`} style={{ fontWeight: 600 }}>
                       {wsAdmin.overview.departmentEmptyAction}
                     </Link>
                   </>

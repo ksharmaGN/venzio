@@ -312,11 +312,91 @@ export const wsLeaveScreen = {
 // ─── People (membership) ──────────────────────────────────────────────────────
 
 export const wsPeopleUi = {
-  subtitle: 'Invite people, change what they can do, and remove access.',
-  inviteToggle: 'Invite someone',
+  subtitle: 'Everyone in this workspace - their record, their access, and how they leave.',
   membersTitle: 'Members',
   searchButton: 'Search',
   employeeProfile: 'Employee profile',
   actionsLabel: 'Actions',
   roleLocked: 'Locked',
+
+  /** Directory filter bar */
+  addEmployee: 'Add employee',
+  searchPlaceholder: 'Search name, job title or email',
+  departmentAll: 'All departments',
+  departmentLabel: 'Department filter',
+  statusAll: 'All statuses',
+  statusLabel: 'Status filter',
+  recordOnlyFilterNote:
+    'Department filters read a field only an HR record carries, so people without one are hidden while it is on.',
+  emptyFilteredTitle: 'Nobody matches your filters',
+  emptyFilteredHint: 'Clear the search or pick a different department.',
+
+  /** One status control over two tables - see DirectoryStatusFilter. */
+  statusInvited: 'Invited',
+  statusDeclined: 'Declined',
+  statusEmployed: 'Active',
+  statusTerminated: 'Terminated',
+  statusSuspended: 'Suspended',
+  statusOnLeave: 'On leave',
+  statusNoticePeriod: 'Notice period',
+
+  /** Row actions - one button now; role and status live on the details page. */
+  editAction: 'Edit',
+  editActionAria: (name: string) => `Open ${name}'s profile`,
+
+  /** Details page */
+  detailsBack: 'People',
+  tabProfile: 'Profile',
+  tabDocuments: 'Documents',
+  tabAccess: 'Access',
+  accessTitle: 'Access and reporting',
+  accessHint: 'Role, reporting line and removal. Changing any of these takes effect immediately.',
+  accessRoleLabel: 'Workspace role',
+  accessManagerLabel: 'Reporting manager',
+  accessManagerNone: 'No manager (reports to the owner)',
+  accessManagerHint: 'People with no manager roll up to the workspace owner.',
+  accessManagerPendingHint:
+    'A reporting line can be set once they accept the invitation and have an account.',
+  accessManagerSaved: 'Reporting manager updated',
+  accessManagerFailed: 'Could not set the reporting manager.',
+  accessRemoveTitle: 'Remove from workspace',
+  accessRemoveHint: 'Their presence history stays; they lose access immediately.',
+  accessRemoveButton: 'Remove member',
+  accessRemoveFailed: 'Could not remove this member.',
+  noRecordTitle: 'No HR record yet',
+  noRecordHint: 'Fill in their details to open documents, assets and leave for this person.',
+  createRecordButton: 'Add details',
+
+  /** Add employee - the invite offer after the record is created */
+  inviteModalTitle: 'Invite them to Venzio?',
+  inviteModalBody: (name: string, email: string) =>
+    `${name}'s record is saved. Send an invitation to ${email} so they can sign in, check in and see their own timeline.`,
+  inviteModalNote:
+    'You can send this later from their profile. Nothing is lost by skipping it.',
+  inviteModalSend: 'Send invite',
+  inviteModalSending: 'Sending…',
+  inviteModalSkip: 'Not now',
+  inviteSent: (email: string) => `Invitation sent to ${email}`,
+  inviteAutoEnrol:
+    'No invite needed - their email domain is verified, so they join automatically when they sign up.',
+  inviteFailed: 'Could not send the invitation.',
+} as const
+
+// ─── Organisation (reporting tree) ────────────────────────────────────────────
+
+export const wsOrg = {
+  subtitle: 'Who reports to whom. People with no manager roll up to the workspace owner.',
+  searchPlaceholder: 'Find someone in the chart',
+  zoomIn: 'Zoom in',
+  zoomOut: 'Zoom out',
+  expandAll: 'Expand all',
+  collapse: 'Collapse',
+  expand: (n: number) => `${n} ${n === 1 ? 'report' : 'reports'}`,
+  reportCount: (n: number) => `${n} direct ${n === 1 ? 'report' : 'reports'}`,
+  youSuffix: '(you)',
+  openPerson: (name: string) => `Find ${name} in the directory`,
+  emptyTitle: 'Nobody to chart yet',
+  emptyHint: 'Once people accept their invitations they appear here, under the owner.',
+  loadFailed: 'Could not load the reporting structure',
+  loadFailedHint: 'Refresh the page to try again.',
 } as const

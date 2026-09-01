@@ -19,14 +19,25 @@ import { Resource } from './catalogue'
 /** Every page on the org surface. */
 export enum Screen {
   Overview = 'overview',
-  /** The HR directory at /employees - employee RECORDS, gated on `employees`. */
-  Employees = 'employees',
+  /**
+   * The reporting tree at /org, gated on `employees`.
+   *
+   * This slot used to be the HR directory. That directory merged into /people
+   * when it started listing every member - two screens over the same people,
+   * from opposite tables, disagreeing on the headcount. The employee RECORD is
+   * still what `employees:read` protects; this is the shape of the org.
+   */
+  Organisation = 'organisation',
   Assets = 'assets',
   Attendance = 'attendance',
   Leave = 'leave',
   Holidays = 'holidays',
   Approvals = 'approvals',
-  /** Workspace MEMBERSHIP at /people - invites, roles, consent. Gated on `members`. */
+  /**
+   * The workforce directory at /people - every member, HR record overlaid,
+   * invited people included. Gated on `members`; the HR columns inside it are
+   * gated separately on `employees` by the route that feeds them.
+   */
   People = 'people',
   Analytics = 'analytics',
   Activity = 'activity',
@@ -95,8 +106,8 @@ const SCREEN_DEFS: Record<Screen, ScreenDef> = {
     key: Screen.Overview, path: '', group: ScreenGroup.Workforce,
     resource: Resource.Dashboard, feature: null,
   },
-  [Screen.Employees]: {
-    key: Screen.Employees, path: '/employees', group: ScreenGroup.Workforce,
+  [Screen.Organisation]: {
+    key: Screen.Organisation, path: '/org', group: ScreenGroup.Workforce,
     resource: Resource.Employees, feature: null,
   },
   [Screen.Assets]: {
