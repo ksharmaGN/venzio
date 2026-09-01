@@ -18,6 +18,15 @@ export interface QueryWorkspaceEventsOptions {
   startDate: string
   endDate: string
   userId?: string
+  /**
+   * Restrict to these members - the caller's `ctx.visibleMemberIds`.
+   *
+   * INTERSECTED with the workspace's active members, never substituted for
+   * them, so the `status = 'active'` filter and the free-plan seat cap below
+   * still apply no matter what a caller passes. Omitting it means "no scope
+   * restriction", which is what an `All`-scoped role wants.
+   */
+  memberIds?: string[]
   overrideGpsRadius?: number
   overrideShowAll?: boolean
   eventType?: string
@@ -44,6 +53,13 @@ export async function queryWorkspaceEvents(
 
   // Get active member user IDs (only status='active' members)
   let memberIds = await getActiveMemberIds(workspaceId)
+
+  // Scope narrowing. Intersect rather than replace: a caller cannot widen its
+  // view past the active roster by passing ids, only narrow within it.
+  if (options.memberIds) {
+    const visible = new Set(options.memberIds)
+    memberIds = memberIds.filter((id) => visible.has(id))
+  }
 
   // Filter to a single member if requested (skip free-plan cap so that member always sees their own rows)
   if (options.userId) {

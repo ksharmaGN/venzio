@@ -86,8 +86,12 @@ export async function GET(
 
   // Fetch events + members in parallel
   const [events, members] = await Promise.all([
-    queryWorkspaceEvents(workspace.id, workspace.plan, { startDate: startUtc, endDate: endUtc }),
-    getActiveMembersWithDetails(workspace.id),
+    queryWorkspaceEvents(workspace.id, workspace.plan, {
+      startDate: startUtc,
+      endDate: endUtc,
+      memberIds: ctx.visibleMemberIds,
+    }),
+    getActiveMembersWithDetails(workspace.id, ctx.visibleMemberIds),
   ])
 
   // Group events by user_id

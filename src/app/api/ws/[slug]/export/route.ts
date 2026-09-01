@@ -95,8 +95,12 @@ export async function GET(request: NextRequest, { params }: Props) {
   const endUtc      = localMidnightToUtc(nextDateKey(endDate), tz)
 
   const [allEvents, memberDetails, workspaceSignals, holidayDates, leaveRequests] = await Promise.all([
-    queryWorkspaceEvents(workspace.id, workspace.plan, { startDate: startUtc, endDate: endUtc }),
-    getActiveMembersWithDetails(workspace.id),
+    queryWorkspaceEvents(workspace.id, workspace.plan, {
+      startDate: startUtc,
+      endDate: endUtc,
+      memberIds: ctx.visibleMemberIds,
+    }),
+    getActiveMembersWithDetails(workspace.id, ctx.visibleMemberIds),
     getWorkspaceSignals(workspace.id),
     listHolidayDatesInRange(workspace.id, startDate, endDate),
     getLeaveRequestsInRange(workspace.id, startDate, endDate),

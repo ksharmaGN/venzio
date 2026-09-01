@@ -102,6 +102,7 @@ export async function GET(request: NextRequest, { params }: Props) {
     queryWorkspaceEvents(ctx.workspace.id, ctx.workspace.plan, {
       startDate: startUtc,
       endDate: endUtc,
+      memberIds: ctx.visibleMemberIds,
     }),
     getWorkspaceSignals(ctx.workspace.id),
     listHolidayDatesInRange(ctx.workspace.id, startDate, effectiveEndDate),
@@ -117,7 +118,7 @@ export async function GET(request: NextRequest, { params }: Props) {
   }
 
   // Get member details for names
-  const memberDetails = await getActiveMembersWithDetails(ctx.workspace.id)
+  const memberDetails = await getActiveMembersWithDetails(ctx.workspace.id, ctx.visibleMemberIds)
 
   const global_working_days = countWorkdays(startDate, effectiveEndDate, holidayDates, workingDayNums)
 

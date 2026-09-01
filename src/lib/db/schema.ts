@@ -119,9 +119,13 @@ CREATE TABLE IF NOT EXISTS workspace_members (
   status                  TEXT NOT NULL DEFAULT 'active',
   consent_token           TEXT,
   consent_token_expires_at TEXT,
+  manager_user_id         TEXT REFERENCES users(id),
   added_at                TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(workspace_id, email)
 );
+
+CREATE INDEX IF NOT EXISTS idx_workspace_members_manager
+  ON workspace_members(workspace_id, manager_user_id);
 
 CREATE TABLE IF NOT EXISTS workspace_roles (
   id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),

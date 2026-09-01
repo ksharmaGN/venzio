@@ -99,8 +99,9 @@ export async function GET(request: NextRequest, { params }: Props) {
     queryWorkspaceEvents(workspace.id, workspace.plan, {
       startDate: startUtc,
       endDate: endUtc,
+      memberIds: ctx.visibleMemberIds,
     }),
-    getActiveMembersWithDetails(workspace.id),
+    getActiveMembersWithDetails(workspace.id, ctx.visibleMemberIds),
     getWorkspaceSignals(workspace.id),
     listHolidayDatesInRange(workspace.id, startDate, endDate),
     getLeaveRequestsInRange(workspace.id, startDate, endDate),

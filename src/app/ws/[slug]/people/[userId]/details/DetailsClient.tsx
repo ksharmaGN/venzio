@@ -7,10 +7,24 @@ import { ArrowLeft, Eye, EyeOff } from 'lucide-react'
 import type { MemberWithUser } from '@/lib/db/queries/workspaces'
 import type { EmployeePublic } from '@/lib/types/employees'
 
+export interface ManagerOption {
+  userId: string
+  name: string
+  email: string
+}
+
 interface Props {
   slug: string
   member: MemberWithUser
   employee: EmployeePublic | null
+  /**
+   * Candidate managers. Already excludes this person and their own subtree, so
+   * no option here can create a reporting loop.
+   */
+  managerOptions: ManagerOption[]
+  currentManagerUserId: string | null
+  /** Hierarchy edits are gated separately from the employee record. */
+  canEditHierarchy: boolean
 }
 
 type FormData = {
@@ -113,8 +127,17 @@ function FormInput({ value, onChange, type = 'text', placeholder, required, maxL
   return <input type={type} value={value} onChange={e => onChange(e.target.value)} placeholder={placeholder} required={required} maxLength={maxLength} style={iStyle} />
 }
 
-function FormSelect({ value, onChange, children }: { value: string; onChange: (v: string) => void; children: React.ReactNode }) {
-  return <select value={value} onChange={e => onChange(e.target.value)} style={iStyle}>{children}</select>
+function FormSelect({ value, onChange, children, disabled }: { value: string; onChange: (v: string) => void; children: React.ReactNode; disabled?: boolean }) {
+  return (
+    <select
+      value={value}
+      onChange={e => onChange(e.target.value)}
+      disabled={disabled}
+      style={{ ...iStyle, opacity: disabled ? 0.6 : 1, cursor: disabled ? 'not-allowed' : 'pointer' }}
+    >
+      {children}
+    </select>
+  )
 }
 
 function FormTextarea({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
@@ -210,7 +233,17 @@ function ReviewSection({ title, items }: { title: string; items: [string, string
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
-export default function DetailsClient({ slug, member, employee }: Props) {
+export default function DetailsClient({
+  slug,
+  member,
+  employee,
+  managerOptions,
+  currentManagerUserId,
+  canEditHierarchy,
+}: Props) {
+  // The reporting line lives on workspace_members, not on the employee record,
+  // so it is held apart from `form` and saved through its own endpoint.
+  const [managerUserId, setManagerUserId] = useState<string>(currentManagerUserId ?? '')
   const router = useRouter()
   const isEdit = employee !== null
 
@@ -399,11 +432,38 @@ export default function DetailsClient({ slug, member, employee }: Props) {
         body: JSON.stringify(body),
       })
       const data = await res.json()
-      if (res.ok) {
-        router.push(`/ws/${slug}/people`)
-      } else {
+      if (!res.ok) {
         setError(data.error ?? 'Something went wrong')
+        return
       }
+
+      // The reporting line is a SECOND request, on purpose: it writes to
+      // workspace_members and is gated by `hierarchy`, while everything above
+      // writes the employee record and is gated by `employees`. Only sent when
+      // it actually changed, so a viewer without hierarchy:write never triggers
+      // a call they would be refused.
+      if (canEditHierarchy && (managerUserId || null) !== currentManagerUserId) {
+        const hierarchyRes = await fetch(`/api/ws/${slug}/hierarchy`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            userId: member.user_id,
+            managerUserId: managerUserId || null,
+          }),
+        })
+        if (!hierarchyRes.ok) {
+          const hierarchyData = await hierarchyRes.json().catch(() => ({}))
+          // The employee record already saved. Say so rather than implying the
+          // whole submission failed and inviting them to enter it all again.
+          setError(
+            (hierarchyData.error ?? 'Could not set the reporting manager.') +
+              ' The rest of the details were saved.',
+          )
+          return
+        }
+      }
+
+      router.push(`/ws/${slug}/people`)
     } finally {
       setSubmitting(false)
     }
@@ -512,6 +572,24 @@ export default function DetailsClient({ slug, member, employee }: Props) {
           </div>
           <div style={g2}>
             <Field label="Total experience (years)" error={fieldErrors.total_work_experience}><FormInput type="number" value={form.total_work_experience} onChange={set('total_work_experience')} placeholder="0" /></Field>
+            {/* Reporting manager. Saved to workspace_members via the hierarchy
+                endpoint, not with the rest of this step - different table,
+                different permission. Read-only when the viewer can edit the
+                employee record but not the org structure. */}
+            <Field label="Reporting manager" error={fieldErrors.manager_user_id}>
+              <FormSelect
+                value={managerUserId}
+                onChange={setManagerUserId}
+                disabled={!canEditHierarchy}
+              >
+                <option value="">No manager (reports to the owner)</option>
+                {managerOptions.map((m) => (
+                  <option key={m.userId} value={m.userId}>
+                    {m.name === m.email ? m.email : `${m.name} — ${m.email}`}
+                  </option>
+                ))}
+              </FormSelect>
+            </Field>
           </div>
         </div>
       )

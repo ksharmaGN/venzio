@@ -488,7 +488,20 @@ export interface MemberWithUser {
   department: string | null
 }
 
-export async function getActiveMembersWithDetails(workspaceId: string): Promise<MemberWithUser[]> {
+/**
+ * The active roster, optionally narrowed to a set of members.
+ *
+ * `memberIds` is the caller's `ctx.visibleMemberIds`. Omit it for no scope
+ * restriction; pass an empty array and you correctly get nobody.
+ */
+export async function getActiveMembersWithDetails(
+  workspaceId: string,
+  memberIds?: string[],
+): Promise<MemberWithUser[]> {
+  if (memberIds && memberIds.length === 0) return []
+  const scopeClause = memberIds
+    ? ` AND wm.user_id IN (${memberIds.map(() => '?').join(', ')})`
+    : ''
   return db.query<MemberWithUser>(
     `SELECT wm.id as member_id, wm.workspace_id, wm.user_id, wm.email, wm.role, u.full_name, wm.added_at,
             e.id as employee_record_id, ed.designation, ed.department
@@ -496,9 +509,9 @@ export async function getActiveMembersWithDetails(workspaceId: string): Promise<
      LEFT JOIN users u ON u.id = wm.user_id AND u.deleted_at IS NULL
      LEFT JOIN employees e ON e.workspace_id = wm.workspace_id AND e.user_id = wm.user_id AND e.deleted_at IS NULL
      LEFT JOIN employment_details ed ON ed.employee_id = e.id
-     WHERE wm.workspace_id = ? AND wm.status = 'active' AND wm.user_id IS NOT NULL
+     WHERE wm.workspace_id = ? AND wm.status = 'active' AND wm.user_id IS NOT NULL${scopeClause}
      ORDER BY u.full_name ASC, wm.email ASC`,
-    [workspaceId]
+    memberIds ? [workspaceId, ...memberIds] : [workspaceId]
   )
 }
 
@@ -620,15 +633,31 @@ export async function getAllMembersWithDetailsPaged(params: {
   limit: number;
   offset: number;
   search?: string;
+  /** Caller's ctx.visibleMemberIds. Omit for no scope restriction. */
+  memberIds?: string[];
 }): Promise<{ members: MemberWithUserFull[]; total: number }> {
+  if (params.memberIds && params.memberIds.length === 0) {
+    return { members: [], total: 0 };
+  }
   const q = (params.search ?? "").trim().toLowerCase();
   const hasSearch = q.length > 0;
-  const where = hasSearch
+
+  // Pending invites have no user_id yet, so they cannot be in a subtree. They
+  // stay visible to anyone who can read the roster - hiding them would make an
+  // invited-but-not-joined person invisible to the manager who invited them.
+  const scopeClause = params.memberIds
+    ? ` AND (wm.user_id IS NULL OR wm.user_id IN (${params.memberIds.map(() => '?').join(', ')}))`
+    : '';
+
+  const where = (hasSearch
     ? `WHERE wm.workspace_id = ? AND (lower(wm.email) LIKE ? OR lower(COALESCE(${FULL_NAME_EXPR},'')) LIKE ?)`
-    : `WHERE wm.workspace_id = ?`;
-  const args = hasSearch
-    ? [params.workspaceId, `%${q}%`, `%${q}%`]
-    : [params.workspaceId];
+    : `WHERE wm.workspace_id = ?`) + scopeClause;
+  const args = [
+    ...(hasSearch
+      ? [params.workspaceId, `%${q}%`, `%${q}%`]
+      : [params.workspaceId]),
+    ...(params.memberIds ?? []),
+  ];
 
   const totalRow = await db.queryOne<{ total: number }>(
     `SELECT COUNT(*) as total

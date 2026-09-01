@@ -24,6 +24,17 @@ export async function GET(
     );
   }
 
+  // IDOR guard. `targetUserId` comes straight from the URL, so holding
+  // members:read is not enough - the target must also be inside this viewer's
+  // scope. Checked BEFORE any query touches their data, and 403 rather than 404
+  // so the answer does not depend on whether the id happens to exist.
+  if (!ctx.visibleMemberIds.includes(targetUserId)) {
+    return NextResponse.json(
+      { error: "Forbidden", code: "FORBIDDEN" },
+      { status: 403 },
+    );
+  }
+
   const ws = await getWorkspaceBySlug(slug);
   if (!ws)
     return NextResponse.json(

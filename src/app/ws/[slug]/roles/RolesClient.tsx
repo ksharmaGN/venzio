@@ -135,7 +135,7 @@ export default function RolesClient({ slug, initialRoles, resources, viewer }: P
       body: JSON.stringify(
         duplicateFrom
           ? { name, duplicateFrom }
-          : { name, permissions: {}, scope: Scope.All },
+          : { name, permissions: {}, scope: Scope.Subtree },
       ),
     })
     const data = await res.json().catch(() => ({}))
@@ -319,6 +319,34 @@ export default function RolesClient({ slug, initialRoles, resources, viewer }: P
                 placeholder={en.wsRoles.fieldNamePlaceholder}
                 style={{ ...inputStyle, opacity: editable ? 1 : 0.7, cursor: editable ? 'text' : 'not-allowed' }}
               />
+            </div>
+
+            {/* Data scope. Only All and Subtree are offered: Self means "no org
+                surface at all" and belongs to the seeded Member role, not to a
+                custom one. The server rejects anything else regardless. */}
+            <div style={{ flex: '1 1 220px', minWidth: '200px' }}>
+              <span style={labelStyle}>{en.wsRoles.fieldScope}</span>
+              <div style={{ display: 'flex', gap: '16px', alignItems: 'center', height: '40px', fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '13px' }}>
+                {([Scope.All, Scope.Subtree] as const).map((option) => (
+                  <label
+                    key={option}
+                    style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: editable ? 'pointer' : 'not-allowed', opacity: editable ? 1 : 0.7 }}
+                  >
+                    <input
+                      type="radio"
+                      name="role-scope"
+                      checked={draftScope === option}
+                      disabled={!editable}
+                      onChange={() => setDraftScope(option)}
+                      style={{ accentColor: 'var(--brand)', width: '16px', height: '16px' }}
+                    />
+                    {option === Scope.All ? en.wsRoles.scopeAll : en.wsRoles.scopeSubtree}
+                  </label>
+                ))}
+              </div>
+              <p style={{ fontFamily: 'Plus Jakarta Sans, sans-serif', fontSize: '11px', color: 'var(--text-muted)', margin: '2px 0 0', lineHeight: 1.45 }}>
+                {draftScope === Scope.All ? en.wsRoles.scopeAllHint : en.wsRoles.scopeSubtreeHint}
+              </p>
             </div>
           </div>
 

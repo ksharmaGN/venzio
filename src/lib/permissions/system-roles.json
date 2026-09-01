@@ -5,21 +5,72 @@
     "description": "Full control, including ownership, billing and deleting the workspace.",
     "scope": "all",
     "permissions": {
-      "dashboard": ["read"],
-      "analytics": ["read"],
-      "activity": ["read"],
-      "export": ["read"],
-      "members": ["read", "write", "delete"],
-      "employees": ["read", "write", "delete"],
-      "holidays": ["read", "write", "delete"],
-      "leaves": ["read", "write", "delete"],
-      "approvals": ["read", "write"],
-      "signals": ["read", "write", "delete"],
-      "domains": ["read", "write", "delete"],
-      "settings": ["read", "write"],
-      "members.role": ["write"],
-      "roles": ["read", "write", "delete"],
-      "ownership": ["write", "delete"]
+      "dashboard": [
+        "read"
+      ],
+      "analytics": [
+        "read"
+      ],
+      "activity": [
+        "read"
+      ],
+      "export": [
+        "read"
+      ],
+      "members": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "employees": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "holidays": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "leaves": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "approvals": [
+        "read",
+        "write"
+      ],
+      "signals": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "domains": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "settings": [
+        "read",
+        "write"
+      ],
+      "members.role": [
+        "write"
+      ],
+      "roles": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "ownership": [
+        "write",
+        "delete"
+      ],
+      "hierarchy": [
+        "read",
+        "write"
+      ]
     }
   },
   {
@@ -28,20 +79,68 @@
     "description": "Runs the workspace day to day, including creating roles and assigning them. Cannot transfer ownership, archive the workspace, or change billing.",
     "scope": "all",
     "permissions": {
-      "dashboard": ["read"],
-      "analytics": ["read"],
-      "activity": ["read"],
-      "export": ["read"],
-      "members": ["read", "write", "delete"],
-      "employees": ["read", "write", "delete"],
-      "holidays": ["read", "write", "delete"],
-      "leaves": ["read", "write", "delete"],
-      "approvals": ["read", "write"],
-      "signals": ["read", "write", "delete"],
-      "domains": ["read", "write", "delete"],
-      "settings": ["read", "write"],
-      "roles": ["read", "write", "delete"],
-      "members.role": ["write"]
+      "dashboard": [
+        "read"
+      ],
+      "analytics": [
+        "read"
+      ],
+      "activity": [
+        "read"
+      ],
+      "export": [
+        "read"
+      ],
+      "members": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "employees": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "holidays": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "leaves": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "approvals": [
+        "read",
+        "write"
+      ],
+      "signals": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "domains": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "settings": [
+        "read",
+        "write"
+      ],
+      "roles": [
+        "read",
+        "write",
+        "delete"
+      ],
+      "members.role": [
+        "write"
+      ],
+      "hierarchy": [
+        "read",
+        "write"
+      ]
     }
   },
   {

@@ -30,6 +30,7 @@ export async function GET(request: NextRequest, { params }: Props) {
       limit,
       offset,
       search,
+      memberIds: ctx.visibleMemberIds,
     }),
     listWorkspaceRoles(ctx.workspace.id),
   ]);

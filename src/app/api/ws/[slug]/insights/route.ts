@@ -461,10 +461,19 @@ export async function GET(request: NextRequest, { params }: Props) {
     {
       startDate,
       endDate,
+      memberIds: ctx.visibleMemberIds,
     },
   );
 
-  const activeMemberIds = await getActiveMemberIds(ctx.workspace.id);
+  // The DENOMINATOR is scoped too, not just the events.
+  //
+  // Every percentage on this page divides by this set. Scoping the numerator
+  // alone would show a manager their team's attendance over the whole company's
+  // headcount - a number that looks plausible, is always too low, and that
+  // nobody reports as a bug because it does not look broken.
+  const visibleSet = new Set(ctx.visibleMemberIds);
+  const activeMemberIds = (await getActiveMemberIds(ctx.workspace.id))
+    .filter((id) => visibleSet.has(id));
   const eligibleMemberSet = new Set(activeMemberIds);
 
   // Only count events that are truly "in office" - same logic as the dashboard tile:

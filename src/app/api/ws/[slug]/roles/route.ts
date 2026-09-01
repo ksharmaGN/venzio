@@ -13,6 +13,18 @@ import { validateGridForSave, roleKeyFromName } from '@/lib/permissions/guards'
 interface Props { params: Promise<{ slug: string }> }
 
 /**
+ * Scope a CUSTOM role may be given.
+ *
+ * `Self` is excluded on purpose: it means "no org surface at all", so a custom
+ * role holding it would show tabs its grid allows and no data behind them. It
+ * stays reserved for the seeded `member` role.
+ */
+function parseSelectableScope(raw: unknown): Scope | null {
+  return raw === Scope.All || raw === Scope.Subtree ? raw : null
+}
+
+
+/**
  * GET /api/ws/[slug]/roles
  *
  * Returns every role in the workspace with its grid, plus the catalogue so the
@@ -67,6 +79,7 @@ export async function POST(request: NextRequest, { params }: Props) {
     name?: string
     description?: string | null
     permissions?: unknown
+    scope?: unknown
     duplicateFrom?: string
   }
   try {
@@ -98,12 +111,10 @@ export async function POST(request: NextRequest, { params }: Props) {
     rawPermissions = source.permissions
   }
 
-  // Scope is not a choice a custom role makes. Every /ws role sees the whole
-  // workspace; seeing only your own data is what /me is, and every user already
-  // has it regardless of role. Scope.Self is reserved for the seeded `member`
-  // role, which means "no org surface at all". When the reporting hierarchy
-  // lands the real choice becomes all-vs-subtree, and it comes back here.
-  const scope = Scope.All
+  // Scope is a real choice now that the reporting hierarchy exists: the whole
+  // workspace, or the holder's own subtree. Defaults to Subtree, so a role
+  // created without an explicit choice narrows rather than exposes.
+  const scope = parseSelectableScope(body.scope) ?? Scope.Subtree
 
   // Runs guardCatalogue then guardEscalation (see lib/permissions/guards.ts).
   const validation = validateGridForSave({

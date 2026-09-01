@@ -11,6 +11,18 @@ import { validateGridForSave, guardSystemRole } from '@/lib/permissions/guards'
 interface Props { params: Promise<{ slug: string; id: string }> }
 
 /**
+ * Scope a CUSTOM role may be given.
+ *
+ * `Self` is excluded on purpose: it means "no org surface at all", so a custom
+ * role holding it would show tabs its grid allows and no data behind them. It
+ * stays reserved for the seeded `member` role.
+ */
+function parseSelectableScope(raw: unknown): Scope | null {
+  return raw === Scope.All || raw === Scope.Subtree ? raw : null
+}
+
+
+/**
  * PUT /api/ws/[slug]/roles/[id]
  *
  * Replaces the role's whole grid in one atomic update. Deliberately not a
@@ -33,7 +45,7 @@ export async function PUT(request: NextRequest, { params }: Props) {
     return NextResponse.json({ error: systemFailure.message, code: systemFailure.code }, { status: 409 })
   }
 
-  let body: { name?: string; description?: string | null; permissions?: unknown }
+  let body: { name?: string; description?: string | null; permissions?: unknown; scope?: unknown }
   try {
     body = await request.json()
   } catch {
@@ -58,8 +70,9 @@ export async function PUT(request: NextRequest, { params }: Props) {
   }
 
   const description = body.description ?? null
-  // Server-decided, never taken from the body - see the note in ../route.ts.
-  const scope = Scope.All
+  // Keep the role's existing scope when the body omits or misnames one, rather
+  // than silently widening it to All.
+  const scope = parseSelectableScope(body.scope) ?? role.scope
 
   // The key is NOT changed on rename - workspace_members.role points at it.
   await updateWorkspaceRole({

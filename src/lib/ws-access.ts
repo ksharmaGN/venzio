@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getWorkspaceBySlug, getActiveMemberIds } from './db/queries/workspaces'
 import { getMembershipWithRole, roleFromMembership, type ResolvedRole } from './db/queries/roles'
 import { can } from './permissions/can'
-import type { Action, Resource } from './permissions/catalogue'
+import { Scope, type Action, type Resource } from './permissions/catalogue'
+import { loadReportingTree } from './db/queries/hierarchy'
+import { subtreeOf } from './hierarchy'
 // Resource / Action are enums, not loose strings: every call site names a
 // catalogue entry the compiler has checked. See lib/permissions/catalogue.ts.
 import type { Workspace } from './db/queries/workspaces'
@@ -13,11 +15,11 @@ export interface AccessContext {
   memberId: string
   role: ResolvedRole
   /**
-   * Which members this viewer may see. Today this is every active member for
-   * every role - scope is not enforced until phase 3 adds the reporting tree.
-   * It is threaded through now so that routes written from here on already
-   * pass it, and phase 3 becomes a change to the resolver rather than a change
-   * to every route.
+   * Which members this viewer may see, decided by their role's scope.
+   *
+   * Every data query on the org surface must be filtered by this. It is
+   * resolved once per request here rather than in each route, so a route cannot
+   * forget to ask - the only way to reach the data is through this gate.
    */
   visibleMemberIds: string[]
 }
@@ -55,8 +57,31 @@ export async function requireWsAccess(
     userId,
     memberId: membership.member_id,
     role,
-    visibleMemberIds: await getActiveMemberIds(workspace.id),
+    visibleMemberIds: await resolveVisibleMemberIds(workspace.id, userId, role.scope),
   }
+}
+
+/**
+ * Turn a role's scope into a concrete list of member ids.
+ *
+ * `All`     - every active member, which is what admins and owners get.
+ * `Subtree` - the viewer plus everyone beneath them in the reporting tree.
+ *             Unassigned members roll up to the owner, so the owner's subtree
+ *             is everyone even before the tree is filled in.
+ * `Self`    - just the viewer. In practice unreachable from a /ws route, since
+ *             `Self` belongs to the seeded `member` role whose grid is empty,
+ *             but it is handled rather than assumed away.
+ */
+export async function resolveVisibleMemberIds(
+  workspaceId: string,
+  userId: string,
+  scope: Scope,
+): Promise<string[]> {
+  if (scope === Scope.Self) return [userId]
+  if (scope === Scope.All) return getActiveMemberIds(workspaceId)
+
+  const { tree } = await loadReportingTree(workspaceId)
+  return subtreeOf(tree, userId)
 }
 
 /**

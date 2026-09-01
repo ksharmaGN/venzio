@@ -36,7 +36,11 @@ export async function GET(
   const endDate = new Date(now).toISOString()
 
   const [events, signalConfigs] = await Promise.all([
-    queryWorkspaceEvents(ctx.workspace.id, ctx.workspace.plan, { startDate, endDate }),
+    queryWorkspaceEvents(ctx.workspace.id, ctx.workspace.plan, {
+      startDate,
+      endDate,
+      memberIds: ctx.visibleMemberIds,
+    }),
     getSignalConfigs(ctx.workspace.id),
   ])
 

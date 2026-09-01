@@ -373,6 +373,17 @@ export const en = {
     fieldName: "Role name",
     fieldNamePlaceholder: "e.g. HR Manager",
     fieldDescription: "Description",
+
+    /**
+     * Data scope. Only two options are offered — "self" exists in the enum but
+     * means "no org surface at all" and belongs to the built-in Member role.
+     */
+    fieldScope: "Data scope",
+    scopeAll: "Everyone",
+    scopeSubtree: "Their team",
+    scopeAllHint: "Sees every member of the workspace.",
+    scopeSubtreeHint:
+      "Sees only themselves and the people reporting to them, at any depth.",
     fieldDescriptionPlaceholder: "What is this role for? (optional)",
 
     colResource: "Resource",

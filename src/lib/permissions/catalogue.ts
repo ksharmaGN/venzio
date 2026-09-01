@@ -49,6 +49,11 @@ export enum Resource {
   AssignRoles = 'members.role',
   Roles = 'roles',
 
+  // Who reports to whom. Separate from `Members` on purpose: editing someone's
+  // profile and restructuring the org are different acts, and re-parenting a
+  // manager changes what an entire subtree of people can see.
+  Hierarchy = 'hierarchy',
+
   // Transfer ownership, archive/restore, plan and billing.
   Ownership = 'ownership',
 }
@@ -84,6 +89,9 @@ const RESOURCE_DEFS: Record<Resource, ResourceDef> = {
 
   [Resource.AssignRoles]: { key: Resource.AssignRoles, label: 'Assign roles',     actions: [Write] },
   [Resource.Roles]:       { key: Resource.Roles,       label: 'Roles',            actions: [Read, Write, Delete] },
+  // No Delete: you cannot delete a reporting line, only re-point it. Clearing a
+  // manager is a Write that sets the column to NULL.
+  [Resource.Hierarchy]:   { key: Resource.Hierarchy,   label: 'Reporting structure', actions: [Read, Write] },
 
   [Resource.Ownership]: { key: Resource.Ownership, label: 'Ownership & billing',  actions: [Write, Delete] },
 }
@@ -134,24 +142,37 @@ export function isSystemRole(key: string): key is SystemRole {
  * `Self` is NOT "the org surface, showing only your own rows" - that is what
  * /me is, and every user already has it from being logged in, whatever their
  * role. It means "no org surface at all", and only the seeded `member` role
- * carries it. Every /ws role is therefore `All`, which is why the roles builder
- * offers no choice: the only real alternative is the `Subtree` of phase 3.
+ * carries it.
+ *
+ * `Subtree` is the real narrowing: the holder plus everyone beneath them in the
+ * reporting hierarchy. A role with it opens the same screens as `All` and sees
+ * a different set of people through them.
+ *
+ * The name `Self` is kept despite now meaning "nothing" rather than "only me" -
+ * it is a persisted column value, so renaming it is a data migration for a
+ * cosmetic gain.
  */
 export enum Scope {
   All = 'all',
+  Subtree = 'subtree',
   Self = 'self',
 }
 
+const SCOPE_VALUES: readonly string[] = Object.values(Scope)
+
 /**
  * Coerce a STORED scope value to a Scope. Not a request-body parser - routes
- * decide scope themselves rather than accepting one from the client.
+ * validate their own input; this reads what is already in the column.
  *
- * Unrecognised values fall back to `self` so a corrupt column closes the org
- * surface rather than opening it. When phase 3 adds `subtree`, that becomes the
- * safer fallback: by then `self` blanks a role rather than narrowing it.
+ * An unrecognised value falls back to `Subtree` rather than `Self`. `Self`
+ * would blank the role's org surface entirely, turning a corrupt column into a
+ * lockout; `Subtree` narrows to the holder's own reports, which fails closed on
+ * data without failing closed on access.
  */
 export function parseScope(raw: unknown): Scope {
-  return raw === Scope.All ? Scope.All : Scope.Self
+  return typeof raw === 'string' && SCOPE_VALUES.includes(raw)
+    ? (raw as Scope)
+    : Scope.Subtree
 }
 
 export type PermissionGrid = Partial<Record<Resource, Action[]>>
