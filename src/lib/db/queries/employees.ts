@@ -381,6 +381,41 @@ async function claimByWorkEmail(
 }
 
 /**
+ * Attach an HR record to the account that just claimed it, by work email.
+ *
+ * The gap this closes: the add-employee flow can create a record for somebody
+ * who has no account yet - that is the whole point of being able to invite them
+ * afterwards - so `employees.user_id` is NULL and the directory finds the row
+ * only by matching work email against the membership email. The moment they
+ * accept and a user row exists, the record must stop relying on that fallback
+ * and hold the real id.
+ *
+ * `user_id IS NULL` is what makes this safe to call more than once, and safe to
+ * call on somebody who already has a record: it claims an orphan or does
+ * nothing, and can never repoint a record that is already spoken for.
+ *
+ * Deliberately NOT wrapped in a transaction with the membership update that
+ * precedes it. `db.transaction()` on local SQLite wraps an awaited callback in
+ * raw BEGIN/COMMIT on one shared connection, so overlapping calls interleave
+ * and one can commit another's writes. Two sequential statements are correct
+ * here because the failure mode is benign: an active member whose record is
+ * still unlinked is still found by the directory's work-email join, and the
+ * next call to this function repairs it.
+ */
+export async function claimEmployeeForUser(
+  workspaceId: string,
+  email: string,
+  userId: string,
+): Promise<void> {
+  await db.execute(
+    `UPDATE employees SET user_id = ?, updated_at = datetime('now')
+     WHERE workspace_id = ? AND lower(work_email) = lower(?)
+       AND user_id IS NULL AND deleted_at IS NULL`,
+    [userId, workspaceId, email],
+  )
+}
+
+/**
  * One in-flight provision per (workspace, member).
  *
  * Coalescing, not locking: it only covers this process, which is why the unique

@@ -4,10 +4,10 @@ import Link from 'next/link'
 import { getSessionFromCookies } from '@/lib/auth'
 import {
   getWorkspaceBySlug,
-  addWorkspaceMember,
   getVerifiedDomainsForEmail,
   getWorkspaceMemberByEmail,
 } from '@/lib/db/queries/workspaces'
+import { autoEnrolIntoWorkspace } from '@/lib/membership'
 import JoinClient from './JoinClient'
 
 interface Props {
@@ -116,12 +116,15 @@ export default async function JoinPage({ params }: Props) {
   // No invite but domain might match verified domains - auto-enrol
   const matchingIds = await getVerifiedDomainsForEmail(email)
   if (matchingIds.includes(workspace.id)) {
-    await addWorkspaceMember({
+    // Through the shell so an HR record already filed under this address is
+    // claimed at the same moment - the admin may have added them as an employee
+    // before they ever signed up.
+    await autoEnrolIntoWorkspace({
       workspaceId: workspace.id,
       userId: session.sub,
       email,
-      role: 'member',
-      status: 'active',
+      existingMemberId: existing?.id ?? null,
+      existingStatus: existing?.status ?? null,
     })
     redirect('/me')
   }
