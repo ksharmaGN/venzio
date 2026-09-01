@@ -29,7 +29,6 @@ fully decrypted PII (`docs/architecture/employee-records.md:178-213`).
 |---|---|
 | Workspace A's documents paint under workspace B; `busyKey` is one slot for N uploads | `me/documents/DocumentsScreen.tsx:191-219` |
 | `save()` can adopt workspace A's employee record into B; lost-update on concurrent edits | `me/profile/ProfileScreen.tsx:274-327` |
-| Filter refetch races; `loadMore` appends unfiltered rows; detail fetch has no catch → permanent skeleton | `ws/[slug]/employees/EmployeesClient.tsx` |
 | Accepting an invite never shows the workspace (`activeList` never re-syncs after `router.refresh()`) | `me/orgs/OrgsClient.tsx:23-24,61-76` |
 | Navigating away from a `?ws=` deep link silently swaps workspace (`initialSlug` is fixed at first layout render) | `me/workspace-scope.tsx:92-98` |
 | `/me` home filters "today" on the **UTC** date while everything else uses workspace tz — evening check-ins vanish in UTC− zones | `me/page.tsx:52,173-176` |
@@ -55,13 +54,43 @@ store arbitrary strings in both columns.
 ### Consistency gaps found during the docs re-sync
 
 - **The `/ws` pill swatch does not match the `/me` pill** for the same workspace. `WsLayoutClient.tsx` paints a flat `var(--brand)` with the first initial; `/me` uses `swatchColor()` seeded on the workspace id. A user who recognises a workspace by colour on mobile gets a different colour on the admin surface.
-- **`AVATAR_COLORS` is duplicated inline** in `PeopleClient.tsx:56` and `EmployeesClient.tsx:34` — the same hash with a different palette, i.e. exactly the duplication `src/lib/workspace-color.ts` was extracted to prevent. (Deliberately a *different* palette: that one colours people, not workspaces. The duplication is the issue, not the separation.)
 - **The sole-admin leave refusal** (`DELETE /api/me/workspaces/[workspaceId]`, `409 SOLE_ADMIN`) returns a hardcoded English string that is not in `src/locales/en.ts` and does not name the workspace.
+
+
+### From the People/Employees merge and the ven-112 port (2026-09-01)
+
+**Fixed in that round, listed so nobody re-files them:** the duplicated
+`AVATAR_COLORS` hash (now `personColor()` in `src/lib/workspace-color.ts`), the
+`EmployeesClient` filter races (that file is deleted), and the missing ownership
+check on `POST /api/me/consent` (it now compares the member row's email to the
+session email — it had to be fixed, because record-claiming would otherwise have
+handed over another person's decrypted PII).
+
+| Gap | Where | Why it was left |
+|---|---|---|
+| `employment_details.reporting_manager_id` is still written and never read | `employees.ts` `EMPLOYMENT_FIELDS`, `employees/route.ts:166` | Dropping a column the API accepts is a breaking change for any caller already sending it. It is inert, not wrong. Remove it in a deliberate pass. |
+| `setManagerByEmail()` has no call site | `db/queries/hierarchy.ts` | Ported from ven-112 for a bulk CSV import that does not exist yet. |
+| `GET /api/ws/[slug]/hierarchy` returns the whole roster | `hierarchy/route.ts` | Correct today (`visibleMemberIds` is every active member). It becomes a leak the day `Scope.Subtree` lands - that is the merge to do it in. |
+| The org chart has no drag-to-reparent | `ws/[slug]/org/OrgTreeClient.tsx` | The reporting line is set from the details page. Deliberately deferred until the chart has been used against real data. |
+| `confirmation_date` / `probation_end_date` still have no server-side validation | `employees/_validate.ts` | Unchanged from before; adding it would newly reject payloads accepted today. |
+
+### Deferred from `feat/ven-112` in full
+
+`Scope.Subtree` - the role-level data scoping the reporting tree was built to
+feed. Not merged: it rewrites invariant 14, changes what every existing custom
+role can see in production, and needs its own review round. What it would touch,
+should someone pick it up: `catalogue.ts` (the enum plus the `parseScope`
+fallback flip), `system-roles.json`, `ws-access.ts` (`resolveVisibleMemberIds`),
+`signals.ts` (`memberIds` intersection), `RolesClient.tsx`, and a `memberIds`
+thread through nine `/api/ws/[slug]/*` routes. **`system-roles.json` on that
+branch is reformatted wholesale, so a textual merge silently drops `assets` and
+`documents` from the owner and admin grids — hand-merge it.**
 
 ### P3 — dead code
 
-`AccessContext.visibleMemberIds` is read by nothing, yet `getActiveMemberIds()` runs
-on **every `requireWsAccess` call** i.e. every workspace API request. Unreferenced:
+`AccessContext.visibleMemberIds` is now read by `PATCH /api/ws/[slug]/hierarchy`, but
+`getActiveMemberIds()` still runs on **every `requireWsAccess` call** i.e. every
+workspace API request, for one consumer. Unreferenced:
 `getRemindersSentOn`, `listAssetsForEmployee`, `getPendingDocumentCount`,
 `softDeleteEmployee`. Attendance page gates `dashboard:read` but fetches an
 `approvals:read` endpoint → silent 403 panel. Raw `db.query()` in

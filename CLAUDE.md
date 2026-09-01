@@ -175,6 +175,175 @@ Never delete a `leave_requests` row, and never edit its `start_date`, `end_date`
 
 ---
 
+## People — one tab, not two
+
+**`/ws/:slug/employees` does not exist.** The HR directory merged into
+**`/ws/:slug/people`**, and the sidebar slot it used to occupy is now
+**`/ws/:slug/org`**, the reporting tree.
+
+The split was deliberate once — membership and HR records are different jobs with
+different risks — and it stopped being real when the employee directory started
+listing every member. Two screens then showed the same people from opposite
+tables and disagreed on the headcount: the employee side filtered
+`status='active' AND user_id IS NOT NULL`, so anyone who had not accepted their
+invitation was simply missing from it.
+
+### What People is now
+
+Every `workspace_members` row, with the HR record overlaid where one exists, and
+**invited people included**. Server-side search, a department filter and one
+status control. Backed by `GET /api/ws/[slug]/members`.
+
+**The permission split survived the merge and is the reason this is not just a
+rename:** `members:read` opens the page; `employees:read` is what reveals the HR
+columns, and the route **strips those fields server-side** for a viewer without
+it. A column omitted from the table while still in the JSON is not a permission
+check. The strip is an allow-list, not an omit-list — a deny-list starts leaking
+the day someone adds a column to `MemberWithUserFull`.
+
+### The join must survive a NULL user_id
+
+`MEMBER_EMPLOYEE_JOIN` matches on `e.user_id = wm.user_id` **OR**, when the
+membership has no user yet, on `lower(e.work_email) = lower(wm.email)`. An
+invited person has NULL on both sides and `NULL = NULL` is not true in SQL, so
+the id join alone silently drops their HR data until they accept.
+`idx_employees_ws_work_email` is UNIQUE per workspace, so the fallback cannot fan
+one member out into two rows.
+
+### One status control over two columns
+
+| Filter value | Reads |
+|---|---|
+| `invited` / `declined` | `workspace_members.status` |
+| `active` | active membership **and** (`employee_status = 'active'` **or no record at all**) |
+| `terminated` `suspended` `on_leave` `notice_period` | active membership + `employees.employee_status` |
+
+`active` includes a member with no HR record because that is what the table's
+status column *labels* them. A filter that disagrees with its own column is
+worse than no filter. **Onboarding** and **Probation** are derived from dates and
+are display states only — deliberately not filterable.
+
+### Row actions are one link
+
+No role dropdown, no status control, no "Add details" fork. One **Edit** link to
+`/ws/:slug/people/[memberId]/details`, plus remove. Changing a role from a
+`<select>` inside a table row made a consequential change feel like sorting a
+column, and left nowhere to state the consequence.
+
+**The details route is keyed on `workspace_members.id`, not a user id** — an
+invited person has no user row, and they are exactly who an admin most needs to
+open. It also resolves an `employees.id` in that segment, so the approvals queue
+can deep-link a pending document straight to the Documents tab.
+
+Three tabs, three independent gates: **Profile** (`employees:read`),
+**Documents** (`documents:read`), **Access** (always — `members:read` opened the
+page). Access holds the role select, the reporting-manager select and removal;
+they are three writes to three endpoints, never one Save button, because they
+land in different tables and fail independently.
+
+### Add employee, then offer the invite
+
+`/ws/:slug/people/new` replaces the old inline "invite someone" email box. An
+email address alone was never enough to run payroll, holidays or documents
+against, and it left every joiner as a row nobody had filled in.
+
+The record is created **first**, the invitation offered **second** — a cancelled
+dialog must not throw a five-step form away. "Send invite" posts to the existing
+`POST /api/ws/[slug]/members`; `DOMAIN_AUTO_ENROL` is reported as good news, not
+an error. Where an employee record already exists for that address, the consent
+email greets them by the name on it.
+
+### Linking the record to the account
+
+An employee record can exist before its person has an account, so
+`employees.user_id` stays NULL for the length of an open invitation. The moment
+an account appears, `claimEmployeeForUser()` attaches it. `src/lib/membership.ts`
+is the shell that owns this: it spans two domains, and `employees.ts` already
+imports `workspaces.ts`, so putting it in a query file would close an import
+cycle. Every accept path goes through it — consent page, `/api/me/consent`,
+registration, verified-domain auto-enrol.
+
+`POST /api/me/consent` now checks the member row's email against the session
+email before acting. It previously accepted any `memberId` from any signed-in
+caller, which with record-claiming would have handed over somebody else's
+decrypted PII.
+
+---
+
+## Reporting hierarchy
+
+**One nullable column is the org chart:** `workspace_members.manager_user_id`.
+No join table, one manager per person.
+
+NULL means "not explicitly assigned" and is resolved to the workspace **owner at
+read time** (`src/lib/hierarchy.ts`), never written. Storing the owner's id on
+every unassigned row would need a rewrite of them all on each ownership
+transfer, and would make "never assigned" indistinguishable from "deliberately
+reports to the owner".
+
+`employment_details.reporting_manager_id` (→ `employees.id`) is **vestigial**.
+The column still exists and the write path still accepts it; nothing reads it as
+truth. A hierarchy keyed on employee records would only contain the people HR
+has filled in — one row out of 34 in the live workspace.
+
+### `src/lib/hierarchy.ts` is pure
+
+No database access, no imports from the query layer. Callers fetch flat
+`(userId, managerUserId)` pairs and hand them in. Deliberately **not** a
+recursive CTE: a 500-person company is 500 tiny rows, and doing the walk in
+JavaScript means it behaves identically on better-sqlite3 in development and
+libSQL in production. `MAX_DEPTH = 64` guards every walk — 64 levels of
+management is not a hierarchy, it is corruption.
+
+`buildReportingTree` · `subtreeOf` (includes self) · `ancestorsOf` (excludes
+self) · `wouldCreateCycle` · `directReportsOf` · `unassignedMembers`.
+
+The org chart and the write guard use the same module, so the picture and the
+refusal can never disagree about who is under whom.
+
+### Routes
+
+- `GET /api/ws/[slug]/hierarchy` — every active member with their manager, plus
+  `ownerUserId` (the root; inferring it from `role === 'owner'` client-side
+  breaks the moment a custom role is named that)
+- `PATCH /api/ws/[slug]/hierarchy` — `{ userId, managerUserId | null }`;
+  `409 CYCLE_DETECTED`, `400 SELF_MANAGER`, `400 NOT_A_MEMBER`
+
+**Gated on `Resource.Employees`, not a resource of its own.** ven-112 introduced
+a `hierarchy` resource; it was not ported, because adding a Resource means
+rewriting every seeded role grid in `system-roles.json` (invariant 12) for a
+distinction nobody has asked for. Revisit when a customer wants an HR role that
+may hold a record but not restructure the org.
+
+**`Scope.Subtree` was deliberately NOT merged.** Invariant 14 stands: data scope
+is the surface, not the role, and every `/ws` role is `Scope.All`.
+
+### Departures re-parent, they do not orphan
+
+`reparentReportsOf()` runs on both exits, and the ORDER differs because the two
+paths differ:
+
+| Path | Order | Why |
+|---|---|---|
+| `DELETE /api/ws/[slug]/members/[memberId]` | **before** the delete | `removeWorkspaceMember` hard-deletes; the row it reads must still exist |
+| `DELETE /api/me/workspaces/[workspaceId]` | **after** the leave | `leaveWorkspace` can refuse (sole admin), and the row only goes to `revoked` |
+
+Without it nothing dangles — `buildReportingTree` treats an unknown manager as
+absent — but a whole subtree would silently roll up to the owner instead of to
+whoever actually inherits them.
+
+### The chart at `/ws/:slug/org`
+
+Hand-rolled, no layout library. A strict tree never needs edge routing that
+avoids nodes, which is the only thing a graph engine would buy; connectors are
+four `::before`/`::after` borders. Collapse/expand is a `Set` of ids; search
+reveals a match by un-collapsing `ancestorsOf()` and centring it. The zoom step
+is a `data-zoom` attribute resolved to `--org-zoom` **in `globals.css`** — a
+custom property written inline would sit outside the reduced-motion and
+touch-target selector lists (invariant 15).
+
+---
+
 ## Approvals
 
 **`/ws/:slug/disputes` does not exist.** It was superseded by **`/ws/:slug/approvals`** — one queue holding three kinds of pending item, discriminated by `kind`:
@@ -338,6 +507,7 @@ import { db } from '@/lib/db'
 - `assets.ts` - workspace asset register (hardware, assignment history)
 - `documents.ts` - employee document metadata **and** the blob helpers; the only file outside `src/lib/storage.ts` allowed to see base64
 - `maternity.ts` - maternity cases + their stage machine
+- `hierarchy.ts` - the reporting line (`workspace_members.manager_user_id`); the tree walk itself is pure and lives in `src/lib/hierarchy.ts`
 - `regularizations.ts` - employee requests to correct a past day
 - `roles.ts` - workspace roles and permission grids
 - `notifications.ts` - in-app notifications
@@ -391,7 +561,7 @@ WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 - Never put business logic in Client Components - fetch from API routes instead
 
 ### Copy (strings)
-- English UI and marketing copy is assembled in `src/locales/en.ts`, but **new copy goes in a per-area module** under `src/locales/en/<area>.ts` (`me.ts`, `me-screens.ts`, `me-settings.ts`, `marketing.ts`, `documents.ts`, `ws-overview.ts`, `ws-people.ts`, `ws-settings.ts`, `ws-reminders.ts`). `en.ts` imports each module and spreads it onto the `en` object.
+- English UI and marketing copy is assembled in `src/locales/en.ts`, but **new copy goes in a per-area module** under `src/locales/en/<area>.ts` (`me.ts`, `me-screens.ts`, `me-settings.ts`, `marketing.ts`, `documents.ts`, `ws-overview.ts`, `ws-people.ts` (which also holds `wsPeopleUi` and `wsOrg`), `ws-settings.ts`, `ws-reminders.ts`). `en.ts` imports each module and spreads it onto the `en` object.
 - Both `en.me.x` and `import { me } from '@/locales/en/me'` resolve to the same object, so either import style works at a call site. Prefer the direct module import in new code — it keeps two agents editing two different areas out of the same file.
 - The groups still written inline in `en.ts` are the original single-file copy, kept so existing `en.x` call sites keep working. Move a group into a module as its screens are touched; do not add to them.
 - Technical identifiers (cookie names, DNS prefixes, DB filenames) live under `en.constants`.
@@ -491,7 +661,23 @@ Rules:
 14. **Data scope is the surface, not the role** - `/me/*` is always self-only, for every role, decided by the session user ID with no role lookup. So `Scope.Self` means "no org surface at all" (only the seeded `member` role carries it) and every `/ws` role is `Scope.All`. The roles builder offers no choice, and routes set scope server-side rather than accepting one from the client.
 15. **Styling has exactly two homes** - a class in `src/app/globals.css`, or a primitive in `src/components/ui/`. Never a per-component `<style>` block and never an ad-hoc inline style object. The reason is mechanical, not aesthetic: the reduced-motion guard, the 44px touch-target rule and the elevation rule are all written as selector lists in `globals.css`, so a style declared anywhere else is invisible to them and silently exempt. If a primitive needs a class the stylesheet does not have, add the class — do not inline it. (Known exceptions, all pre-dating this rule: `src/components/shared/Toast.tsx` and `TopProgressBar.tsx`, `src/app/ws/[slug]/members/[memberId]/page.tsx`, and the marketing components, which are outside the app design system.)
 16. **Copy lives in a locale module** - new user-facing strings go in `src/locales/en/<area>.ts` and are composed into `en` by `src/locales/en.ts`. Never a literal in a component or route, and never a new inline group in `en.ts`.
-17. **Document bytes never appear in a JSON response** - every file goes in and out through the `DocumentStore` seam in `src/lib/storage.ts` as a `Buffer`, and comes back to the browser from a dedicated `.../file` route with real bytes and a `Content-Type`. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Putting a payload into a JSON body would also drag megabytes through every list query and turn the S3 swap from a one-file change into a rewrite.
+17. **The workforce directory is ONE screen** - `/ws/:slug/people`. Never re-add an
+    employees tab. `members:read` opens it; `employees:read` is what reveals the HR
+    columns, and `GET /api/ws/[slug]/members` strips them server-side with an
+    **allow-list** rather than omitting them in the table. Invited people
+    (`status = 'pending_consent'`) belong in it, which is why the member/employee
+    join carries a work-email fallback: both sides are NULL before they accept.
+18. **The reporting line lives on `workspace_members.manager_user_id`** - one
+    nullable column, NULL resolved to the owner at READ time and never written.
+    `employment_details.reporting_manager_id` is vestigial; do not start reading it.
+    Every walk goes through `src/lib/hierarchy.ts`, which is pure, so the org chart
+    and the cycle guard cannot disagree.
+19. **An employee record may exist before its account does** - so `employees.user_id`
+    is NULL for the length of an open invitation and the directory finds the row by
+    work email. Every accept path must go through `src/lib/membership.ts`, which
+    claims the record. A new accept path that skips it leaves a permanently
+    unlinked record.
+20. **Document bytes never appear in a JSON response** - every file goes in and out through the `DocumentStore` seam in `src/lib/storage.ts` as a `Buffer`, and comes back to the browser from a dedicated `.../file` route with real bytes and a `Content-Type`. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Putting a payload into a JSON body would also drag megabytes through every list query and turn the S3 swap from a one-file change into a rewrite.
 
 ---
 
@@ -512,6 +698,11 @@ Rules:
 - Never print the workspace name inside `/me` content already scoped to the active workspace
 - Never seed a workspace colour on the slug — `swatchColor()` takes the workspace **id**
 - Never change an asset's status while it still has a holder — return it via `DELETE .../assign` first
+- Never re-add an Employees tab, or a second directory of the same people
+- Never add a role or status control to a directory row — those live on the details page
+- Never key the person details route on a user id — an invited person has none
+- Never read `employment_details.reporting_manager_id` as the reporting line
+- Never accept a `memberId` from the client without checking it belongs to the caller
 - Never look for `src/lib/db/schema.ts` — it is deleted; read `scripts/migrate.js`
 
 ---

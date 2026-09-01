@@ -6,9 +6,23 @@
 > `src/lib/types/employees.ts`, and the routes under
 > `/api/ws/[slug]/employees*`, `/api/me/ws/[slug]/employee`.
 
-The HR directory at `/ws/:slug/employees`. Distinct from **membership**
-(`workspace_members`, `/ws/:slug/people`, `Resource.Members`) — an employee
-record can exist with no linked login at all (`employees.user_id` is nullable).
+The HR record behind a person in the directory at **`/ws/:slug/people`**.
+(There is no longer a separate `/ws/:slug/employees` screen — it merged into
+People. See CLAUDE.md, "People — one tab, not two".)
+
+Still distinct from **membership** (`workspace_members`, `Resource.Members`): an
+employee record can exist with no linked login at all, because `employees.user_id`
+is nullable and the add-employee flow creates the record *before* the invitation
+goes out. For the length of an open invitation the record is found by work email,
+and `claimEmployeeForUser()` attaches the account the moment one appears.
+
+### `reporting_manager_id` is vestigial
+
+`employment_details.reporting_manager_id` still exists and the write path still
+accepts it, but **nothing reads it as the reporting line.** That moved to
+`workspace_members.manager_user_id`, because a hierarchy keyed on employee
+records would only contain the people HR has filled in — one row out of 34 in the
+live workspace. Do not start reading it again.
 
 ---
 
@@ -50,7 +64,7 @@ erDiagram
     string department
     string work_location
     string work_mode "CHECK office/remote/hybrid"
-    string reporting_manager_id FK "→ employees.id"
+    string reporting_manager_id FK "VESTIGIAL - see below"
     string employment_type "CHECK full_time/part_time/contract/intern/consultant"
     string source_of_hire "CHECK direct/referral/job_portal/consultancy/campus"
     real total_work_experience
@@ -79,7 +93,8 @@ erDiagram
   employees ||--o{ employee_documents : "owns"
   employees ||--o{ workspace_assets : "is assigned"
   employees ||--o{ maternity_cases : "has"
-  employees ||--o{ employees : "reports to"
+  %% NOTE: employees no longer report to employees. The reporting line moved to
+  %% workspace_members.manager_user_id - see CLAUDE.md "Reporting hierarchy".
 ```
 
 Why three tables rather than one wide row:

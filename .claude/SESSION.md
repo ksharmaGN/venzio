@@ -19,29 +19,40 @@ rewritten now.
 
 ## Next step
 
-**Round 2 in progress.** Five feedback items + two review passes. Landed so far:
-timeline now uses the shared workspace scope (no private selector, no "All
-workspaces"), and `CheckinButtons`' unbalanced progress pair is fixed. Still in
-flight: notification split, topbar restructure, progress-bar rewrite, and the
-correctness + interaction reviews.
+**Round 3 is code-complete and gated.** `feat/ven-112`'s reporting hierarchy is
+merged and Employees is folded into People. Plan:
+`~/.claude/plans/use-restart-prompt-md-as-initial-serene-castle.md`.
 
-**All six items from the first real-usage feedback round are fixed and gated.**
-Keep walking screens — visual verification is still the only gate, and the
-sidebar shell fix in particular has been verified by CSS reasoning and a
-containing-block audit, never by looking at it (the Chrome extension is not
-connected in this environment).
+| Gate | State |
+|---|---|
+| `npx tsc --noEmit` | clean |
+| `npm run build` | clean, routes correct (`/org`, `/people/[memberId]/details`, `/people/new`; no `/employees`) |
+| `npx eslint src` | 1 error, the pre-existing `login/page.tsx:776` |
+| API walkthrough against real local data | done - see below |
+| **Rendered-UI walkthrough** | **STILL NOT DONE** - no human or agent has viewed a page |
 
-Open question for the user: `/me/timeline` deliberately keeps its own workspace
-`Select`. It is a FILTER, not the scope pill — its default "All workspaces" reads
-`GET /api/events` (global history, no per-workspace `matched_by`), a mode the
-single active workspace cannot express. Left as-is; say if it should seed from
-the pill instead. Nothing else should
-start until that happens. ~14k lines of UI changed in one branch and no human or
-agent has viewed a single page.
+Verified end to end via the API with a minted session (`.tmp/mint-session.mjs`):
+invited person appears in the directory with their HR record attached before
+they accept; `status` filter agrees with the status column; create employee →
+invite → accept links `employees.user_id`; accepting someone else's invitation is
+refused 403; cycle / self-manager / outsider are all refused; removing a manager
+re-parents their reports onto the grandparent rather than the owner.
 
-Highest-risk screens: `/ws/:slug/employees` (only **1 real employee row** exists),
-`/ws/:slug/assets` and `/me/documents` (both brand new, zero rows), `/me` check-in
-card (the `.ci-*` celebration animation).
+**The next thing is to look at it.** Highest-risk screens: `/ws/:slug/people`
+(absorbed a whole tab), `/ws/:slug/people/[memberId]/details` (new 3-tab shell),
+`/ws/:slug/org` (new, hand-rolled CSS chart - connectors and zoom have never been
+rendered), `/ws/:slug/assets` and `/me/documents` (still zero rows).
+
+## Decisions taken - round 3 (2026-09-01)
+
+| Decision | Choice |
+|---|---|
+| Reporting line storage | `workspace_members.manager_user_id` (ven-112). `employment_details.reporting_manager_id` becomes vestigial - leave the column, stop treating it as truth |
+| `Scope.Subtree` | **Deferred.** Take the tree, not the scoping. Invariant 14 stands |
+| `Resource.Hierarchy` | **Not ported.** Hierarchy API gates on `Resource.Employees`, so `system-roles.json` is never touched |
+| Org tree home | Replaces the Employees tab: `Screen.Employees` -> `Screen.Organisation`, path `/org`, keeps `resource: Resource.Employees` |
+| Merged People gate | `members:read` opens the page, `employees:read` reveals the HR columns |
+| `/me/timeline` workspace filter | Resolved in round 2 - it now seeds from the scope pill, "All workspaces" is gone |
 
 ## Decisions owed by the user
 
@@ -90,6 +101,18 @@ card (the `.ci-*` celebration animation).
 | `eventCountsAsOfficePresence` excludes `'override'` | `isOfficeMatched` includes it. Two functions, two answers — check which one you want. |
 | Approval notifications go only to `owner`/`admin` | `getActiveWorkspaceAdmins` filters by role key, so a custom role with `approvals:write` is never notified. |
 | `plan.maxLocations` is not enforced | Advisory only; the signals route never counts existing rows. |
+| **Two competing hierarchy models** | revamp stores the manager on `employment_details.reporting_manager_id` (-> `employees.id`); ven-112 stores it on `workspace_members.manager_user_id` (-> `users.id`). Picked ven-112's: every member has a membership row, only 1 of 34 has an HR record. |
+| `NULL = NULL` is false, so an invited person's HR record silently detaches | `MEMBER_EMPLOYEE_JOIN` joins `e.user_id = wm.user_id`; for a `pending_consent` row both are NULL. Needs an `OR (wm.user_id IS NULL AND LOWER(e.work_email) = LOWER(wm.email))` fallback. |
+| Nothing links `employees.user_id` when an invite is accepted | `acceptConsent` sets `workspace_members.user_id` only. Three accept paths (`acceptConsent`, `linkMemberToUser`, `linkUserToMemberRecord`) all need a `claimEmployeeForUser` call. |
+| **ven-112 reformatted `system-roles.json`** | Inline arrays -> expanded, so git sees the owner/admin blocks as wholly rewritten. revamp independently added `assets` and `documents` to the same blocks. A textual merge silently DROPS them. Deferring subtree avoids the file entirely. |
+| `listDirectoryPeople` hides invited people | `WHERE m.status = 'active' AND m.user_id IS NOT NULL`. That is why People and Employees report different headcounts. |
+| The wizard's forward step dots look clickable but are inert | `WizardSteps` enables every dot whenever `onStepClick` is passed; `EmployeeWizard.tsx:311` then ignores `i >= step`. Cursor is a pointer, nothing happens. |
+| `POST /api/me/consent` never checks the member belongs to the caller | `route.ts:25` calls `acceptConsent(body.memberId, userId)` on an `x-user-id` header alone. Pre-existing; do not widen it. |
+| **`cp venzio.db` does NOT back up SQLite** | The `-wal` file holds pages not yet in the main file. A plain `cp` of the DB alone silently drops them - it cost one lazily-created employee stub row on restore this session. Use `sqlite3 venzio.db "VACUUM INTO '...'"`, or checkpoint first, or copy all three of `venzio.db`, `-wal`, `-shm`. |
+| Removing a member must re-parent BEFORE the delete, leaving must re-parent AFTER | `removeWorkspaceMember` hard-deletes, so the row `reparentReportsOf` reads has to still exist; `leaveWorkspace` only sets `revoked` AND can refuse (sole admin), so re-parenting first would restructure the org on a leave that never happened. |
+| `.wizard-step-dot.invalid` must be declared BEFORE `.current` | Equal specificity, so last rule wins. The step you are standing on has to read as current even while it is the broken one. |
+| A `--custom-property` written as an inline style is still an invariant-15 break | It sits outside `globals.css`, so the reduced-motion and 44px selector lists never see the rule it feeds. The org chart's zoom is a `data-zoom` attribute resolved to `--org-zoom` in the stylesheet instead. |
+| ven-112's `Resource.Hierarchy` was NOT ported | The hierarchy API gates on `Resource.Employees`. Adding a Resource means rewriting `system-roles.json`, which invariant 12 guards - and that file is reformatted wholesale on ven-112, so a textual merge drops `assets`/`documents` from owner and admin. |
 
 ## Deferred findings
 

@@ -49,6 +49,14 @@ exhaustiveness.
 | `export` | Export | read |
 | `members` | Members | read, write, delete |
 | `employees` | Employee records | read, write, delete |
+
+`employees` also gates the reporting hierarchy (`/api/ws/[slug]/hierarchy` and the
+`/ws/:slug/org` chart). A `hierarchy` resource was written on `feat/ven-112` and
+deliberately **not** ported: adding a Resource means rewriting every seeded role
+grid in `system-roles.json`, which invariant 12 guards, for a distinction nobody
+has asked for yet. Revisit when a customer wants an HR role that may hold a
+record but not restructure the org.
+
 | `assets` | Assets | read, write, delete |
 | `documents` | Employee documents | read, write, delete |
 | `holidays` | Holidays | read, write, delete |
@@ -76,6 +84,12 @@ untrusted request keys, and a plain object would resolve `constructor` or
 ```ts
 enum Scope { All = 'all', Self = 'self' }
 ```
+
+`feat/ven-112` adds a third member, `Subtree`, so a role sees only its own
+reports. It was **deliberately not merged** — it rewrites this invariant, changes
+what every existing custom role can see in production, and is separable from the
+reporting tree itself, which did land. `AccessContext.visibleMemberIds` is
+therefore still every active member.
 
 **Invariant: data scope is the surface, not the role.** `/me/*` is always
 self-only, for every role, decided by the session user id with no role lookup at
