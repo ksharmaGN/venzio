@@ -83,6 +83,13 @@ No primitive forwards a ref, so **no form primitive can receive one**. That rule
 - `useId` is used in exactly three places: `Modal` and `SlideOver` (title id) and `Dropzone` (input id).
 - `.pressable` is applied by `Button` and `IconButton` always, and by `Chip` only when it is interactive. It supplies the `scale(0.97)` press and the transition; a control that can be pressed should have it.
 - **No spinners anywhere.** Forbidden by the design rules.
+- **A utility class on `Select` or `Textarea` silently loses.** `globals.css` declares the
+  base as `.input, select.input, textarea.input`, so on a `<select>` the winning rule is
+  `select.input` at specificity **0,1,1**. A bare `.my-width` class is 0,1,0 and never
+  applies — the control keeps `width: 100%` and nothing tells you. Scope it to a parent
+  (`.filter-bar > .filter-select`, 0,2,0) or qualify it (`select.my-width`). This broke the
+  People filter bar into three stacked rows; the search `<input>` in the same bar escaped
+  only because `flex: 1` zeroes `flex-basis`, which beats `width` in flex layout.
 - Most props interfaces are **not** exported — `Card`, `StatCard`, `Divider`, `EmptyState`, `Skeleton`, `DataTable`, `TabBar`, `Progress`, `SplitBar`, `WizardSteps`, `StageDots`, `Modal`, `SlideOver`, `BottomSheet` and the charts all keep theirs internal. Export one only when a caller genuinely needs to name the type.
 
 ---

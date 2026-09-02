@@ -343,7 +343,7 @@ export default function PeopleClient({ slug, viewerUserId }: Props) {
   return (
     <div>
       <Card padded={false} className="overflow-hidden">
-        <div className="row-between filter-bar">
+        <div className="filter-bar">
           <Input
             type="search"
             value={search}

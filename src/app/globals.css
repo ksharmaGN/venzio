@@ -933,9 +933,28 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
    objects because the reduced-motion guard, the 44px touch-target rule and the
    elevation rule are all selector lists in this file - a declaration written in
    a component is invisible to them and silently exempt (CLAUDE.md invariant 15). */
-.filter-bar { padding: 14px 18px; border-bottom: 1px solid var(--border); flex-wrap: wrap; justify-content: flex-start; }
-.filter-search { flex: 1; min-width: 200px; }
-.filter-select { width: 180px; flex-shrink: 0; }
+/* The bar owns its own layout - it is not `.row-between` plus corrections. */
+.filter-bar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+}
+.filter-search { flex: 1 1 220px; min-width: 200px; }
+
+/* CHILD selectors, deliberately, and this is the whole bug that was here:
+   `.input` is declared as `.input, select.input, textarea.input`, so on a
+   <select> the winning rule is `select.input` at specificity 0,1,1. A bare
+   `.filter-select` is 0,1,0 and LOSES - every dropdown kept `width: 100%` and
+   wrapped the bar onto three rows. `.filter-bar > .filter-select` is 0,2,0 and
+   wins. Any utility class put on a Select or Textarea has the same problem. */
+.filter-bar > .filter-search { flex: 1 1 220px; width: auto; }
+.filter-bar > .filter-select { flex: 0 0 180px; width: auto; }
+
+/* Narrow: let the selects share a row before they stack. The wrapped look was
+   right for a phone and wrong for a 1440px desktop. */
+@media (max-width: 640px) {
+  .filter-bar > .filter-search { flex: 1 1 100%; }
+  .filter-bar > .filter-select { flex: 1 1 140px; }
+}
 .filter-note { padding: 10px 18px 0; font-size: 12px; }
 .table-head { padding: 14px 20px 12px; }
 .pad-list { padding: 18px 20px; }
