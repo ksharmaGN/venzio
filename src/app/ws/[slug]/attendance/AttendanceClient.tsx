@@ -6,11 +6,17 @@ import { ChevronRight, X } from 'lucide-react'
 import type { DashboardMember, DashboardResponse } from '@/app/api/ws/[slug]/dashboard/route'
 import type { OverviewWidgetsResponse } from '@/app/api/ws/[slug]/overview/route'
 import type { ApprovalsResponse } from '@/app/api/ws/[slug]/approvals/route'
+import type {
+  OfficeDayCounts,
+  OfficeDayPreviewResponse,
+  OfficeDayResultResponse,
+  OfficeDaysListResponse,
+} from '@/app/api/ws/[slug]/office-days/route'
 import type { ApprovalItem } from '@/lib/approvals'
 import PresenceChip from '@/components/ws/PresenceChip'
 import {
-  Avatar, Button, Card, Chip, DataTable, Divider, EmptyState, IconButton, Input,
-  SlideOver, Skeleton, StatCard, type Column,
+  Avatar, Button, Card, Chip, DataTable, Divider, EmptyState, Field, IconButton, Input,
+  Modal, SlideOver, Skeleton, StatCard, type Column,
 } from '@/components/ui'
 import { useToast } from '@/components/shared/Toast'
 import { en } from '@/locales/en'
@@ -24,6 +30,9 @@ interface Props {
 
 /** A pending regularization, narrowed out of the approvals union. */
 type RegularizationItem = Extract<ApprovalItem, { kind: 'regularization' }>
+
+/** Derived from the route's own response type so the two cannot drift. */
+type DeclaredOfficeDay = OfficeDaysListResponse['officeDays'][number]
 
 const SIGNAL_LABELS: Record<string, string> = {
   gps: wsAdmin.attendance.signalGps,
@@ -63,11 +72,24 @@ export default function AttendanceClient({ slug, canAction }: Props) {
   const [decliningId, setDecliningId] = useState<string | null>(null)
   const [declineReason, setDeclineReason] = useState('')
 
+  // ── bulk office day ──
+  const [officeDays, setOfficeDays] = useState<DeclaredOfficeDay[]>([])
+  const [officeDayDate, setOfficeDayDate] = useState('')
+  const [officeDayNote, setOfficeDayNote] = useState('')
+  const [officeDayPreview, setOfficeDayPreview] = useState<OfficeDayCounts | null>(null)
+  const [checkingOfficeDay, setCheckingOfficeDay] = useState(false)
+  const [declaringOfficeDay, setDeclaringOfficeDay] = useState(false)
+  const [undoingDate, setUndoingDate] = useState<string | null>(null)
+
   const [todayLabel, setTodayLabel] = useState('')
+  const [maxOfficeDayDate, setMaxOfficeDayDate] = useState('')
   useEffect(() => {
     setTodayLabel(new Date().toLocaleDateString(undefined, {
       weekday: 'long', month: 'long', day: 'numeric',
     }))
+    // Rendered on the client only, like todayLabel: the browser's clock is not
+    // the server's, and painting a `max` during SSR would mismatch on hydration.
+    setMaxOfficeDayDate(new Date().toLocaleDateString('en-CA'))
   }, [])
 
   const fetchDash = useCallback(async (silent = false) => {
@@ -92,12 +114,21 @@ export default function AttendanceClient({ slug, canAction }: Props) {
     if (overviewRes.ok) setOverview(await overviewRes.json())
   }, [slug])
 
+  const fetchOfficeDays = useCallback(async () => {
+    if (!canAction) return
+    const res = await fetch(`/api/ws/${slug}/office-days`, { cache: 'no-store' })
+    if (!res.ok) return
+    const body = (await res.json()) as OfficeDaysListResponse
+    setOfficeDays(body.officeDays)
+  }, [slug, canAction])
+
   useEffect(() => {
     fetchDash()
     fetchQueue().catch(() => {})
+    fetchOfficeDays().catch(() => {})
     const id = setInterval(() => fetchDash(true), 30_000)
     return () => clearInterval(id)
-  }, [fetchDash, fetchQueue])
+  }, [fetchDash, fetchQueue, fetchOfficeDays])
 
   const members = useMemo(() => dash?.all_members ?? [], [dash])
   const openMember = members.find((m) => m.member_id === openMemberId) ?? null
@@ -131,6 +162,81 @@ export default function AttendanceClient({ slug, canAction }: Props) {
       await Promise.all([fetchQueue(), fetchDash(true)])
     } finally {
       setBusyId(null)
+    }
+  }
+
+  /**
+   * Step 1 of declaring an office day: a dry run.
+   *
+   * The confirm modal has to name a real number, and the server is the only
+   * thing that knows it - only it can tell a signal-verified check-in from a
+   * WFH one, and only it holds the weekend / holiday / plan-window refusals. So
+   * the count in the modal comes from the same endpoint that will do the write,
+   * and a refusal is surfaced here rather than after the admin has confirmed.
+   */
+  async function previewOfficeDay() {
+    setCheckingOfficeDay(true)
+    try {
+      const res = await fetch(
+        `/api/ws/${slug}/office-days?date=${encodeURIComponent(officeDayDate)}`,
+        { cache: 'no-store' },
+      )
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        const message = (body as { error?: string } | null)?.error
+        showToast(message ?? wsAdmin.officeDay.failedToast, 'error')
+        return
+      }
+      setOfficeDayPreview((body as OfficeDayPreviewResponse).preview)
+    } catch {
+      showToast(wsAdmin.officeDay.failedToast, 'error')
+    } finally {
+      setCheckingOfficeDay(false)
+    }
+  }
+
+  async function declareOfficeDay() {
+    if (!officeDayPreview) return
+    setDeclaringOfficeDay(true)
+    try {
+      const res = await fetch(`/api/ws/${slug}/office-days`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date: officeDayPreview.date, note: officeDayNote.trim() || undefined }),
+      })
+      const body = await res.json().catch(() => null)
+      if (!res.ok) {
+        const message = (body as { error?: string } | null)?.error
+        showToast(message ?? wsAdmin.officeDay.failedToast, 'error')
+        return
+      }
+      const result = body as OfficeDayResultResponse
+      showToast(
+        result.converted > 0 ? wsAdmin.officeDay.doneToast(result.converted) : wsAdmin.officeDay.nothingToast,
+        result.converted > 0 ? 'success' : 'info',
+      )
+      setOfficeDayPreview(null)
+      setOfficeDayNote('')
+      await Promise.all([fetchOfficeDays(), fetchDash(true)])
+    } finally {
+      setDeclaringOfficeDay(false)
+    }
+  }
+
+  async function undoOfficeDay(date: string) {
+    setUndoingDate(date)
+    try {
+      const res = await fetch(`/api/ws/${slug}/office-days/${encodeURIComponent(date)}`, {
+        method: 'DELETE',
+      })
+      if (!res.ok) {
+        showToast(wsAdmin.officeDay.undoFailedToast, 'error')
+        return
+      }
+      showToast(wsAdmin.officeDay.undoneToast, 'success')
+      await Promise.all([fetchOfficeDays(), fetchDash(true)])
+    } finally {
+      setUndoingDate(null)
     }
   }
 
@@ -173,6 +279,43 @@ export default function AttendanceClient({ slug, canAction }: Props) {
       width: 40,
       align: 'right',
       render: () => <ChevronRight size={15} aria-hidden style={{ color: 'var(--text-muted)' }} />,
+    },
+  ]
+
+  const officeDayColumns: Column<DeclaredOfficeDay>[] = [
+    {
+      key: 'date',
+      header: wsAdmin.officeDay.colDate,
+      render: (d) => <span className="mono t-rowtitle">{d.date}</span>,
+    },
+    {
+      key: 'people',
+      header: wsAdmin.officeDay.colPeople,
+      render: (d) => (
+        <span className="t-secondary">{wsAdmin.officeDay.declaredCount(d.peopleCount)}</span>
+      ),
+    },
+    {
+      key: 'note',
+      header: wsAdmin.officeDay.colNote,
+      render: (d) => <span className="t-rowsub">{d.note ?? '—'}</span>,
+    },
+    {
+      key: 'undo',
+      header: '',
+      width: 110,
+      align: 'right',
+      render: (d) => (
+        <Button
+          variant="secondary"
+          size="sm"
+          disabled={undoingDate === d.date}
+          loading={undoingDate === d.date}
+          onClick={() => undoOfficeDay(d.date)}
+        >
+          {undoingDate === d.date ? wsAdmin.officeDay.undoing : wsAdmin.officeDay.undo}
+        </Button>
+      ),
     },
   ]
 
@@ -335,6 +478,108 @@ export default function AttendanceClient({ slug, canAction }: Props) {
           })
         )}
       </Card>
+
+      {/* ── Bulk office day ──
+          Sits beside the regularization queue because it generalises it: a
+          regularization corrects one person's day, an office day corrects
+          everybody's at once. Same `approvals:write` permission, same
+          admin_overrides mechanism, so the monthly grid, analytics, the export
+          and /me all pick it up with no read-path change. */}
+      {canAction && (
+        <Card className="fx-spring overflow-hidden" padded={false}>
+          <div className="table-head">
+            <p className="t-h2">{wsAdmin.officeDay.cardTitle}</p>
+            <p className="t-muted">{wsAdmin.officeDay.cardHint}</p>
+          </div>
+
+          <div className="pad-list stack">
+            <div className="field-grid">
+              <Field label={wsAdmin.officeDay.dateLabel} htmlFor="office-day-date">
+                <Input
+                  id="office-day-date"
+                  type="date"
+                  value={officeDayDate}
+                  max={maxOfficeDayDate || undefined}
+                  onChange={(e) => setOfficeDayDate(e.target.value)}
+                />
+              </Field>
+              <Field label={wsAdmin.officeDay.noteLabel} htmlFor="office-day-note">
+                <Input
+                  id="office-day-note"
+                  value={officeDayNote}
+                  placeholder={wsAdmin.officeDay.notePlaceholder}
+                  onChange={(e) => setOfficeDayNote(e.target.value)}
+                />
+              </Field>
+            </div>
+            <div className="row-end-sm">
+              <Button
+                disabled={!officeDayDate || checkingOfficeDay}
+                loading={checkingOfficeDay}
+                onClick={previewOfficeDay}
+              >
+                {checkingOfficeDay ? wsAdmin.officeDay.checking : wsAdmin.officeDay.declareAction}
+              </Button>
+            </div>
+          </div>
+
+          <Divider />
+
+          <div className="table-head row-between">
+            <p className="t-h2">{wsAdmin.officeDay.declaredTitle}</p>
+            {officeDays.length > 0 && <Chip tone="override">{officeDays.length}</Chip>}
+          </div>
+
+          <DataTable
+            columns={officeDayColumns}
+            rows={officeDays}
+            rowKey={(d) => d.date}
+            minWidth={520}
+            empty={(
+              <EmptyState
+                title={wsAdmin.officeDay.declaredEmptyTitle}
+                hint={wsAdmin.officeDay.declaredEmptyHint}
+              />
+            )}
+          />
+        </Card>
+      )}
+
+      {/* Confirm names the count BEFORE anything is written - the number comes
+          from the dry run above, not from a guess made in the browser. */}
+      <Modal
+        open={!!officeDayPreview}
+        onClose={() => setOfficeDayPreview(null)}
+        title={wsAdmin.officeDay.confirmTitle}
+        footer={(
+          <>
+            <Button variant="secondary" onClick={() => setOfficeDayPreview(null)}>
+              {wsAdmin.officeDay.confirmCancel}
+            </Button>
+            <Button
+              disabled={declaringOfficeDay || officeDayPreview?.converted === 0}
+              loading={declaringOfficeDay}
+              onClick={declareOfficeDay}
+            >
+              {wsAdmin.officeDay.confirmAction}
+            </Button>
+          </>
+        )}
+      >
+        {officeDayPreview && (
+          <div className="stack-sm">
+            <p className="t-secondary">
+              {officeDayPreview.converted > 0
+                ? wsAdmin.officeDay.confirmBody(officeDayPreview.converted, officeDayPreview.date)
+                : wsAdmin.officeDay.confirmNobody(officeDayPreview.date)}
+            </p>
+            <p className="t-muted">
+              {wsAdmin.officeDay.confirmDetail(officeDayPreview.alreadyOffice, officeDayPreview.skipped)}
+            </p>
+            <p className="t-muted">{wsAdmin.officeDay.confirmNote}</p>
+          </div>
+        )}
+      </Modal>
 
       {/* ── Drill-down ── */}
       <SlideOver open={!!openMember} onClose={() => setOpenMemberId(null)}>

@@ -501,14 +501,26 @@ export async function createAdminOverride(params: {
   note?: string | null
 }): Promise<AdminOverride> {
   const id = crypto.randomUUID().replace(/-/g, '')
+  // INSERT OR IGNORE, and then read back BY EVENT rather than by the id we
+  // minted. An office day may already hold an override on this event, and
+  // `idx_admin_overrides_event` is UNIQUE on (workspace_id, presence_event_id) -
+  // a plain INSERT would throw. That throw would land AFTER
+  // actionRegularizationRequest() has already flipped the request to
+  // `approved`, leaving it approved with no override and the admin looking at a
+  // 500. An existing override already grants exactly what this call wanted, so
+  // losing the race is success, not failure.
+  //
+  // `source` is written explicitly: the column tells an office day apart from a
+  // regularization, and undoing an office day filters on it. Leaving it NULL
+  // here would make the column trustworthy in one direction only.
   await db.execute(
-    `INSERT INTO admin_overrides (id, workspace_id, presence_event_id, admin_user_id, note)
-     VALUES (?, ?, ?, ?, ?)`,
+    `INSERT OR IGNORE INTO admin_overrides (id, workspace_id, presence_event_id, admin_user_id, note, source)
+     VALUES (?, ?, ?, ?, ?, 'regularization')`,
     [id, params.workspaceId, params.presenceEventId, params.adminUserId, params.note ?? null]
   )
   return db.queryOne<AdminOverride>(
-    'SELECT * FROM admin_overrides WHERE id = ?',
-    [id]
+    'SELECT * FROM admin_overrides WHERE workspace_id = ? AND presence_event_id = ?',
+    [params.workspaceId, params.presenceEventId]
   ) as Promise<AdminOverride>
 }
 

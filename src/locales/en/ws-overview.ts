@@ -139,4 +139,66 @@ export const wsAdmin = {
     loadFailed: 'Could not load approvals.',
     actionFailed: 'Could not action that request.',
   },
+
+  /**
+   * /ws/:slug/attendance - the bulk office day, beside the regularization queue
+   * it generalises. One regularization corrects one person's day; an office day
+   * corrects everybody's at once.
+   */
+  officeDay: {
+    cardTitle: 'Bulk office day',
+    cardHint:
+      'Declare a date an office day and everyone who was working that day — but whose signals did not verify — is counted as in-office. Nobody loses their attendance allowance. People with no check-in that day are left untouched.',
+
+    dateLabel: 'Date',
+    noteLabel: 'Note (optional)',
+    notePlaceholder: 'e.g. All-hands at the office',
+    declareAction: 'Declare office day',
+    checking: 'Checking…',
+
+    confirmTitle: 'Mark as in-office',
+    confirmBody: (count: number, date: string) =>
+      `Mark ${count} ${count === 1 ? 'person' : 'people'} as in-office on ${date}?`,
+    confirmDetail: (alreadyOffice: number, skipped: number) =>
+      `${alreadyOffice} already counted as in-office · ${skipped} with no check-in stay unchanged.`,
+    confirmNobody: (date: string) =>
+      `Nobody on ${date} needs converting. Everyone with a check-in is already counted as in-office.`,
+    confirmNote:
+      'This never modifies the original events — it is stored as separate, additive overrides, and can be undone.',
+    confirmCancel: 'Cancel',
+    confirmAction: 'Mark as in-office',
+
+    declaredTitle: 'Declared office days',
+    declaredEmptyTitle: 'No office days declared',
+    declaredEmptyHint: 'Declaring one converts that day’s remote check-ins to in-office.',
+    declaredCount: (people: number) =>
+      `${people} ${people === 1 ? 'person' : 'people'} counted as in-office`,
+    colDate: 'Date',
+    colPeople: 'Converted',
+    colNote: 'Note',
+    undo: 'Undo',
+    undoing: 'Undoing…',
+
+    doneToast: (count: number) =>
+      count === 1 ? '1 person marked as in-office.' : `${count} people marked as in-office.`,
+    nothingToast: 'Nothing to convert — that day was already counted as in-office.',
+    failedToast: 'Could not declare that office day.',
+    undoneToast: 'Office day undone.',
+    undoFailedToast: 'Could not undo that office day.',
+    loadFailed: 'Could not load declared office days.',
+
+    /** Server-side refusals. The codes match the single-day regularization path. */
+    errBadBody: 'Invalid JSON body',
+    errDateFormat: 'date must be in YYYY-MM-DD format',
+    errFutureDate: 'Cannot declare a future date an office day.',
+    errOutsideHistory: 'This date is outside your plan’s history window.',
+    errWeekOff:
+      'That date is not a working day, so an office day on it would count for nothing.',
+    errHoliday: (date: string, name: string) =>
+      `${date} is a company holiday (${name}), so an office day on it would count for nothing.`,
+
+    /** Written into admin_overrides.note. */
+    notePrefix: 'Office day: ',
+    noteDefault: 'Office day',
+  },
 } as const
