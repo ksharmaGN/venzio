@@ -15,6 +15,7 @@ import { getUserById, getRateLimitCount, recordRateLimitHit } from '@/lib/db/que
 import { getActiveWorkspaceAdmins } from '@/lib/db/queries/workspaces'
 import { createNotification } from '@/lib/db/queries/notifications'
 import { sendPushToUser } from '@/lib/push'
+import { notificationHref } from '@/lib/client/notification-href'
 import { queryWorkspaceEvents } from '@/lib/signals'
 import { en } from '@/locales/en'
 
@@ -171,11 +172,15 @@ export async function POST(req: NextRequest, { params }: Props) {
     const employeeName = employee?.full_name ?? employee?.email ?? 'Someone'
     const title = en.notifications.regularizationSubmittedTitle
     const notifBody = en.notifications.regularizationSubmittedBody(employeeName, targetDate)
+    const url = notificationHref(
+      { type: 'regularization_submitted', ref_type: 'regularization_request', ref_id: regularizationRequest.id, workspace_slug: slug },
+      'ws',
+    )
     await Promise.allSettled(
       admins
         .flatMap((a) => [
           createNotification({ userId: a.user_id, workspaceId: workspace.id, type: 'regularization_submitted', title, body: notifBody, refId: regularizationRequest.id, refType: 'regularization_request' }),
-          sendPushToUser(a.user_id, { title, body: notifBody, tag: `regularization-submitted-${regularizationRequest.id}` }),
+          sendPushToUser(a.user_id, { title, body: notifBody, tag: `regularization-submitted-${regularizationRequest.id}`, data: { url } }),
         ]),
     )
   } catch { /* notification failure must not block the response */ }

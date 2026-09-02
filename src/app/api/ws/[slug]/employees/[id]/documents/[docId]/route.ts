@@ -8,6 +8,11 @@ import {
   deleteDocument,
 } from '@/lib/db/queries/documents'
 import { documentStore } from '@/lib/storage'
+import { getEmployee } from '@/lib/db/queries/employees'
+import { createNotification } from '@/lib/db/queries/notifications'
+import { sendPushToUser } from '@/lib/push'
+import { notificationHref } from '@/lib/client/notification-href'
+import { documentNotifications } from '@/locales/en/notifications'
 
 interface Props { params: Promise<{ slug: string; id: string; docId: string }> }
 
@@ -99,9 +104,68 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     })
     if (!updated) return notFound()
     document = updated
+
+    await notifyEmployeeOfReview(ctx.workspace.id, slug, id, updated)
   }
 
   return NextResponse.json({ document })
+}
+
+/**
+ * Tell the employee what happened to their document.
+ *
+ * The verdict used to be written to the row and announced to nobody: an
+ * employee could have their ID proof rejected and only find out by opening
+ * `/me/documents` and noticing the slot had gone red - which, for a rejection
+ * with a reason attached, is the one case where silence is most expensive.
+ *
+ * Two ways this legitimately sends nothing, both silent by design:
+ *   - the employee record has no `user_id` yet (a document can be filed for
+ *     somebody who has not accepted their invitation), so there is no account
+ *     to notify;
+ *   - the notification or the push fails.
+ * Neither may fail the request - the review decision is already committed, and
+ * a 500 here would invite the admin to press the button again.
+ */
+async function notifyEmployeeOfReview(
+  workspaceId: string,
+  slug: string,
+  employeeId: string,
+  document: { id: string; name: string; status: string; reject_reason: string | null },
+): Promise<void> {
+  try {
+    const employee = await getEmployee(employeeId, workspaceId)
+    const userId = employee?.user_id
+    if (!userId) return
+
+    const isVerified = document.status === 'verified'
+    const type = isVerified ? ('document_verified' as const) : ('document_rejected' as const)
+    const title = isVerified
+      ? documentNotifications.verifiedTitle
+      : documentNotifications.rejectedTitle
+    const body = isVerified
+      ? documentNotifications.verifiedBody(document.name)
+      : document.reject_reason
+        ? documentNotifications.rejectedBody(document.name, document.reject_reason)
+        : documentNotifications.rejectedBodyNoReason(document.name)
+    const url = notificationHref(
+      { type, ref_type: 'employee_document', ref_id: document.id, workspace_slug: slug },
+      'me',
+    )
+
+    await Promise.allSettled([
+      createNotification({
+        userId,
+        workspaceId,
+        type,
+        title,
+        body,
+        refId: document.id,
+        refType: 'employee_document',
+      }),
+      sendPushToUser(userId, { title, body, tag: `document-${type}-${document.id}`, data: { url } }),
+    ])
+  } catch { /* notification failure must not fail the review */ }
 }
 
 // ─── DELETE /api/ws/[slug]/employees/[id]/documents/[docId] ───────────────────
