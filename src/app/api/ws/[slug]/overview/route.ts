@@ -25,6 +25,14 @@ export interface OverviewWidgetsResponse {
   pendingApprovals: ApprovalItem[]
   pendingApprovalsTotal: number
   departmentBreakdown: DepartmentHeadcount
+  /**
+   * The rest of the current calendar month, topped up to at least five.
+   *
+   * Not a fixed day window: a 14-day one emptied the card for most of the
+   * month and then cut the list off mid-month for no reason a reader could
+   * see. The count, not the horizon, is what the widget is sized for - see
+   * getUpcomingCelebrations.
+   */
   celebrations: UpcomingCelebration[]
 }
 
@@ -50,7 +58,7 @@ export async function GET(req: NextRequest, { params }: Props) {
       viewer: ctx.role,
     }),
     getDepartmentBreakdown(ctx.workspace.id),
-    getUpcomingCelebrations(ctx.workspace.id, today, 14),
+    getUpcomingCelebrations(ctx.workspace.id, today),
   ])
 
   return NextResponse.json({

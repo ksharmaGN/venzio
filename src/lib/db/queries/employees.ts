@@ -759,10 +759,47 @@ function nextOccurrence(originalIso: string, today: Date): { iso: string; daysUn
   return { iso: candidate.toISOString().slice(0, 10), daysUntil }
 }
 
+/**
+ * How far ahead the next occurrence is computed before selection happens.
+ *
+ * This is NOT the widget's window - the window is a calendar month plus a
+ * minimum count (see below). It is only wide enough that every person on file
+ * has exactly one occurrence in it, so the "keep taking the next ones" step
+ * never runs out of candidates it should have had. A birthday is at most 366
+ * days away once `nextOccurrence` has rolled it into the future, so ~400 days
+ * covers everyone with room to spare.
+ */
+const CELEBRATION_HORIZON_DAYS = 400
+
+/**
+ * The celebrations the overview widget shows.
+ *
+ * The rule is "the rest of this month, but never a nearly-empty card":
+ * every occurrence falling in the same calendar month as `todayIso`, and if
+ * that is fewer than `minCount`, keep taking the next ones in date order until
+ * there are `minCount` (or the workspace runs out of people).
+ *
+ * Who is eligible:
+ * - not soft-deleted, not `terminated`, and not past their `exit_date` - a
+ *   departed colleague's birthday must not be announced to the workspace;
+ * - an ACTIVE `workspace_members` row, so an ex-member whose membership was
+ *   revoked, or an HR record for somebody who never joined, drops out.
+ *
+ * An employee record with a NULL `user_id` is DELIBERATELY excluded. That is
+ * the open-invitation window (invariant 19): the record exists, the person does
+ * not have an account and has not accepted, so they are not yet a colleague to
+ * congratulate. Requiring `e.user_id` to match a member's is what encodes that
+ * - unlike the directory join in `workspaces.ts`, this one has no work-email
+ * fallback, and that omission is the decision, not an oversight.
+ *
+ * EXISTS rather than a plain JOIN: nothing at the DB level stops two membership
+ * rows (different emails) pointing at one user, and a JOIN would then emit the
+ * same birthday twice - which the widget keys as one row.
+ */
 export async function getUpcomingCelebrations(
   workspaceId: string,
   todayIso: string,
-  withinDays = 14,
+  minCount = 5,
 ): Promise<UpcomingCelebration[]> {
   const rows = await db.query<{
     id: string
@@ -775,8 +812,17 @@ export async function getUpcomingCelebrations(
      FROM employees e
      LEFT JOIN employment_details ed ON ed.employee_id = e.id
      WHERE e.workspace_id = ? AND e.deleted_at IS NULL
+       AND e.employee_status != 'terminated'
+       AND (ed.exit_date IS NULL OR ed.exit_date >= ?)
+       AND e.user_id IS NOT NULL
+       AND EXISTS (
+         SELECT 1 FROM workspace_members wm
+         WHERE wm.workspace_id = e.workspace_id
+           AND wm.user_id = e.user_id
+           AND wm.status = 'active'
+       )
        AND (e.date_of_birth IS NOT NULL OR ed.date_of_joining IS NOT NULL)`,
-    [workspaceId],
+    [workspaceId, todayIso],
   )
 
   const today = new Date(`${todayIso}T00:00:00Z`)
@@ -787,14 +833,14 @@ export async function getUpcomingCelebrations(
 
     if (r.date_of_birth) {
       const occurs = nextOccurrence(r.date_of_birth, today)
-      if (occurs.daysUntil >= 0 && occurs.daysUntil <= withinDays) {
+      if (occurs.daysUntil >= 0 && occurs.daysUntil <= CELEBRATION_HORIZON_DAYS) {
         out.push({ employeeId: r.id, name, kind: 'birthday', occursOn: occurs.iso })
       }
     }
 
     if (r.date_of_joining) {
       const occurs = nextOccurrence(r.date_of_joining, today)
-      if (occurs.daysUntil >= 0 && occurs.daysUntil <= withinDays) {
+      if (occurs.daysUntil >= 0 && occurs.daysUntil <= CELEBRATION_HORIZON_DAYS) {
         const joinYear = Number(r.date_of_joining.slice(0, 4))
         const occurYear = Number(occurs.iso.slice(0, 4))
         if (occurYear > joinYear) {
@@ -804,5 +850,13 @@ export async function getUpcomingCelebrations(
     }
   }
 
-  return out.sort((a, b) => a.occursOn.localeCompare(b.occursOn))
+  const sorted = out.sort((a, b) => a.occursOn.localeCompare(b.occursOn))
+
+  // Every occurrence is on or after today, so the ones inside today's calendar
+  // month are a PREFIX of the sorted list. "Extend forward until minCount" is
+  // therefore just a longer prefix - no second pass, no risk of the two
+  // branches disagreeing about order.
+  const thisMonth = todayIso.slice(0, 7)
+  const inMonth = sorted.filter((c) => c.occursOn.slice(0, 7) === thisMonth)
+  return inMonth.length >= minCount ? inMonth : sorted.slice(0, minCount)
 }
