@@ -6,6 +6,11 @@ import {
   findEmployeeByWorkEmail,
 } from '@/lib/db/queries/employees'
 import { listDirectoryPeople } from '@/lib/db/queries/employees-list'
+import {
+  addWorkspaceMember,
+  getWorkspaceMemberByEmail,
+  MEMBER_STATUS_NO_ACCESS,
+} from '@/lib/db/queries/workspaces'
 import type { CreateEmployeeInput } from '@/lib/types/employees'
 import { EmployeeStatus } from '@/lib/constants/employees'
 import { validateEmployeeFields } from './_validate'
@@ -134,7 +139,36 @@ export async function POST(req: NextRequest, { params }: Props) {
   }
 
   const employee = await createEmployee(input)
-  return NextResponse.json({ employee }, { status: 201 })
+
+  /**
+   * Every employee record gets a membership row, even when nobody is invited.
+   *
+   * The directory reads `FROM workspace_members`, and the person details page is
+   * keyed on `workspace_members.id`. So a record created without one is
+   * invisible in People AND has no URL - two of those orphans already existed in
+   * the live data before this. Writing the membership here makes an orphan
+   * structurally impossible rather than something the read path has to paper
+   * over with a UNION.
+   *
+   * `status: 'no_access'` is the honest answer: they have an HR record, they
+   * have never been invited, and they cannot sign in. `pending_consent` would
+   * claim an invitation was sent. `user_id` stays NULL - linking an existing
+   * account here would hand someone a workspace they never accepted; the accept
+   * paths in `src/lib/membership.ts` own that link.
+   *
+   * Where a membership already exists for this address - HR filling in the
+   * record of somebody already in the workspace - it is reused untouched. Its
+   * status is theirs, not ours to downgrade.
+   */
+  const existing = await getWorkspaceMemberByEmail(ctx.workspace.id, workEmail)
+  const member = existing ?? await addWorkspaceMember({
+    workspaceId: ctx.workspace.id,
+    email: workEmail,
+    role: 'member',
+    status: MEMBER_STATUS_NO_ACCESS,
+  })
+
+  return NextResponse.json({ employee, member_id: member.id }, { status: 201 })
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

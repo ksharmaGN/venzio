@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { ChevronRight } from 'lucide-react'
 import type { WorkspaceMember, Workspace } from '@/lib/db/queries/workspaces'
 import { isWorkspaceAdmin } from '@/lib/permissions/ranks'
-import { Avatar, Button, Card, EmptyState } from '@/components/ui'
+import { Button, Card, EmptyState, WorkspaceAvatar } from '@/components/ui'
 import { en } from '@/locales/en'
 import { meSettings } from '@/locales/en/me-settings'
 
@@ -142,7 +142,19 @@ export default function OrgsClient({ activeMemberships, pendingMemberships, wsMa
                     style={{ position: 'absolute', inset: 0, borderRadius: 'var(--radius-lg)' }}
                   />
 
-                  <Avatar name={name} style={{ position: 'relative', pointerEvents: 'none' }} />
+                  {/* The WORKSPACE mark, not the person Avatar that used to be
+                      here: `workspace-color.ts` keeps the two palettes apart on
+                      purpose, so a workspace wearing a member colour reads as a
+                      relationship that is not there. */}
+                  <span style={{ position: 'relative', pointerEvents: 'none', display: 'flex' }}>
+                    <WorkspaceAvatar
+                      id={ws?.id ?? m.workspace_id}
+                      slug={ws?.slug ?? ''}
+                      name={name}
+                      logoUpdatedAt={ws?.logo_updated_at}
+                      size="lg"
+                    />
+                  </span>
 
                   <div style={{ flex: 1, minWidth: 0, position: 'relative', pointerEvents: 'none' }}>
                     <p className="t-h2" style={{ margin: 0, color: 'var(--navy)' }}>{name}</p>

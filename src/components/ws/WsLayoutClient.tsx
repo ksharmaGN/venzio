@@ -10,14 +10,18 @@ import PwaInstallPrompt from '@/components/PwaInstallPrompt'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import NotificationPanel from '@/components/notifications/NotificationPanel'
 import { ToastProvider } from '@/components/shared/Toast'
-import { Chip } from '@/components/ui'
+import { Chip, WorkspaceAvatar } from '@/components/ui'
 import { wsAdmin } from '@/locales/en/ws-overview'
 import type { Resource } from '@/lib/permissions/catalogue'
 
 interface Props {
   slug: string
+  /** Seeds the avatar's fallback colour. The id, never the slug. */
+  workspaceId: string
   leavesEnabled: boolean
   workspaceName: string
+  /** null when the workspace has no logo; also the image cache-buster. */
+  logoUpdatedAt?: string | null
   /** Plan key as stored on the workspace row - rendered as a chip. */
   plan: string
   pendingLeaveCount: number
@@ -42,7 +46,7 @@ interface Props {
  * needs no responsive JS.
  */
 export default function WsLayoutClient({
-  slug, leavesEnabled, workspaceName, plan, pendingLeaveCount, pendingApprovalsCount,
+  slug, workspaceId, logoUpdatedAt, leavesEnabled, workspaceName, plan, pendingLeaveCount, pendingApprovalsCount,
   userName, userRoleName, readableResources, children,
 }: Props) {
   const [panelOpen, setPanelOpen] = useState(false)
@@ -69,9 +73,12 @@ export default function WsLayoutClient({
               title={wsAdmin.shell.switchWorkspace}
               style={{ textDecoration: 'none', maxWidth: '46vw', overflow: 'hidden' }}
             >
-              <span className="swatch" style={{ background: 'var(--brand)' }} aria-hidden>
-                {workspaceName.charAt(0).toUpperCase()}
-              </span>
+              <WorkspaceAvatar
+                id={workspaceId}
+                slug={slug}
+                name={workspaceName}
+                logoUpdatedAt={logoUpdatedAt}
+              />
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {workspaceName}
               </span>

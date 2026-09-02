@@ -55,6 +55,7 @@ export default async function MeLayout({ children }: { children: React.ReactNode
         name: ws.name,
         // Display name, never the raw key - `hr-manager` would otherwise
         // render as "Hr-manager".
+        logoUpdatedAt: ws.logo_updated_at ?? null,
         roleName: role?.name ?? m.role,
         hasOrgAccess: hasAnyOrgAccess(role?.permissions),
       }]

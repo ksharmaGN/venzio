@@ -135,6 +135,29 @@ export const wsAdmin = {
 
     notifInvalidCategories:
       'notificationCategoriesOff must be an array of switchable notification category keys',
+
+    // ── Workspace logo ───────────────────────────────────────────────────────
+    logoTitle: 'Workspace logo',
+    logoHint:
+      'Shown in the top bar for everyone in this workspace. Without one, the coloured initial is used.',
+    logoCurrentAlt: 'Current workspace logo',
+    logoUpload: 'Upload a logo',
+    logoReplace: 'Replace logo',
+    logoUploading: 'Uploading…',
+    logoRemove: 'Remove logo',
+    logoRemoving: 'Removing…',
+    logoSaved: 'Logo updated',
+    logoRemoved: 'Logo removed',
+    /**
+     * The constraints, said before the upload rather than after it fails. PNG
+     * and JPEG only - SVG is markup and is refused deliberately, not by
+     * oversight.
+     */
+    logoConstraints: 'PNG or JPEG, up to 512 KB.',
+    logoNoFile: 'Choose an image to upload.',
+    logoTooLarge: 'That image is over 512 KB. Please use a smaller one.',
+    logoBadType: 'That file is not a PNG or JPEG image.',
+    logoFailed: 'Could not update the logo. Please try again.',
   },
 
   // ── Settings › Billing (read-only) ─────────────────────────────────────────

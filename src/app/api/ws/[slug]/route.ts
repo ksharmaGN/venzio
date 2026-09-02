@@ -3,6 +3,7 @@ import { requireWsAccess } from '@/lib/ws-access'
 import { updateWorkspace } from '@/lib/db/queries/workspaces'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
+import { getWorkspaceLogoMeta } from '@/lib/db/queries/workspace-logo'
 import {
   isNotificationCategory,
   parseCategoriesOff,
@@ -66,6 +67,8 @@ export async function GET(request: NextRequest, { params }: Props) {
   const ctx = await requireWsAccess(request, slug, Resource.Settings, Action.Read)
   if (!ctx) return NextResponse.json({ error: 'Forbidden', code: 'FORBIDDEN' }, { status: 403 })
 
+  const logo = await getWorkspaceLogoMeta(ctx.workspace.id)
+
   const rawDays = ctx.workspace.working_days ?? '[1,2,3,4,5]'
   let working_days: number[]
   try { working_days = JSON.parse(rawDays) } catch { working_days = [1, 2, 3, 4, 5] }
@@ -84,6 +87,11 @@ export async function GET(request: NextRequest, { params }: Props) {
     // malformed one must reach the switchboard as "nothing off", not as a
     // string the client then has to guess at.
     notification_categories_off: [...parseCategoriesOff(ctx.workspace.notification_categories_off)],
+    // Only the timestamp, never the bytes. It answers "is there a logo" and
+    // doubles as the cache-buster on the image URL, so a replaced logo changes
+    // its src and a stale copy can never be served. The bytes have their own
+    // route (invariant 23 - no base64 in a JSON body).
+    logo_updated_at: logo?.updated_at ?? null,
     // Archive / restore are ownership-level, so only the owner should see the
     // control. The routes enforce this independently - this flag only stops us
     // showing a button we would immediately 403 on.

@@ -701,7 +701,12 @@ export default function AttendanceClient({ slug, canAction }: Props) {
 
             <Divider />
 
-            <Link href={`/ws/${slug}/members/${openMember.user_id}`} className="btn btn-secondary btn-block pressable" style={{ textDecoration: 'none' }}>
+            {/* The person screen's Activity tab, keyed on the MEMBERSHIP id.
+                It replaced a standalone `/members/:userId` page - and note the
+                two ids are not interchangeable: an invited person has a
+                membership and no user, which is exactly why that route is
+                keyed the way it is. */}
+            <Link href={`/ws/${slug}/people/${openMember.member_id}/details?tab=activity`} className="btn btn-secondary btn-block pressable" style={{ textDecoration: 'none' }}>
               {wsAdmin.attendance.viewTimeline}
             </Link>
           </>

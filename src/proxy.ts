@@ -55,6 +55,10 @@ function isPublicApiRoute(pathname: string): boolean {
     "/api/auth/otp/send",
     "/api/auth/otp/verify",
     "/api/auth/logout",
+    // "Am I signed in?" for the marketing nav. Cookie-gating it would answer a
+    // signed-out visitor 401 before the handler ran; it returns 200 and a
+    // boolean instead, so an anonymous landing-page view logs no error.
+    "/api/auth/session",
     "/api/auth/check-email",
     "/api/auth/reset-password",
     "/api/workspace/check-slug",

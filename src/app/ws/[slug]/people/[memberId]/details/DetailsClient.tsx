@@ -1,21 +1,29 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, Pencil } from 'lucide-react'
+import { ArrowLeft, Plus } from 'lucide-react'
 import {
   Avatar, Button, Card, Chip, EmptyState, Field, Select, TabBar,
-  type ChipTone,
+  type ChipTone, type Tab,
 } from '@/components/ui'
 import { useToast } from '@/components/shared/Toast'
 import type { EmployeePublic } from '@/lib/types/employees'
-import EmployeeProfileView from '@/components/ws/employee/EmployeeProfileView'
-import EmployeeFormHost from '@/components/ws/employee/EmployeeFormHost'
+import EmployeeSectionTab from '@/components/ws/employee/EmployeeSectionTab'
 import EmployeeDocuments from '@/components/ws/employee/EmployeeDocuments'
+import EmployeeLeaveTab from '@/components/ws/employee/EmployeeLeaveTab'
+import EmployeeActivityTab from '@/components/ws/employee/EmployeeActivityTab'
+import EmployeeFormHost from '@/components/ws/employee/EmployeeFormHost'
+import {
+  tabHasSubject, visiblePersonTabs,
+  type PersonTabKey, type TabVisibilityInput,
+} from '@/components/ws/employee/person-tabs'
 import { displayValue } from '@/components/ws/employee/employee-form'
 import { en } from '@/locales/en'
 import { wsEmployees, wsPeopleUi } from '@/locales/en/ws-people'
+import { can } from '@/lib/permissions/can'
+import { Action, Resource, type PermissionGrid } from '@/lib/permissions/catalogue'
 import { canManage } from '@/lib/permissions/ranks'
 import { personColor } from '@/lib/workspace-color'
 import TransferOwnershipModal from '../../TransferOwnershipModal'
@@ -31,22 +39,17 @@ interface MemberSummary {
 
 interface ManagerOption { userId: string; name: string; email: string }
 interface RoleOption { key: string; name: string; restricted: boolean }
-interface OpeningBalance { id: string; user_id: string; leave_type_name: string; balance_days: number }
 
 interface Props {
   slug: string
-  /** Deep link from the approvals queue, which lands on Documents. */
-  initialTab?: 'documents' | 'access'
+  /** `?tab=`, already validated against `isPersonTabKey` on the server. */
+  initialTab?: PersonTabKey
   viewerUserId: string
   viewerRoleKey: string
+  /** The viewer's whole grid - see the note where the server passes it. */
+  permissions: PermissionGrid
   member: MemberSummary
   employee: EmployeePublic | null
-  canReadEmployees: boolean
-  canWriteEmployees: boolean
-  canReadDocuments: boolean
-  canWriteDocuments: boolean
-  canReadLeaves: boolean
-  canRemoveMembers: boolean
   canTransferOwnership: boolean
   assignableRoles: RoleOption[]
   roleNames: Record<string, string>
@@ -63,188 +66,294 @@ const STATUS_TONE: Record<string, ChipTone> = {
   terminated: 'roadmap',
 }
 
+const TAB_LABELS: Record<PersonTabKey, string> = {
+  basic: wsPeopleUi.tabBasic,
+  employment: wsPeopleUi.tabEmployment,
+  bank: wsPeopleUi.tabBank,
+  emergency: wsPeopleUi.tabEmergency,
+  documents: wsPeopleUi.tabDocuments,
+  leave: wsPeopleUi.tabLeave,
+  activity: wsPeopleUi.tabActivity,
+  access: wsPeopleUi.tabAccess,
+}
+
+/** The four tabs that are a slice of the employee record, in edit form. */
+const RECORD_TABS: ReadonlySet<PersonTabKey> = new Set<PersonTabKey>([
+  'basic', 'employment', 'bank', 'emergency',
+])
+
 /**
- * Everything about one person, in three tabs.
+ * Everything about one person, in eight tabs.
  *
- * This screen exists because the directory row lost its dropdowns. Changing
- * somebody's role from a `<select>` inside a table row made a consequential
- * change feel like sorting a column, and there was nowhere to say what it
- * costs. Here the consequence gets a sentence.
+ * There is no edit MODE here any more. The screen used to have a read-only
+ * profile and a button that swapped the whole page for a five-step wizard, and
+ * that shape lost every time: an HR record is not assembled in one sitting by
+ * one person, so a form that can only be saved whole is a form that stays
+ * empty. Each tab now owns its own fields and its own Save, and a tab nobody
+ * opened is a tab nobody can accidentally blank.
  *
- * Three permissions, three tabs, resolved independently on the server:
- * Profile needs `employees:read`, Documents `documents:read`, Access is always
- * present because `members:read` is what opened the page.
+ * Which tabs exist, what each needs, and which resource opens it are all in
+ * `person-tabs.ts` - deliberately not here, so the tab strip and the routes
+ * behind it read the same table.
  */
 export default function DetailsClient({
-  slug, initialTab, viewerUserId, viewerRoleKey, member, employee,
-  canReadEmployees, canWriteEmployees, canReadDocuments, canWriteDocuments, canReadLeaves,
-  canRemoveMembers, canTransferOwnership, assignableRoles, roleNames,
+  slug, initialTab, viewerUserId, viewerRoleKey, permissions, member, employee,
+  canTransferOwnership, assignableRoles, roleNames,
   managerOptions, currentManagerUserId,
 }: Props) {
   const router = useRouter()
   const { show: toast } = useToast()
 
   const [record, setRecord] = useState<EmployeePublic | null>(employee)
-  const [editing, setEditing] = useState(false)
-  const [tab, setTab] = useState<'profile' | 'documents' | 'access'>(
-    initialTab ?? (canReadEmployees ? 'profile' : 'access'),
-  )
-  const [balances, setBalances] = useState<OpeningBalance[] | null>(null)
+  const [creating, setCreating] = useState(false)
 
-  useEffect(() => {
-    if (!canReadLeaves || !member.user_id) return
-    const userId = member.user_id
-    let cancelled = false
-    void (async () => {
-      const res = await fetch(`/api/ws/${slug}/leave-balances`)
-      if (!res.ok || cancelled) return
-      const data = await res.json() as { balances: OpeningBalance[] }
-      if (!cancelled) setBalances((data.balances ?? []).filter(b => b.user_id === userId))
-    })()
-    return () => { cancelled = true }
-  }, [slug, canReadLeaves, member.user_id])
+  const canWriteEmployees = can(permissions, Resource.Employees, Action.Write)
+  const canWriteDocuments = can(permissions, Resource.Documents, Action.Write)
+  const canRemoveMembers = can(permissions, Resource.Members, Action.Delete)
+  const canInviteMembers = can(permissions, Resource.Members, Action.Write)
+
+  const ask = useCallback(
+    (resource: Resource, action: Action) => can(permissions, resource, action),
+    [permissions],
+  )
+
+  const visibility: TabVisibilityInput = {
+    can: ask,
+    hasUser: !!member.user_id,
+    hasEmployeeRecord: !!record,
+  }
+  const tabDefs = visiblePersonTabs(visibility)
+  const tabs: Tab[] = tabDefs.map(d => ({ key: d.key, label: TAB_LABELS[d.key] }))
+
+  // `access` is unconditional in the catalogue, so the fallback always resolves;
+  // the `?? 'access'` is there because the compiler cannot know that.
+  const fallback: PersonTabKey = tabDefs[0]?.key ?? 'access'
+  const [tab, setTab] = useState<PersonTabKey>(initialTab ?? fallback)
+
+  // A tab can disappear between renders - creating the HR record adds five of
+  // them, and permissions are re-resolved on every refresh. Without this a
+  // stale key renders an empty panel under a tab strip that no longer has it.
+  const active = tabDefs.some(d => d.key === tab) ? tab : fallback
+  const activeDef = tabDefs.find(d => d.key === active)
+
+  /**
+   * Write the tab into the URL so it is linkable and survives a refresh.
+   *
+   * `replace`, not `push`: clicking through four tabs should not cost four
+   * presses of the back button to leave the person. The membership id is used
+   * rather than the current segment because the approvals queue deep-links this
+   * route by EMPLOYEE id - both resolve, and normalising means a copied link is
+   * always the canonical one.
+   */
+  function switchTab(key: PersonTabKey) {
+    setTab(key)
+    router.replace(`/ws/${slug}/people/${member.member_id}/details?tab=${key}`, { scroll: false })
+  }
 
   const name = record
     ? `${record.first_name} ${record.last_name}`.trim() || record.work_email
     : member.full_name ?? member.email
 
-  const back = (
-    <Link href={`/ws/${slug}/people`} className="btn btn-ghost btn-sm pressable link-plain btn-flush">
-      <ArrowLeft size={14} aria-hidden />
-      {wsPeopleUi.detailsBack}
-    </Link>
-  )
-
-  // The wizard takes over the whole screen: it is a five-step form, and
-  // shrinking it into a tab panel beside a header is how a form gets filled in
-  // wrong.
-  if (editing) {
-    return (
-      <div>
-        {back}
-        <EmployeeFormHost
-          slug={slug}
-          employee={record}
-          member={{ userId: member.user_id, email: member.email, fullName: member.full_name }}
-          onCancel={() => setEditing(false)}
-          onSaved={(saved) => { setRecord(saved); setEditing(false); router.refresh() }}
-        />
-      </div>
-    )
-  }
-
-  const tabs = [
-    ...(canReadEmployees ? [{ key: 'profile', label: wsPeopleUi.tabProfile }] : []),
-    ...(canReadDocuments && record ? [{ key: 'documents', label: wsPeopleUi.tabDocuments }] : []),
-    { key: 'access', label: wsPeopleUi.tabAccess },
-  ]
-
   return (
     <div>
-      {back}
+      <Link
+        href={`/ws/${slug}/people`}
+        className="btn btn-ghost btn-sm pressable link-plain btn-flush"
+      >
+        <ArrowLeft size={14} aria-hidden />
+        {wsPeopleUi.detailsBack}
+      </Link>
 
       <Card className="person-header">
-        <Avatar name={name} size={64} color={personColor(member.user_id ?? member.email)} />
+        <Avatar
+          name={name}
+          size={64}
+          color={personColor(member.user_id ?? member.email)}
+        />
         <div className="person-header-main">
           <div className="person-header-titles">
             <h1 className="t-h1 person-header-name">{name}</h1>
-            <Chip tone={member.role === 'owner' ? 'owner' : 'leave'}>
+            <Chip tone={member.role === "owner" ? "owner" : "leave"}>
               {roleNames[member.role] ?? member.role}
             </Chip>
           </div>
           <p className="t-secondary person-header-sub">
             {record
-              ? [record.employment.designation, record.employment.department].filter(Boolean).join(' · ') || wsEmployees.noValue
+              ? [record.employment.designation, record.employment.department]
+                  .filter(Boolean)
+                  .join(" · ") || wsEmployees.noValue
               : wsEmployees.noValue}
           </p>
           <p className="t-muted person-header-meta">
-            {[member.email, record?.employee_id].filter(Boolean).join(' · ')}
+            {[member.email, record?.employee_id].filter(Boolean).join(" · ")}
           </p>
         </div>
         <div className="person-header-side">
-          {member.status === 'pending_consent' ? (
+          {member.status === "pending_consent" ? (
             <Chip tone="partial">{wsPeopleUi.statusInvited}</Chip>
-          ) : member.status === 'declined' ? (
+          ) : member.status === "declined" ? (
             <Chip tone="none">{wsPeopleUi.statusDeclined}</Chip>
+          ) : member.status === "no_access" ? (
+            <Chip tone="leave">{wsPeopleUi.statusNoAccess}</Chip>
           ) : record ? (
-            <Chip tone={STATUS_TONE[record.employee_status] ?? 'leave'}>
-              {displayValue('employee_status', record.employee_status)}
+            <Chip tone={STATUS_TONE[record.employee_status] ?? "leave"}>
+              {displayValue("employee_status", record.employee_status)}
             </Chip>
           ) : (
             <Chip tone="verified">{en.wsPeople.statusActive}</Chip>
           )}
-          {canWriteEmployees && (
+
+          {/* Under the status, not in a card of its own. Somebody with no HR
+              record is still a member in good standing - the page should say
+              so plainly and offer one action, rather than leading with a
+              banner about what is missing. */}
+          {!record && !creating && canWriteEmployees && (
             <Button
-              variant="secondary"
               size="sm"
-              icon={<Pencil size={13} />}
-              onClick={() => setEditing(true)}
+              icon={<Plus size={13} />}
+              onClick={() => setCreating(true)}
             >
-              {record ? wsEmployees.editButton : wsPeopleUi.createRecordButton}
+              {wsPeopleUi.createRecordButton}
             </Button>
           )}
         </div>
       </Card>
 
-      <div className="mt-16">
-        <TabBar
-          tabs={tabs}
-          active={tab}
-          onChange={(k) => setTab(k as 'profile' | 'documents' | 'access')}
-        />
-      </div>
+      {/* Only while actually creating. The four record tabs and Documents are
+          keyed on an `employees.id`, so `visiblePersonTabs` omits them until
+          there is one - and the tab strip is hidden here too, because a
+          half-finished create is a focused task and the tabs behind it lead
+          nowhere useful yet. */}
+      {creating && (
+        <Card className="mt-16 form-narrow">
+          <p className="t-eyebrow mb-8">{wsPeopleUi.noRecordTitle}</p>
+          <p className="t-muted mb-12">{wsPeopleUi.noRecordHint}</p>
+          <EmployeeFormHost
+            slug={slug}
+            member={{
+              userId: member.user_id,
+              email: member.email,
+              fullName: member.full_name,
+            }}
+            onCancel={() => setCreating(false)}
+            onSaved={(saved) => {
+              setRecord(saved);
+              setCreating(false);
+              setTab("basic");
+              router.refresh();
+            }}
+          />
+        </Card>
+      )}
 
-      {tab === 'profile' && (
-        record
-          ? <EmployeeProfileView employee={record} balances={canReadLeaves ? (balances ?? []) : null} />
-          : (
+      {!creating && (
+        <>
+          <div className="mt-16">
+            <TabBar
+              tabs={tabs}
+              active={active}
+              onChange={(k) => switchTab(k as PersonTabKey)}
+            />
+          </div>
+
+          {/* A tab the viewer may READ but which has no subject yet. Not an error
+          and not a permission problem - Leave and Activity are both keyed on a
+          user id, and an invitation nobody has accepted has none. The request is
+          not fired at all: it would return an empty timeline or a 422 that reads
+          like a bug. */}
+          {activeDef && !tabHasSubject(activeDef, visibility) ? (
             <Card className="mt-16">
-              <EmptyState title={wsPeopleUi.noRecordTitle} hint={wsPeopleUi.noRecordHint} />
+              <EmptyState
+                title={wsPeopleUi.noSubjectTitle}
+                hint={wsPeopleUi.noSubjectHint}
+              />
             </Card>
-          )
-      )}
+          ) : (
+            <>
+              {RECORD_TABS.has(active) && record && (
+                <EmployeeSectionTab
+                  // Remount on a tab change: each section refetches and reseeds, so
+                  // one component instance never carries another tab's draft.
+                  key={active}
+                  slug={slug}
+                  employeeId={record.id}
+                  tabKey={active}
+                  employee={record}
+                  canWrite={canWriteEmployees}
+                  onSaved={(saved) => {
+                    setRecord(saved);
+                    router.refresh();
+                  }}
+                />
+              )}
 
-      {tab === 'documents' && record && (
-        <EmployeeDocuments slug={slug} employeeId={record.id} canWrite={canWriteDocuments} />
-      )}
+              {active === "documents" && record && (
+                <EmployeeDocuments
+                  slug={slug}
+                  employeeId={record.id}
+                  canWrite={canWriteDocuments}
+                />
+              )}
 
-      {tab === 'access' && (
-        <AccessPanel
-          slug={slug}
-          member={member}
-          viewerUserId={viewerUserId}
-          viewerRoleKey={viewerRoleKey}
-          canWriteEmployees={canWriteEmployees}
-          canRemoveMembers={canRemoveMembers}
-          canTransferOwnership={canTransferOwnership}
-          assignableRoles={assignableRoles}
-          roleNames={roleNames}
-          managerOptions={managerOptions}
-          currentManagerUserId={currentManagerUserId}
-          onChanged={() => router.refresh()}
-          onRemoved={() => router.push(`/ws/${slug}/people`)}
-          toast={toast}
-        />
+              {/* THE ID TRAP: `/api/ws/[slug]/members/[memberId]/*` is two id spaces.
+              `.../timeline` and `.../employee` take a users.id; `.../role`,
+              `.../leave-balances` and DELETE take a workspace_members.id. This
+              route's own segment is the latter, so `userId` must come off the
+              member row and never from the URL. */}
+              {active === "leave" && member.user_id && (
+                <EmployeeLeaveTab
+                  slug={slug}
+                  memberId={member.member_id}
+                  userId={member.user_id}
+                />
+              )}
+
+              {active === "activity" && member.user_id && (
+                <EmployeeActivityTab slug={slug} userId={member.user_id} />
+              )}
+
+              {active === "access" && (
+                <AccessPanel
+                  slug={slug}
+                  member={member}
+                  viewerUserId={viewerUserId}
+                  viewerRoleKey={viewerRoleKey}
+                  canWriteEmployees={canWriteEmployees}
+                  canRemoveMembers={canRemoveMembers}
+                  canInviteMembers={canInviteMembers}
+                  canTransferOwnership={canTransferOwnership}
+                  assignableRoles={assignableRoles}
+                  roleNames={roleNames}
+                  managerOptions={managerOptions}
+                  currentManagerUserId={currentManagerUserId}
+                  onChanged={() => router.refresh()}
+                  onRemoved={() => router.push(`/ws/${slug}/people`)}
+                  toast={toast}
+                />
+              )}
+            </>
+          )}
+        </>
       )}
     </div>
-  )
+  );
 }
 
 // ─── Access ───────────────────────────────────────────────────────────────────
 
 /**
- * Role, reporting line and removal.
+ * Role, reporting line, the invitation, and removal.
  *
- * Three writes, three endpoints, three permissions - deliberately not one
- * "save" button. They land in different tables (`workspace_members.role`,
- * `workspace_members.manager_user_id`, and a DELETE), and each one already has
- * its own server-side guard. A single form would have to invent a combined
- * success state for three things that can fail independently.
+ * Four writes, four endpoints, four permissions - deliberately not one "save"
+ * button. They land in different tables (`workspace_members.role`,
+ * `workspace_members.manager_user_id`, a consent invitation, and a DELETE), and
+ * each one already has its own server-side guard. A single form would have to
+ * invent a combined success state for four things that can fail independently.
  */
 function AccessPanel({
   slug, member, viewerUserId, viewerRoleKey, canWriteEmployees, canRemoveMembers,
-  canTransferOwnership, assignableRoles, roleNames, managerOptions, currentManagerUserId,
-  onChanged, onRemoved, toast,
+  canInviteMembers, canTransferOwnership, assignableRoles, roleNames, managerOptions,
+  currentManagerUserId, onChanged, onRemoved, toast,
 }: {
   slug: string
   member: MemberSummary
@@ -252,6 +361,7 @@ function AccessPanel({
   viewerRoleKey: string
   canWriteEmployees: boolean
   canRemoveMembers: boolean
+  canInviteMembers: boolean
   canTransferOwnership: boolean
   assignableRoles: RoleOption[]
   roleNames: Record<string, string>
@@ -267,6 +377,7 @@ function AccessPanel({
   const [savingRole, setSavingRole] = useState(false)
   const [roleError, setRoleError] = useState<string | null>(null)
   const [removing, setRemoving] = useState(false)
+  const [inviting, setInviting] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
 
   const isSelf = !!member.user_id && member.user_id === viewerUserId
@@ -275,6 +386,17 @@ function AccessPanel({
     member.status === 'active' &&
     !isSelf &&
     member.role !== 'owner'
+
+  /**
+   * Offer the invitation to anyone who is not already in or already asked.
+   *
+   * `POST /members` refuses `active` with ALREADY_MEMBER and `pending_consent`
+   * with INVITE_PENDING, so offering it there would be a button whose only
+   * outcome is an error. Everyone else - `no_access`, `declined`, `revoked` -
+   * is someone an invitation can actually reach.
+   */
+  const canOfferInvite =
+    canInviteMembers && member.status !== 'active' && member.status !== 'pending_consent'
 
   async function saveRole(next: string) {
     // Ownership is a TRANSFER, not an assignment: it swaps two rows and demotes
@@ -327,6 +449,34 @@ function AccessPanel({
     }
   }
 
+  async function sendInvite() {
+    setInviting(true)
+    try {
+      const res = await fetch(`/api/ws/${slug}/members`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: member.email }),
+      })
+      const data = await res.json().catch(() => ({})) as { error?: string; code?: string }
+
+      if (res.ok) {
+        toast(wsPeopleUi.inviteSent(member.email), 'success')
+      } else if (data.code === 'DOMAIN_AUTO_ENROL') {
+        // Not a failure. Their domain is verified, so they join on signup and an
+        // invitation would be noise - say the good news rather than an error.
+        toast(wsPeopleUi.inviteAutoEnrol, 'success')
+      } else if (data.code === 'ALREADY_MEMBER' || data.code === 'INVITE_PENDING') {
+        toast(data.error ?? wsPeopleUi.inviteFailed, 'success')
+      } else {
+        toast(data.error ?? wsPeopleUi.inviteFailed, 'error')
+        return
+      }
+      onChanged()
+    } finally {
+      setInviting(false)
+    }
+  }
+
   async function remove() {
     if (!confirm(en.wsPeople.removeConfirm)) return
     setRemoving(true)
@@ -353,26 +503,52 @@ function AccessPanel({
       <p className="t-h2">{wsPeopleUi.accessTitle}</p>
       <p className="t-secondary page-subtitle">{wsPeopleUi.accessHint}</p>
 
+      {/* The invitation offer, which used to be a modal on /people/new. It
+          follows the record rather than preceding it: a cancelled dialog must
+          not throw away what HR typed, and there is nothing here that expires. */}
+      {canOfferInvite && (
+        <div className="mb-12">
+          <p className="t-eyebrow mb-12">{wsPeopleUi.inviteTitle}</p>
+          <p className="t-secondary">{wsPeopleUi.inviteBody(member.email)}</p>
+          <p className="t-muted field-note">{wsPeopleUi.inviteNote}</p>
+          <Button
+            size="sm"
+            className="mt-12"
+            loading={inviting}
+            onClick={() => void sendInvite()}
+          >
+            {inviting ? wsPeopleUi.inviteSending : wsPeopleUi.inviteSend}
+          </Button>
+        </div>
+      )}
+
       <Field label={wsPeopleUi.accessRoleLabel} error={roleError ?? undefined}>
         <Select
           value={roleDraft}
           disabled={!canReassignRole || savingRole}
           onChange={(e) => {
-            const next = e.target.value
-            if (next === roleDraft) return
-            setRoleDraft(next)
-            void saveRole(next)
+            const next = e.target.value;
+            if (next === roleDraft) return;
+            setRoleDraft(next);
+            void saveRole(next);
           }}
           aria-label={en.wsPeople.roleSelectAria}
           options={
             canReassignRole
-              ? assignableRoles.map(r => ({
+              ? assignableRoles.map((r) => ({
                   value: r.key,
                   // A native <option> cannot host an SVG, so the padlock on the
                   // restricted entry is a text glyph.
-                  label: r.restricted ? en.wsPeople.restrictedRoleOption(r.name) : r.name,
+                  label: r.restricted
+                    ? en.wsPeople.restrictedRoleOption(r.name)
+                    : r.name,
                 }))
-              : [{ value: member.role, label: roleNames[member.role] ?? member.role }]
+              : [
+                  {
+                    value: member.role,
+                    label: roleNames[member.role] ?? member.role,
+                  },
+                ]
           }
         />
       </Field>
@@ -382,20 +558,25 @@ function AccessPanel({
           so offering the control would only ever produce NOT_A_MEMBER. */}
       {canWriteEmployees && (
         <Field
+          className=""
           label={wsPeopleUi.accessManagerLabel}
-          hint={member.user_id ? wsPeopleUi.accessManagerHint : wsPeopleUi.accessManagerPendingHint}
+          hint={
+            member.user_id
+              ? wsPeopleUi.accessManagerHint
+              : wsPeopleUi.accessManagerPendingHint
+          }
         >
           <Select
             value={managerUserId}
             disabled={!member.user_id || savingManager}
             onChange={(e) => {
-              const next = e.target.value
-              setManagerUserId(next)
-              void saveManager(next)
+              const next = e.target.value;
+              setManagerUserId(next);
+              void saveManager(next);
             }}
             options={[
-              { value: '', label: wsPeopleUi.accessManagerNone },
-              ...managerOptions.map(m => ({
+              { value: "", label: wsPeopleUi.accessManagerNone },
+              ...managerOptions.map((m) => ({
                 value: m.userId,
                 label: m.name === m.email ? m.email : `${m.name} — ${m.email}`,
               })),
@@ -411,11 +592,17 @@ function AccessPanel({
         <>
           <p className="t-eyebrow mt-16">{wsPeopleUi.accessRemoveTitle}</p>
           <p className="t-muted field-note">{wsPeopleUi.accessRemoveHint}</p>
-          <Button variant="danger" size="sm" className="mt-12" loading={removing} onClick={() => void remove()}>
+          <Button
+            variant="danger"
+            size="sm"
+            className="mt-12"
+            loading={removing}
+            onClick={() => void remove()}
+          >
             {wsPeopleUi.accessRemoveButton}
           </Button>
         </>
       )}
     </Card>
-  )
+  );
 }

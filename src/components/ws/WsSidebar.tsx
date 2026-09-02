@@ -7,6 +7,7 @@ import {
   FileText, SlidersHorizontal, ShieldCheck, Laptop, UserCheck, Network,
 } from 'lucide-react'
 import { en } from '@/locales/en'
+import { Logo } from "@/components/ui";
 import { wsAdmin } from '@/locales/en/ws-overview'
 import WsAccountMenu from './WsAccountMenu'
 import type { Resource } from '@/lib/permissions/catalogue'
@@ -83,43 +84,56 @@ export default function WsSidebar({
 
   return (
     <nav className="sidebar" aria-label={wsAdmin.shell.navLabel}>
-      <Link href="/ws" className="sidebar-brand" style={{ textDecoration: 'none' }}>
-        <span className="brand-mark" aria-hidden>{en.brand.name.charAt(0)}</span>
-        <span className="brand-name">{en.brand.name}</span>
-      </Link>
+      {/* The asset IS the wordmark - a pin followed by "venzio" - so there is
+            no text beside it. Rendering both printed the name twice. It is also
+            not decorative for the same reason: with no adjacent text, the alt
+            is the only thing that names the product to a screen reader. */}
+      <Logo height={50} width={150} />
 
       {screenGroups.map(({ group, screens }, groupIndex) => (
-        <div key={group} style={{ display: 'contents' }}>
+        <div key={group} style={{ display: "contents" }}>
           <p
             className="t-eyebrow"
-            style={{ margin: groupIndex === 0 ? '2px 12px 6px' : '18px 12px 6px' }}
+            style={{
+              margin: groupIndex === 0 ? "2px 12px 6px" : "18px 12px 6px",
+            }}
           >
             {GROUP_LABELS[group]}
           </p>
           {screens.map((screen) => {
-            const href = screenHref(slug, screen)
-            const isActive = screen.path === ''
-              ? pathname === href
-              : pathname === href || pathname.startsWith(`${href}/`)
-            const badge = SCREEN_BADGES[screen.key]
-            const badgeCount = badge === 'leave'
-              ? pendingLeaveCount
-              : badge === 'approvals' ? pendingApprovalsCount : 0
+            const href = screenHref(slug, screen);
+            const isActive =
+              screen.path === ""
+                ? pathname === href
+                : pathname === href || pathname.startsWith(`${href}/`);
+            const badge = SCREEN_BADGES[screen.key];
+            const badgeCount =
+              badge === "leave"
+                ? pendingLeaveCount
+                : badge === "approvals"
+                  ? pendingApprovalsCount
+                  : 0;
 
             return (
               <Link
                 key={href}
                 href={href}
-                className={['navitem', isActive && 'active'].filter(Boolean).join(' ')}
-                aria-current={isActive ? 'page' : undefined}
+                className={["navitem", isActive && "active"]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-current={isActive ? "page" : undefined}
               >
-                <span className="ic" aria-hidden>{SCREEN_ICONS[screen.key]}</span>
+                <span className="ic" aria-hidden>
+                  {SCREEN_ICONS[screen.key]}
+                </span>
                 {SCREEN_LABELS[screen.key]}
                 {badgeCount > 0 && (
-                  <span className="navbadge">{badgeCount > 99 ? '99+' : badgeCount}</span>
+                  <span className="navbadge">
+                    {badgeCount > 99 ? "99+" : badgeCount}
+                  </span>
                 )}
               </Link>
-            )
+            );
           })}
         </div>
       ))}
@@ -133,5 +147,5 @@ export default function WsSidebar({
         />
       </div>
     </nav>
-  )
+  );
 }

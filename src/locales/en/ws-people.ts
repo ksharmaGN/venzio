@@ -75,23 +75,34 @@ export const wsEmployees = {
     `${available} of ${total} left`,
   joinedOn: (date: string) => `joined ${date}`,
   noValue: '—',
-  maskedHint: 'Aadhaar and bank account are masked. Open the edit wizard to change them.',
+  maskedHint: 'Aadhaar and bank account are masked. Open the Bank & IDs tab to change them.',
 
-  // Wizard
-  wizardAddTitle: 'Add employee',
-  wizardEditTitle: 'Edit profile',
-  wizardNewSubject: 'New employee',
-  wizardContinue: 'Continue',
-  wizardSaveEdit: 'Save changes',
-  wizardSaveAdd: 'Create employee',
-  wizardSaving: 'Saving…',
-  // Distinct from wizardSaving so a per-step autosave never reads as "the
-  // record has been created" - creation is what the final button does.
-  wizardStepSaving: 'Saving step…',
-  wizardCancel: 'Cancel',
-  wizardSavedAdd: 'Employee record created',
-  wizardSavedEdit: 'Employee profile updated',
-  wizardGenericError: 'Something went wrong. Please try again.',
+  // Record form (one tab of the HR record at a time - there is no wizard)
+  formSave: 'Save changes',
+  formSaving: 'Saving…',
+  formCancel: 'Cancel',
+  formSaved: 'Saved',
+  formGenericError: 'Something went wrong. Please try again.',
+  /**
+   * The load failed, so the values on screen would be component defaults. Said
+   * plainly, because the alternative - painting an empty form - invites a save
+   * that overwrites a real record with blanks.
+   */
+  formLoadFailedTitle: 'Could not load this section',
+  formLoadFailedBody: 'Nothing has been changed. Try again in a moment.',
+  formLoadFailedRetry: 'Try again',
+  formReadOnly: 'You can read these details but not change them.',
+  reveal: 'Show value',
+  hide: 'Hide value',
+
+  // Minimal create - the record starts with the three NOT NULL columns and is
+  // finished tab by tab afterwards.
+  createTitle: 'Add employee',
+  createSubtitle:
+    'Just enough to open the record. Their job, bank details and documents are filled in on their profile afterwards.',
+  createSubmit: 'Create record',
+  createSaving: 'Creating…',
+  createdToast: 'Employee record created',
 
   stepBasic: 'Basic details',
   stepBasicSub: 'Personal and contact information',
@@ -337,6 +348,18 @@ export const wsPeopleUi = {
   /** One status control over two tables - see DirectoryStatusFilter. */
   statusInvited: 'Invited',
   statusDeclined: 'Declined',
+  /**
+   * `workspace_members.status = 'no_access'` - an HR record whose person has
+   * never been invited and cannot sign in.
+   *
+   * A membership row is written for them anyway, because the person screen is
+   * keyed on `workspace_members.id`: an employee row with no membership has no
+   * URL and disappears from the directory entirely, which is how two records
+   * went missing in the live data. "No access" is the honest word - they exist,
+   * they are just not a user yet.
+   */
+  statusNoAccess: 'No access',
+  statusNoAccessHint: 'Has a record, not invited yet',
   statusEmployed: 'Active',
   statusTerminated: 'Terminated',
   statusSuspended: 'Suspended',
@@ -347,11 +370,27 @@ export const wsPeopleUi = {
   editAction: 'Edit',
   editActionAria: (name: string) => `Open ${name}'s profile`,
 
-  /** Details page */
+  /** Details page - one tab per part of the record, each saved on its own. */
   detailsBack: 'People',
-  tabProfile: 'Profile',
+  tabBasic: 'Basic',
+  tabEmployment: 'Employment',
+  tabBank: 'Bank & IDs',
+  tabEmergency: 'Emergency',
   tabDocuments: 'Documents',
+  tabLeave: 'Leave',
+  tabActivity: 'Activity',
   tabAccess: 'Access',
+
+  /**
+   * A tab whose subject does not exist yet. NOT a permission message: the
+   * viewer may read this, there is simply nobody with an account behind it.
+   * Attendance and leave are both keyed on a user id, and an invitation that
+   * has not been accepted has none.
+   */
+  noSubjectTitle: 'Nothing here until they join',
+  noSubjectHint:
+    'Attendance and leave start once this person accepts their invitation and signs in.',
+
   accessTitle: 'Access and reporting',
   accessHint: 'Role, reporting line and removal. Changing any of these takes effect immediately.',
   accessRoleLabel: 'Workspace role',
@@ -367,30 +406,25 @@ export const wsPeopleUi = {
   accessRemoveButton: 'Remove member',
   accessRemoveFailed: 'Could not remove this member.',
   noRecordTitle: 'No HR record yet',
-  noRecordHint: 'Fill in their details to open documents, assets and leave for this person.',
-  createRecordButton: 'Add details',
+  noRecordHint:
+    'Add their details to open the record tabs - employment, bank, emergency contact and documents.',
+  createRecordButton: 'Create employee record',
 
-  /** Add employee - the invite offer after the record is created */
-  inviteModalTitle: 'Invite them to Venzio?',
-  inviteModalBody: (name: string, email: string) =>
-    `${name}'s record is saved. Send an invitation to ${email} so they can sign in, check in and see their own timeline.`,
-  inviteModalNote:
-    'You can send this later from their profile. Nothing is lost by skipping it.',
-  inviteModalSend: 'Send invite',
-  inviteModalSending: 'Sending…',
-  inviteModalSkip: 'Not now',
-
-  // Leaving a part-finished add. The record already exists by then - each step
-  // saves as it is left - so Cancel has to say what it is leaving behind rather
-  // than implying nothing was kept.
-  draftResumed: 'Picking up where you left off. Each step is saved as you leave it.',
-  draftCancelTitle: 'Leave this employee?',
-  draftCancelBody: (name: string) =>
-    `${name} has already been saved, so leaving now keeps the record with whatever you have filled in so far. You can finish it later from People.`,
-  draftCancelKeep: 'Keep the record',
-  draftCancelDiscard: 'Delete the record',
-  draftCancelDiscarding: 'Deleting…',
-  draftDiscardFailed: 'Could not delete the record. It is still in People.',
+  /**
+   * The invitation offer, on the Access tab.
+   *
+   * It follows the record rather than preceding it: the record is the artefact
+   * worth keeping, and asking about workspace access before anything is saved
+   * meant a cancelled dialog threw the form away. Declining costs nothing -
+   * the button is still here tomorrow.
+   */
+  inviteTitle: 'No workspace access yet',
+  inviteBody: (email: string) =>
+    `${email} has an HR record but has not been invited to Venzio. Sending an invitation lets them sign in, check in and see their own timeline.`,
+  inviteNote: 'Their record is safe either way. Nothing is lost by waiting.',
+  inviteSend: 'Send invite',
+  inviteSending: 'Sending…',
+  statusNotInvited: 'Not invited',
   inviteSent: (email: string) => `Invitation sent to ${email}`,
   inviteAutoEnrol:
     'No invite needed - their email domain is verified, so they join automatically when they sign up.',

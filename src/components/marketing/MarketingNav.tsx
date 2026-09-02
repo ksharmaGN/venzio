@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { marketing } from '@/locales/en/marketing'
+import MarketingAuthCta from './MarketingAuthCta'
 
 type NavLink = { readonly label: string; readonly href: string }
 
@@ -83,28 +84,11 @@ export default function MarketingNav({
           ))}
         </ul>
 
-        <div className="flex shrink-0 items-center gap-2.5">
-          <Link
-            href="/login"
-            className={
-              dark
-                ? 'hidden h-11 items-center px-4 text-sm font-medium text-venzio-text-muted no-underline transition-colors hover:text-venzio-green sm:inline-flex'
-                : 'hidden h-11 items-center px-4 text-sm text-text-primary no-underline transition-colors hover:text-brand sm:inline-flex'
-            }
-          >
-            {marketing.nav.signIn}
-          </Link>
-          <Link
-            href="/login"
-            className={
-              dark
-                ? 'inline-flex h-11 items-center rounded-md bg-venzio-green px-5 text-sm font-bold text-venzio-bg-dark no-underline transition-colors hover:bg-brand-hover md:px-6'
-                : 'inline-flex h-11 items-center rounded-md bg-brand px-5 text-sm font-semibold text-white no-underline transition-colors hover:bg-brand-hover'
-            }
-          >
-            {marketing.nav.getStarted}
-          </Link>
-        </div>
+        {/* The one client component on a marketing page. It decides which two
+            buttons to draw by asking the server whether there is a session -
+            which is what lets these pages stay statically prerendered. Reading
+            the cookie here instead would make all seven render per request. */}
+        <MarketingAuthCta variant={variant} />
       </div>
     </nav>
   )

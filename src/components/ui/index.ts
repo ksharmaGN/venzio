@@ -33,6 +33,8 @@ export { default as Button, type ButtonProps, type ButtonVariant, type ButtonSiz
 export { default as IconButton, type IconButtonProps, type IconButtonVariant } from './IconButton'
 export { default as Chip, type ChipProps, type ChipTone, toneForMatchedBy } from './Chip'
 export { default as Avatar, type AvatarProps, initials } from './Avatar'
+export { default as Logo } from './Logo'
+export { default as WorkspaceAvatar } from './WorkspaceAvatar'
 export { default as Toggle, type ToggleProps } from './Toggle'
 export { default as Dropzone, type DropzoneProps } from './Dropzone'
 export { default as DropdownMenu, type DropdownMenuProps, type DropdownMenuItem } from './DropdownMenu'

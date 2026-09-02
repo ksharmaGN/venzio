@@ -50,12 +50,12 @@ yarn-error.log*
 .vercel
 
 # editor
+superpowers/
 .vscode/
+.claude/
 android/
 ios/
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
-
-superpowers/

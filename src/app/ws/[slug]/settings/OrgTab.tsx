@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button, Card, Chip, Field, Input, Select, Skeleton, Toggle } from '@/components/ui'
 import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-settings'
+import LogoSection from './LogoSection'
 
 const t = en.wsSettings
 const s = wsAdmin.settings
@@ -77,6 +78,7 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
    * Painting the form on a failed load would let a save PATCH those defaults
    * over the real timezone and working days.
    */
+  const [logoUpdatedAt, setLogoUpdatedAt] = useState<string | null>(null)
   const [load, setLoad] = useState<'loading' | 'ready' | 'error'>('loading')
   const [reloadKey, setReloadKey] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -99,6 +101,7 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
         setAllowRemote(!!data.allow_remote)
         setLeavesEnabled(data.leaves_enabled !== false)
         if (Array.isArray(data.working_days)) setWorkingDays(data.working_days)
+        setLogoUpdatedAt(data.logo_updated_at ?? null)
         setLoad('ready')
       })
       .catch(() => { if (!cancelled) setLoad('error') })
@@ -170,6 +173,7 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
   }
 
   return (
+    <>
     <Card className="fx-spring">
       <p className="t-eyebrow" style={{ marginBottom: '12px' }}>{s.orgSectionTitle}</p>
 
@@ -258,5 +262,16 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
         </p>
       )}
     </Card>
+
+      {/* Its own card and its own actions: an image upload and a text field
+          fail in different ways, so one Save button would have to invent a
+          combined success state for them. */}
+      <LogoSection
+        slug={slug}
+        canWrite={canWrite}
+        logoUpdatedAt={logoUpdatedAt}
+        onChanged={() => setReloadKey((k) => k + 1)}
+      />
+    </>
   )
 }

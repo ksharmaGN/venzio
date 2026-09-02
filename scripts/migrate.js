@@ -769,6 +769,51 @@ const ADDITIVE_MIGRATIONS = [
   // per workspace per reminder pass rather than once per member.
   `CREATE INDEX IF NOT EXISTS idx_notif_prefs_lookup
    ON notification_prefs(workspace_id, category, user_id)`,
+
+  // workspace_logos - a workspace's own mark, shown in both app shells.
+  //
+  // Bytes and metadata share ONE table here, unlike employee documents where
+  // they are deliberately split. The split exists there because every folder
+  // view lists metadata and would otherwise drag megabytes through the query.
+  // A workspace has exactly one logo, nothing ever lists logos, and the only
+  // read is "give me this workspace's bytes" - so a second table would buy a
+  // join and nothing else.
+  //
+  // PRIMARY KEY on workspace_id is what makes replacing a logo an upsert rather
+  // than a delete-then-insert with a window where the workspace has none.
+  `CREATE TABLE IF NOT EXISTS workspace_logos (
+  workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  mime_type    TEXT NOT NULL,
+  size_bytes   INTEGER NOT NULL,
+  data_base64  TEXT NOT NULL,
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+
+  // Backfill: give every orphaned employee record a membership row.
+  //
+  // The directory reads `FROM workspace_members` and the person page is keyed on
+  // `workspace_members.id`, so an employee record with no membership is both
+  // invisible and unreachable. `POST /api/ws/[slug]/employees` now writes the
+  // membership alongside the record so none can be created again; this closes
+  // the ones that already exist (two in the live data at the time of writing).
+  //
+  // `status = 'no_access'` - they have a record, they were never invited, they
+  // cannot sign in. NOT `pending_consent`, which would claim an invitation was
+  // sent while the consent token columns sat null.
+  //
+  // Idempotent by construction: the NOT EXISTS is false on every later run. The
+  // email clause is what actually matches, because `wm.user_id = e.user_id` is
+  // NULL rather than true when both sides are null - the same NULL = NULL trap
+  // that detached invited people's HR records from their memberships.
+  `INSERT INTO workspace_members (id, workspace_id, user_id, email, role, status)
+   SELECT lower(hex(randomblob(16))), e.workspace_id, e.user_id, lower(e.work_email), 'member', 'no_access'
+   FROM employees e
+   WHERE e.deleted_at IS NULL
+     AND NOT EXISTS (
+       SELECT 1 FROM workspace_members wm
+       WHERE wm.workspace_id = e.workspace_id
+         AND (wm.user_id = e.user_id OR lower(wm.email) = lower(e.work_email))
+     )`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

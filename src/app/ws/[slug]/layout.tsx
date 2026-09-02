@@ -55,8 +55,10 @@ export default async function WsSlugLayout({ children, params }: Props) {
       <meta name="apple-mobile-web-app-title" content={`${en.brand.shortName} WS`} />
       <WsLayoutClient
         slug={slug}
+        workspaceId={workspace.id}
         leavesEnabled={!!workspace.leaves_enabled}
         workspaceName={workspace.name}
+        logoUpdatedAt={workspace.logo_updated_at}
         plan={workspace.plan}
         pendingLeaveCount={pendingLeaveCount}
         pendingApprovalsCount={pendingLeaveCount + pendingRegularizationCount}

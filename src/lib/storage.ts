@@ -92,6 +92,33 @@ export function sniffMimeType(bytes: Buffer): AllowedMimeType | null {
 }
 
 /**
+ * A workspace logo is smaller than a document and has a narrower type set.
+ *
+ * 512 KB rather than 2 MB: this is a mark rendered at roughly 32px in a top
+ * bar, and the whole row is read on the request that serves it. A 2 MB logo
+ * would be a 2 MB read every time somebody loads the app shell.
+ */
+export const MAX_LOGO_BYTES = 512 * 1024
+
+export const ALLOWED_LOGO_MIME_TYPES = ['image/png', 'image/jpeg'] as const
+export type AllowedLogoMimeType = (typeof ALLOWED_LOGO_MIME_TYPES)[number]
+
+/**
+ * Identify a logo by its leading bytes, reusing the one signature table above.
+ *
+ * PDF is on the document allowlist and is deliberately NOT a logo. **SVG is not
+ * here and must not be added**: it is markup, and serving attacker-supplied
+ * markup from our own origin is a stored-XSS primitive - the sniffing that
+ * protects the document path cannot protect against a file whose danger is its
+ * legitimate content. If vector logos are ever wanted, rasterise on upload or
+ * serve them from a separate origin.
+ */
+export function sniffLogoMimeType(bytes: Buffer): AllowedLogoMimeType | null {
+  const mime = sniffMimeType(bytes)
+  return mime === 'image/png' || mime === 'image/jpeg' ? mime : null
+}
+
+/**
  * Where document bytes live.
  *
  * `workspaceId` is a parameter on every method rather than being implied by

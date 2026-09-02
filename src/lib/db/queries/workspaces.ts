@@ -27,6 +27,15 @@ export interface Workspace {
    * catalogue later needs no backfill. Parse with `parseCategoriesOff()`.
    */
   notification_categories_off: string
+  /**
+   * When this workspace's logo last changed, or null when it has none.
+   *
+   * Joined in rather than stored on the row: the bytes live in
+   * `workspace_logos` and must not be dragged into every workspace read. The
+   * timestamp answers "is there a logo" and doubles as the cache-buster on the
+   * image URL, so a replaced logo changes its src and no stale copy survives.
+   */
+  logo_updated_at?: string | null
   created_at: string
   updated_at: string
 }
@@ -118,12 +127,21 @@ export async function createWorkspace(params: {
   })
 }
 
+/**
+ * `w.*` plus the logo timestamp. Every workspace read goes through one of these
+ * three, so joining here is what makes the mark available on every surface that
+ * names a workspace without each of them having to remember to ask.
+ */
+const WORKSPACE_SELECT = `SELECT w.*, wl.updated_at AS logo_updated_at
+   FROM workspaces w
+   LEFT JOIN workspace_logos wl ON wl.workspace_id = w.id`
+
 export async function getWorkspaceBySlug(slug: string): Promise<Workspace | null> {
-  return db.queryOne<Workspace>('SELECT * FROM workspaces WHERE slug = ?', [slug])
+  return db.queryOne<Workspace>(`${WORKSPACE_SELECT} WHERE w.slug = ?`, [slug])
 }
 
 export async function getWorkspaceById(id: string): Promise<Workspace | null> {
-  return db.queryOne<Workspace>('SELECT * FROM workspaces WHERE id = ?', [id])
+  return db.queryOne<Workspace>(`${WORKSPACE_SELECT} WHERE w.id = ?`, [id])
 }
 
 export async function updateWorkspace(
@@ -387,8 +405,9 @@ async function workspacesWithOrgAccess(
   archived: boolean,
 ): Promise<Workspace[]> {
   const rows = await db.query<Workspace & { role_permissions: string | null }>(
-    `SELECT w.*, wr.permissions as role_permissions
+    `SELECT w.*, wl.updated_at AS logo_updated_at, wr.permissions as role_permissions
      FROM workspaces w
+     LEFT JOIN workspace_logos wl ON wl.workspace_id = w.id
      JOIN workspace_members wm ON wm.workspace_id = w.id
      LEFT JOIN workspace_roles wr
        ON wr.workspace_id = w.id AND wr.key = wm.role AND wr.deleted_at IS NULL
@@ -459,7 +478,7 @@ export async function getUserWorkspaces(userId: string): Promise<WorkspaceMember
 export async function getWorkspacesByIds(ids: string[]): Promise<Workspace[]> {
   if (ids.length === 0) return []
   const placeholders = ids.map(() => '?').join(', ')
-  return db.query<Workspace>(`SELECT * FROM workspaces WHERE id IN (${placeholders})`, ids)
+  return db.query<Workspace>(`${WORKSPACE_SELECT} WHERE w.id IN (${placeholders})`, ids)
 }
 
 export async function getMembershipsByEmail(email: string): Promise<WorkspaceMember[]> {
@@ -763,9 +782,24 @@ export async function getAllMembersWithDetails(workspaceId: string): Promise<Mem
  * and additionally requires an active membership, so a terminated employee who
  * was also removed does not surface under "Terminated".
  */
+/**
+ * A person who has an HR record but has never been invited and cannot sign in.
+ *
+ * Written by `POST /api/ws/[slug]/employees`, which creates a membership row
+ * alongside every employee record. Without one the record is invisible in the
+ * directory (which reads `FROM workspace_members`) and unreachable on the person
+ * page (which is keyed on `workspace_members.id`).
+ *
+ * Deliberately NOT `pending_consent`: that claims an invitation was sent, and
+ * the consent token columns would be null to prove otherwise. A status that lies
+ * is what the People/Employees merge existed to stop.
+ */
+export const MEMBER_STATUS_NO_ACCESS = 'no_access'
+
 export type DirectoryStatusFilter =
   | 'invited'
   | 'declined'
+  | 'no_access'
   | 'active'
   | 'terminated'
   | 'suspended'
@@ -775,10 +809,13 @@ export type DirectoryStatusFilter =
 const MEMBERSHIP_STATUS_FILTERS: Record<string, string> = {
   invited: 'pending_consent',
   declined: 'declined',
+  // Reads `workspace_members.status` like the two above, not an employment
+  // state - "never invited" is a fact about access, not about the job.
+  no_access: MEMBER_STATUS_NO_ACCESS,
 }
 
 const DIRECTORY_STATUS_VALUES: readonly string[] = [
-  'invited', 'declined', 'active', 'terminated', 'suspended', 'on_leave', 'notice_period',
+  'invited', 'declined', 'no_access', 'active', 'terminated', 'suspended', 'on_leave', 'notice_period',
 ]
 
 /**

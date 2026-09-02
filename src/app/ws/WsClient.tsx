@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ChevronRight, Plus } from 'lucide-react'
-import { Button, Card, Chip, Field, Input } from '@/components/ui'
+import { Button, Card, Chip, Field, Input, WorkspaceAvatar } from '@/components/ui'
 import { wsAdmin } from '@/locales/en/ws-settings'
 
 const t = wsAdmin.picker
@@ -15,6 +15,8 @@ interface Workspace {
   name: string
   plan: string
   archived_at: string | null
+  /** null when the workspace has no logo; also the image cache-buster. */
+  logo_updated_at?: string | null
 }
 
 interface Props {
@@ -154,6 +156,13 @@ function WorkspaceRow({ workspace, archived }: { workspace: Workspace; archived?
         opacity: archived ? 0.72 : 1,
       }}
     >
+      <WorkspaceAvatar
+        id={workspace.id}
+        slug={workspace.slug}
+        name={workspace.name}
+        logoUpdatedAt={workspace.logo_updated_at}
+        size="lg"
+      />
       <span style={{ minWidth: 0 }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontSize: '15px' }}>{workspace.name}</span>

@@ -12,6 +12,7 @@ import { wsAdmin as wsAdminWorkforce } from './en/ws-overview'
 import { wsAdmin as wsAdminManage } from './en/ws-settings'
 import { wsEmployees, wsAssets, wsLeaveScreen, wsPeopleUi, wsOrg } from './en/ws-people'
 import { wsAnnouncements } from './en/ws-announcements'
+import { wsPerson } from './en/ws-person'
 import { wsReminders } from './en/ws-reminders'
 
 export const en = {
@@ -34,6 +35,7 @@ export const en = {
   wsPeopleUi,
   wsOrg,
   wsAnnouncements,
+  wsPerson,
   wsReminders,
   // Two agents each owned half of the admin copy; sub-keys are disjoint.
   wsAdmin: { ...wsAdminWorkforce, ...wsAdminManage },

@@ -30,6 +30,11 @@ export const marketing = {
     ],
     signIn: 'Sign in',
     getStarted: 'Get started',
+    // Shown instead of the pair above once the visitor has a session. The nav
+    // discovers that in the browser, so these are the signed-in half of a swap.
+    dashboard: 'Dashboard',
+    signOut: 'Sign out',
+    signingOut: 'Signing out…',
     /** Accessible name for the <nav> landmark. */
     label: 'Main',
     logoAlt: 'Venzio',

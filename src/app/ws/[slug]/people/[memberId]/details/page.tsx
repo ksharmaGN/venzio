@@ -12,6 +12,7 @@ import { subtreeOf } from '@/lib/hierarchy'
 import { listWorkspaceRoles } from '@/lib/db/queries/roles'
 import { canGrant } from '@/lib/permissions/ranks'
 import DetailsClient from './DetailsClient'
+import { isPersonTabKey } from '@/components/ws/employee/person-tabs'
 import { getWsRole } from '@/lib/ws-access'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
@@ -22,7 +23,7 @@ interface Props {
 }
 
 /**
- * One person: their record, their documents, their access.
+ * One person: their record, their documents, their leave, their access.
  *
  * Keyed on `workspace_members.id`, NOT on a user id. An invited person has no
  * user row at all, so a userId-keyed route could not address them - and they
@@ -114,9 +115,20 @@ export default async function PersonDetailsPage({ params, searchParams }: Props)
   return (
     <DetailsClient
       slug={slug}
-      initialTab={tab === 'documents' || tab === 'access' ? tab : undefined}
+      // Every tab key is deep-linkable now, not just the approvals queue's two.
+      // Validated here rather than in the browser so a bogus `?tab=` never
+      // reaches `visiblePersonTabs` at all.
+      initialTab={isPersonTabKey(tab) ? tab : undefined}
       viewerUserId={session.sub}
       viewerRoleKey={viewerRole.key}
+      // The grid itself, not a fan-out of booleans. `visiblePersonTabs` takes a
+      // `can(resource, action)` callback and the panels below it re-ask the same
+      // question, so shipping one grid is what stops the tab strip and the
+      // controls inside it disagreeing about what this viewer may do. It is the
+      // same data the sidebar already ships (`readableResources`), and the
+      // routes re-check every call regardless - hiding a control is a courtesy,
+      // never the enforcement.
+      permissions={viewerRole.permissions}
       member={{
         member_id: member.member_id,
         user_id: member.user_id,
@@ -126,12 +138,6 @@ export default async function PersonDetailsPage({ params, searchParams }: Props)
         status: member.status,
       }}
       employee={employee}
-      canReadEmployees={canReadEmployees}
-      canWriteEmployees={canWriteEmployees}
-      canReadDocuments={can(viewerRole.permissions, Resource.Documents, Action.Read)}
-      canWriteDocuments={can(viewerRole.permissions, Resource.Documents, Action.Write)}
-      canReadLeaves={can(viewerRole.permissions, Resource.Leaves, Action.Read)}
-      canRemoveMembers={can(viewerRole.permissions, Resource.Members, Action.Delete)}
       canTransferOwnership={mayTransferOwnership}
       assignableRoles={assignableRoles}
       roleNames={Object.fromEntries(allRoles.map(r => [r.key, r.name]))}

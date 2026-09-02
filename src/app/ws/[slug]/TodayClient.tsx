@@ -387,7 +387,9 @@ export default function TodayClient({ slug, planLimitBanner, adminFirstName, can
               recentActivity.map((m) => (
                 <Link
                   key={m.member_id}
-                  href={`/ws/${slug}/members/${m.user_id}`}
+                  // The person screen's Activity tab. Keyed on the MEMBERSHIP
+                  // id, not the user id - the two are not interchangeable.
+                  href={`/ws/${slug}/people/${m.member_id}/details?tab=activity`}
                   className="rowlink"
                   style={{ ...rowStyle, textDecoration: 'none' }}
                 >

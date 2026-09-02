@@ -3,16 +3,17 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { BottomSheet, Divider, initials } from '@/components/ui'
+import { BottomSheet, Divider, initials, WorkspaceAvatar } from '@/components/ui'
 import NotificationBell from '@/components/notifications/NotificationBell'
 import { useToast } from '@/components/shared/Toast'
 import { useWorkspaceScope } from '@/app/me/workspace-scope'
 import { me } from '@/locales/en/me'
-import { swatchColor } from '@/lib/workspace-color'
 
 export interface MeWorkspaceOption {
   id: string
   slug: string
+  /** null when the workspace has no logo; also the image cache-buster. */
+  logoUpdatedAt?: string | null
   name: string
   /** Display name of the role, never the raw key. */
   roleName: string
@@ -112,9 +113,12 @@ export default function MeTopbar({ workspaces, userName, userEmail }: Props) {
             aria-haspopup="dialog"
             style={{ minWidth: 0 }}
           >
-            <span className="swatch" style={{ background: swatchColor(active.id) }}>
-              {initials(active.name)}
-            </span>
+            <WorkspaceAvatar
+              id={active.id}
+              slug={active.slug}
+              name={active.name}
+              logoUpdatedAt={active.logoUpdatedAt}
+            />
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {active.name}
             </span>
@@ -245,16 +249,13 @@ export default function MeTopbar({ workspaces, userName, userEmail }: Props) {
               fontFamily: 'inherit', fontSize: 'inherit', cursor: 'pointer',
             }}
           >
-            <span
-              aria-hidden="true"
-              style={{
-                width: '36px', height: '36px', borderRadius: '10px', flexShrink: 0,
-                background: swatchColor(w.id), color: '#fff', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '12px',
-              }}
-            >
-              {initials(w.name)}
-            </span>
+            <WorkspaceAvatar
+              id={w.id}
+              slug={w.slug}
+              name={w.name}
+              logoUpdatedAt={w.logoUpdatedAt}
+              size="lg"
+            />
             <span style={{ flex: 1, minWidth: 0 }}>
               <span style={{ display: 'block', fontWeight: 700, fontSize: '13.5px' }}>{w.name}</span>
               <span className="t-muted" style={{ display: 'block' }}>{w.roleName}</span>
