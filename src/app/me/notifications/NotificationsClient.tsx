@@ -10,6 +10,7 @@ import {
   markMeNotificationsRead,
   markMeWsNotificationsRead,
 } from '@/lib/api/notifications'
+import { notificationHref } from '@/lib/client/notification-href'
 import { Button, Card, EmptyState, Skeleton } from '@/components/ui'
 import { notificationsUi } from '@/locales/en/notifications'
 
@@ -69,9 +70,12 @@ export default function NotificationsClient({ scopedSlug, scopedName }: Props) {
         setUnreadCount(prevCount => Math.max(0, prevCount - 1))
       }
     }
-    // An account-level notification has no workspace to open. Without this
-    // guard the row navigated to the literal `/me/ws/null`.
-    if (notification.workspace_slug) router.push(`/me/ws/${notification.workspace_slug}`)
+    // Every row used to open `/me/ws/:slug` regardless of what it said, and an
+    // account-level notification - which has no workspace - navigated to the
+    // literal `/me/ws/null`. The resolver picks the screen the notification is
+    // actually about and never emits a slug-shaped path without a slug, so the
+    // old guard is now structural rather than a special case here.
+    router.push(notificationHref(notification, 'me'))
   }
 
   return (

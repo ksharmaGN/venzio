@@ -1,5 +1,6 @@
 'use client'
 
+import { Bell, CalendarDays, Clock, FileText, Megaphone } from 'lucide-react'
 import type { Notification } from '@/lib/db/queries/notifications'
 import { swatchColor } from '@/lib/workspace-color'
 import { notificationsUi } from '@/locales/en/notifications'
@@ -14,27 +15,39 @@ function formatRelativeTime(dateStr: string): string {
   return `${Math.floor(hrs / 24)}d ago`
 }
 
+/**
+ * Icon by *family*, colour by *outcome* - the two axes are independent.
+ *
+ * The old map had exactly three arms (leave_submitted, leave_approved, and an
+ * X-in-a-circle for literally everything else), so a rejected document, a
+ * declined correction, a check-in reminder and a workspace announcement all
+ * arrived wearing the same rejection icon. At a glance the feed was unreadable.
+ *
+ * Families map to shape; verdicts map to colour. That keeps the two readable at
+ * once: shape says what it is about, colour says whether it went your way.
+ */
 function TypeIcon({ type }: { type: Notification['type'] }) {
-  if (type === 'leave_submitted') return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="12" y1="14" x2="12" y2="18"/><line x1="10" y1="16" x2="14" y2="16"/>
-    </svg>
-  )
-  if (type === 'leave_approved') return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
-    </svg>
-  )
-  return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/>
-    </svg>
-  )
+  // One shared size/weight so the column of icons reads as a column. Declared
+  // as a component rather than returning the component *value* into a render
+  // scope, which would remount the icon on every render.
+  const props = { size: 15, strokeWidth: 2, 'aria-hidden': true } as const
+  if (type.startsWith('leave_')) return <CalendarDays {...props} />
+  if (type.startsWith('regularization_')) return <Clock {...props} />
+  if (type === 'checkin_reminder' || type === 'checkout_reminder') return <Bell {...props} />
+  if (type.startsWith('document_')) return <FileText {...props} />
+  if (type === 'announcement') return <Megaphone {...props} />
+  // An unknown type is still a notification: a bell is the honest default.
+  return <Bell {...props} />
 }
 
-function iconColor(type: Notification['type']) {
-  if (type === 'leave_approved') return 'var(--teal)'
-  if (type === 'leave_rejected') return 'var(--danger)'
+function iconColor(type: Notification['type']): string {
+  // `document_verified` is the document family's "approved" - it does not end
+  // in `_approved`, so it is named rather than pattern-matched.
+  if (type.endsWith('_approved') || type === 'document_verified') return 'var(--teal)'
+  if (type.endsWith('_rejected')) return 'var(--danger)'
+  // Announcements and everything neutral (submitted, reminders) stay brand
+  // green - nothing has gone wrong, and nothing has been decided in your
+  // favour either.
   return 'var(--brand)'
 }
 
