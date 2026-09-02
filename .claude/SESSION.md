@@ -1,58 +1,64 @@
 # SESSION — Venzio design revamp
 
-Branch `feat/revamp`. Nothing committed; working tree only.
+Branch `feat/revamp`, ahead of `main`. Round 3 is committed; round 4 is in flight.
 
 ## Current position
 
-A full design revamp of both PWA surfaces plus four new modules is **code-complete
-and passing gates**, but **nobody has looked at the rendered UI**. Docs are being
-rewritten now.
+The design revamp, the People/Employees merge and the reporting hierarchy are all
+committed and passing gates. Round 4 (see below) is mid-build. **Nobody has looked
+at the rendered UI** for any of it - that remains the only gate that matters.
 
 | Gate | State |
 |---|---|
 | `npx tsc --noEmit` | clean |
 | `npm run build` | clean |
-| `npx eslint src` | 1 error (pre-existing, `login/page.tsx:776`) — was 25 problems at baseline |
-| Rendered-UI walkthrough | **NOT DONE — this is the real gate** |
-| Component `<style>` blocks | 0 — all styling is in `globals.css` or a `ui/` primitive |
-| Focus trap | shared `useFocusTrap` + `useOverlay`, used by all 3 overlays |
+| `npx eslint src` | 1 error (pre-existing, `login/page.tsx:776`) - was 25 problems at baseline |
+| **Rendered-UI walkthrough** | **NOT DONE - this is the real gate** |
+| Component `<style>` blocks | 0 - all styling is in `globals.css` or a `ui/` primitive |
+| Production DB migrated | **NO.** Every new table since the revamp exists only locally |
 
 ## Next step
 
-**Round 3 is code-complete and gated.** `feat/ven-112`'s reporting hierarchy is
-merged and Employees is folded into People. Plan:
-`~/.claude/plans/use-restart-prompt-md-as-initial-serene-castle.md`.
+**Round 4 in flight.** Plan: `~/.claude/plans/use-restart-prompt-md-as-initial-serene-castle.md`.
+Committed so far: the People filter-bar fix, the cron proxy fix, and the schema /
+permissions groundwork (`7f8b206`). Four features are being built in parallel:
+notification correctness, announcements, bulk office days, celebrations window.
 
-| Gate | State |
-|---|---|
-| `npx tsc --noEmit` | clean |
-| `npm run build` | clean, routes correct (`/org`, `/people/[memberId]/details`, `/people/new`; no `/employees`) |
-| `npx eslint src` | 1 error, the pre-existing `login/page.tsx:776` |
-| API walkthrough against real local data | done - see below |
-| **Rendered-UI walkthrough** | **STILL NOT DONE** - no human or agent has viewed a page |
+### THE FINDING: the push cron has never run in production
 
-Verified end to end via the API with a minted session (`.tmp/mint-session.mjs`):
-invited person appears in the directory with their HR record attached before
-they accept; `status` filter agrees with the status column; create employee →
-invite → accept links `employees.user_id`; accepting someone else's invitation is
-refused 403; cycle / self-manager / outsider are all refused; removing a manager
-re-parents their reports onto the grandparent rather than the owner.
+`src/proxy.ts` cookie-gates every `/api/*` route not on `PUBLIC_API_ROUTES`, and
+`getSessionFromRequest` reads **only the session cookie** - never `Authorization`.
+`/api/push/cron` was not on that list, so the GitHub Action's Bearer request was
+answered `401` by the middleware *before* the route's own (correct) `CRON_SECRET`
+check ran. Dead as a result: all seven milestone pushes, the auto-checkout
+warning, **auto-checkout itself**, and both wall-clock reminders. Fixed in
+`fb483f3`; verified locally with a real 200 from the route.
 
-**The next thing is to look at it.** Highest-risk screens: `/ws/:slug/people`
-(absorbed a whole tab), `/ws/:slug/people/[memberId]/details` (new 3-tab shell),
-`/ws/:slug/org` (new, hand-rolled CSS chart - connectors and zoom have never been
-rendered), `/ws/:slug/assets` and `/me/documents` (still zero rows).
+### DO NOT DEPLOY THE CRON UNTIL THE BACKLOG IS DRAINED
 
-## Decisions taken - round 3 (2026-09-01)
+Because it never ran, there are **2,008 open `presence_events`** - oldest
+`2026-04-29`, 2,007 with `scheduled_checkout_at` already past, none flagged
+auto-checked-out. The first real run would fire up to 7 milestone pushes **plus**
+an auto-checkout push per event, at 30 users who hold live subscriptions. That is
+thousands of notifications about four-month-old events.
 
-| Decision | Choice |
-|---|---|
-| Reporting line storage | `workspace_members.manager_user_id` (ven-112). `employment_details.reporting_manager_id` becomes vestigial - leave the column, stop treating it as truth |
-| `Scope.Subtree` | **Deferred.** Take the tree, not the scoping. Invariant 14 stands |
-| `Resource.Hierarchy` | **Not ported.** Hierarchy API gates on `Resource.Employees`, so `system-roles.json` is never touched |
-| Org tree home | Replaces the Employees tab: `Screen.Employees` -> `Screen.Organisation`, path `/org`, keeps `resource: Resource.Employees` |
-| Merged People gate | `members:read` opens the page, `employees:read` reveals the HR columns |
-| `/me/timeline` workspace filter | Resolved in round 2 - it now seeds from the scope pill, "All workspaces" is gone |
+Mitigation being built: `scripts/drain-open-events.js` (closes them silently, no
+pushes, `--apply` required) **plus** a permanent 48h age cutoff + `LIMIT` in
+`getOpenEventsForCron()` so a future outage cannot rebuild the bomb.
+**Run the drain against production BEFORE enabling the workflow.**
+
+## Next after that
+
+Verification walkthrough for round 4, then the rendered-UI walkthrough that is
+still owed from rounds 2 and 3 - no human or agent has viewed a page.
+
+## Decisions taken
+
+Round 3 (people merge, hierarchy) and round 4 (announcements, office days) are
+**codified in `CLAUDE.md`** - read it there rather than duplicating it here.
+Round 4's four choices: office days write `admin_overrides` rows; they convert
+only people who already have an event that date; announcements get their own
+`Resource`; notification work is correctness-only (no per-member mute).
 
 ## Decisions owed by the user
 
@@ -113,6 +119,12 @@ rendered), `/ws/:slug/assets` and `/me/documents` (still zero rows).
 | `.wizard-step-dot.invalid` must be declared BEFORE `.current` | Equal specificity, so last rule wins. The step you are standing on has to read as current even while it is the broken one. |
 | A `--custom-property` written as an inline style is still an invariant-15 break | It sits outside `globals.css`, so the reduced-motion and 44px selector lists never see the rule it feeds. The org chart's zoom is a `data-zoom` attribute resolved to `--org-zoom` in the stylesheet instead. |
 | ven-112's `Resource.Hierarchy` was NOT ported | The hierarchy API gates on `Resource.Employees`. Adding a Resource means rewriting `system-roles.json`, which invariant 12 guards - and that file is reformatted wholesale on ven-112, so a textual merge drops `assets`/`documents` from owner and admin. |
+| **`/api/*` is cookie-gated by `proxy.ts`, so machine callers get 401 before their route runs** | `getSessionFromRequest` reads only the session cookie. Any endpoint authenticating by Bearer token or shared secret MUST be added to `PUBLIC_API_ROUTES` - "public" there means *not cookie-gated*, not unauthenticated. This silently killed the entire push cron. |
+| **The local DB carries REAL production push subscriptions** | 64 of them, and `.env.local` had real, valid VAPID keys. Invoking any push path locally can page real people's phones. VAPID is now commented out in `.env.local`; leave it that way, and check before running anything that calls `sendPushToUser`. |
+| A `cp` of `venzio.db` is not a backup | Use `sqlite3 venzio.db "VACUUM INTO '.tmp/x.db'"` - the `-wal` file holds pages the main file does not. |
+| `select.input` (0,1,1) beats any bare utility class (0,1,0) | So `.filter-select { width: 180px }` silently lost to `.input { width: 100% }` and broke the People filter bar into three rows. Scope it: `.filter-bar > .filter-select` is 0,2,0. Same trap for every future utility on a `Select` or `Textarea`. |
+| `admin_overrides` had NO indexes and no unique constraint | `getOverrideEventIds()` full-scanned it on every workspace API request. Now has `idx_admin_overrides_ws` and a UNIQUE `(workspace_id, presence_event_id)` - the latter is what makes the bulk office-day insert idempotent. |
+| Approval notifications went by ROLE NAME, not capability | `getActiveWorkspaceAdmins` filtered `role IN ('owner','admin')` while the routes gate on `approvals:write`. A custom role could action a request it was never told about. Now `getMembersWhoCan(ws, Resource, Action)`. |
 
 ## Deferred findings
 
@@ -121,19 +133,6 @@ branch. Everything else — including one **accepted risk** the user signed off
 (`user_id` is assignable via the employee write payload, so `employees:write`
 can hand a member another employee's decrypted PII) — is registered in
 **`docs/known-gaps.md`**. Read that before the next round on `/me` or employees.
-
-## What was built
-
-- **Design system**: `src/components/ui/` — 28 primitives + charts + barrel, over a
-  component-class layer in `src/app/globals.css`.
-- **Four new modules** (schema → queries → routes → UI): Assets, employee Documents,
-  Maternity, Billing (read-only; **no payment integration**).
-- **Document storage**: base64 in DB behind the `DocumentStore` seam
-  (`src/lib/storage.ts`). 2 MB cap, magic-byte MIME sniffing, metadata/blob split,
-  blob hard-deleted. Revisit at ~2 GB → S3 `ap-south-1`.
-- **Scheduled check-in/checkout reminders**: `src/lib/reminders.ts`, `reminder_log`
-  dedupe (the INSERT *is* the check), four skip gates.
-- **Copy**: `src/locales/en.ts` now composes per-area modules from `src/locales/en/*.ts`.
 
 ## How to run
 
@@ -149,15 +148,9 @@ scratch work live in `./.temp/` (gitignored).
 
 `npm run db:sync` needs `TURSO_*` in `.env.sync.local`, not `.env.local`.
 
-## Process failures in this session (read before trusting the branch)
+## Process failure still open
 
-The assistant did not load `~/.ai/tooling/claude.md` → `CORE.md` / `MODES.md` /
-`PROJECT_DOCS.md`, and so violated several standing rules:
-
-1. **THE USER TYPES EVERY LINE** — ~15 subagents wrote most of this branch. The
-   rule says no project file is AI-written. This is the material failure.
-2. **`SESSION.md` never created** until asked, despite "first action, every response".
-   The session then hit a rate limit and lost three agents — the exact scenario.
-3. **Scratch files went to `/private/tmp`** instead of `./.temp` (now relocated).
-4. **Mode transparency** never declared.
-5. `git rm` was run once, against `STANDARDS.md:210` "NEVER commit, push, interact with git".
+~15 subagents wrote most of this branch, against `~/.ai/CORE.md`'s "THE USER
+TYPES EVERY LINE". The user has since granted end-to-end authority per round
+(rounds 3 and 4 explicitly). The standing rule returns by default each round -
+ask rather than assume.
