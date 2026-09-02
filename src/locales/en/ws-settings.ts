@@ -11,6 +11,8 @@
  *
  *   import { wsAdmin } from '@/locales/en/ws-settings'
  */
+import type { NotificationCategory } from '@/lib/notifications/categories'
+
 export const wsAdmin = {
   // ── /ws/[slug]/reports ─────────────────────────────────────────────────────
   reports: {
@@ -55,6 +57,7 @@ export const wsAdmin = {
     tabOrg: 'Org details',
     tabLeave: 'Leave policies',
     tabBalances: 'Balances',
+    tabNotifications: 'Notifications',
     tabSignals: 'Signals',
     tabDomains: 'Domains',
     tabBilling: 'Billing',
@@ -76,6 +79,62 @@ export const wsAdmin = {
       name: 'ws-name',
       timezone: 'ws-timezone',
     },
+
+    // ── Settings › Notifications ─────────────────────────────────────────────
+    notifPageTitle: 'What this workspace sends',
+    notifPageHint:
+      'Switching a category off stops it for everybody in this workspace — the in-app notification and the push both. Members can additionally mute the switchable ones for themselves.',
+
+    // The same tri-state withholding as the org form, and for the same reason:
+    // the switchboard's initial state is "everything on", so saving it after a
+    // failed load would silently re-enable categories the workspace turned off.
+    notifLoadFailedTitle: 'Notification settings could not be loaded',
+    notifLoadFailedBody:
+      'Nothing has been changed. The switches stay hidden until the saved configuration is on screen — saving now would turn every category back on.',
+    notifLoadFailedRetry: 'Try again',
+
+    /**
+     * One entry per category in `CATEGORY_DEFS`. `satisfies Record<...>` makes a
+     * category added to that catalogue without copy here a compile error, which
+     * is the point: an unlabelled switch is worse than no switch.
+     */
+    notifCategories: {
+      reminders: {
+        label: 'Daily check-in reminders',
+        hint: 'The scheduled nudges configured above, to anyone who has not checked in or out yet.',
+      },
+      approvals_inbox: {
+        label: 'Requests to action',
+        hint: 'Tells approvers that a leave request or a regularization is waiting for them.',
+      },
+      approvals_outcome: {
+        label: 'Outcomes of requests',
+        hint: 'Tells a person their leave, regularization or document was approved, rejected or verified.',
+      },
+      announcements: {
+        label: 'Announcements',
+        hint: 'Workspace-wide notices posted from this Settings screen.',
+      },
+      presence: {
+        label: 'Check-in session updates',
+        hint: 'The hourly milestones and the auto-checkout warning during someone’s own working session.',
+      },
+    } as const satisfies Record<NotificationCategory, { label: string; hint: string }>,
+
+    /** Keyed on `CategoryDef.lockedReason`, so the refusal is stated, not implied. */
+    notifLockedReasons: {
+      always_on_outcome:
+        'Always on. Someone who filed a request is entitled to be told what happened to it.',
+      always_on_announcement:
+        'Always on. An announcement is the one notice that cannot afford to be missed — a closure, an office day, a policy change.',
+    } as const satisfies Record<string, string>,
+
+    /** `presence` is account-scoped: there is no workspace switch to offer. */
+    notifLockedAccountScope:
+      'A personal setting. A check-in session belongs to no workspace, so each member controls this from their own settings.',
+
+    notifInvalidCategories:
+      'notificationCategoriesOff must be an array of switchable notification category keys',
   },
 
   // ── Settings › Billing (read-only) ─────────────────────────────────────────

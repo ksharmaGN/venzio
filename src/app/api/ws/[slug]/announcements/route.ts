@@ -3,8 +3,7 @@ import { requireWsAccess, forbidden } from '@/lib/ws-access'
 import { Action, Resource } from '@/lib/permissions/catalogue'
 import { createAnnouncement, listAnnouncements } from '@/lib/db/queries/announcements'
 import { getActiveMemberIds } from '@/lib/db/queries/workspaces'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
+import { notify } from '@/lib/notify'
 
 interface Props { params: Promise<{ slug: string }> }
 
@@ -72,38 +71,31 @@ export async function POST(req: NextRequest, { params }: Props) {
 
   const recipients = await getActiveMemberIds(ctx.workspace.id)
 
-  // One allSettled over both deliveries for every recipient. Delivery is
-  // best-effort by design: a member with no push subscription, a dead
-  // endpoint, or missing VAPID keys must not fail an announcement that is
-  // already durably recorded. The in-app notification is the guaranteed
-  // channel; push is the nudge toward it.
-  const results = await Promise.allSettled(
-    recipients.flatMap((userId) => [
-      createNotification({
-        userId,
-        workspaceId: ctx.workspace.id,
-        type: 'announcement',
-        refType: 'announcement',
-        refId: announcement.id,
-        title,
-        body: message,
-      }),
-      sendPushToUser(userId, {
-        title,
-        body: message,
-        tag: `announcement-${announcement.id}`,
-        data: { url: `/me/notifications?ws=${slug}` },
-      }),
-    ]),
-  )
+  // The whole roster in ONE call. `notify()` reads the workspace switchboard and
+  // the mute set once per call, so fanning out member-by-member would re-read
+  // both once per recipient - the difference between two queries and two
+  // thousand for a large workspace.
+  //
+  // Delivery stays best-effort inside `notify()`: a member with no push
+  // subscription, a dead endpoint or missing VAPID keys must not fail an
+  // announcement that is already durably recorded.
+  await notify({
+    userIds: recipients,
+    workspaceId: ctx.workspace.id,
+    workspaceSlug: slug,
+    type: 'announcement',
+    title,
+    body: message,
+    refId: announcement.id,
+    refType: 'announcement',
+    push: { tag: `announcement-${announcement.id}` },
+  })
 
-  // `delivered` counts people whose in-app notification landed - the channel we
-  // promise - not push attempts. The notification write is the even-indexed
-  // entry of each recipient's pair.
-  const delivered = recipients.reduce(
-    (count, _userId, i) => (results[i * 2]?.status === 'fulfilled' ? count + 1 : count),
-    0,
-  )
-
-  return NextResponse.json({ announcement, delivered }, { status: 201 })
+  // `delivered` is the size of the fan-out, not a count of confirmed writes -
+  // `notify()` deliberately does not report per-recipient outcomes. It stays
+  // exact for this type: `announcements` is locked on in `CATEGORY_DEFS`, so
+  // neither the workspace switchboard nor a member mute can drop a row, and the
+  // in-app write is unconditional. Only a database failure would make the two
+  // disagree, and that is already invisible to the admin.
+  return NextResponse.json({ announcement, delivered: recipients.length }, { status: 201 })
 }

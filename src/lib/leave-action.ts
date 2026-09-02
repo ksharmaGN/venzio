@@ -7,9 +7,7 @@ import {
   type LeaveType,
 } from '@/lib/db/queries/leaves'
 import { getUserById } from '@/lib/db/queries/users'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
-import { notificationHref } from '@/lib/client/notification-href'
+import { notify } from '@/lib/notify'
 import { en } from '@/locales/en'
 
 /**
@@ -81,31 +79,21 @@ export async function actionLeaveAndNotify(input: LeaveActionInput): Promise<Lea
     const body = isApproved
       ? en.notifications.leaveApprovedBody(leaveTypeName, result.updated.start_date, result.updated.end_date)
       : en.notifications.leaveRejectedBody(leaveTypeName, result.updated.start_date, result.updated.end_date)
-    const url = notificationHref(
-      { type: notifType, ref_type: 'leave_request', ref_id: result.updated.id, workspace_slug: input.workspaceSlug },
-      'me',
-    )
-
-    // allSettled, not all: a dead push subscription (or, in dev, missing VAPID
-    // keys) must not take the in-app notification down with it, and neither may
-    // fail the request - the leave is already actioned in the database.
-    await Promise.allSettled([
-      createNotification({
-        userId: result.updated.user_id,
-        workspaceId: input.workspaceId,
-        type: notifType,
-        title,
-        body,
-        refId: result.updated.id,
-        refType: 'leave_request',
-      }),
-      sendPushToUser(result.updated.user_id, {
-        title,
-        body,
-        tag: `leave-${notifType}-${result.updated.id}`,
-        data: { url },
-      }),
-    ])
+    // `notify()` owns the destination URL and the allSettled containment that
+    // used to be written out here - a dead push subscription (or, in dev,
+    // missing VAPID keys) still must not take the in-app row down with it, nor
+    // fail the request: the leave is already actioned in the database.
+    await notify({
+      userIds: [result.updated.user_id],
+      workspaceId: input.workspaceId,
+      workspaceSlug: input.workspaceSlug,
+      type: notifType,
+      title,
+      body,
+      refId: result.updated.id,
+      refType: 'leave_request',
+      push: { tag: `leave-${notifType}-${result.updated.id}` },
+    })
   }
 
   return {

@@ -11,6 +11,8 @@ import { listHolidayDatesInRange } from '@/lib/db/queries/holidays'
 import { getLeaveRequestsInRange } from '@/lib/db/queries/leaves'
 import { getActiveMaternityUserIds } from '@/lib/db/queries/maternity'
 import { createNotification } from '@/lib/db/queries/notifications'
+import { mutedUserIdsFor } from '@/lib/db/queries/notification-prefs'
+import { parseCategoriesOff } from '@/lib/notifications/categories'
 import { sendPushToUser } from '@/lib/push'
 import { notificationHref } from '@/lib/client/notification-href'
 import { localMidnightToUtc, todayInTz } from '@/lib/timezone'
@@ -32,11 +34,30 @@ import { wsReminders } from '@/locales/en/ws-reminders'
  * notifications that work today. The gates run in this order:
  *
  *   1. workspace archived            → excluded by the query
+ *   1b. `reminders` switched off     → skip the whole workspace
  *   2. today not a working day       → skip the whole workspace
  *   3. today is a company holiday    → skip the whole workspace
  *   4. now is not near the set time  → skip this kind
  *   5. member on approved leave      → skip the member
  *   6. already reminded today        → skip the member (reminder_log)
+ *   7. member muted `reminders`      → skip the member's PUSH only
+ *
+ * Gate 7 is the odd one out and deliberately so: it suppresses the push and
+ * still writes the `notifications` row, because the member-facing mute is
+ * push-only across the whole product (see `notify()`). Gate 1b is the opposite -
+ * a workspace switching the category off is saying the category does not apply
+ * here at all, so there is nothing to keep a record of. It runs before gates 2
+ * and 3 because it needs no query at all: the column arrives with the workspace.
+ *
+ * This pass does NOT route through `notify()`, even though `notify()` implements
+ * exactly gates 3b and 7. It iterates workspaces, not members, so it can read
+ * the workspace row and the muted set ONCE per workspace and filter in memory;
+ * `notify()` reads both per call, and the only shape that fits here is one call
+ * per member - inside a loop that runs for every unchecked-in person in every
+ * workspace, every thirty minutes. That is the exact round-trip explosion
+ * `mutedUserIdsFor()` was written to avoid. Keeping the pair here also leaves
+ * the `reminder_log` claim immediately before the send, which is the ordering
+ * that makes an overlapping cron run silent rather than a second push.
  */
 
 /**
@@ -61,6 +82,11 @@ export interface ReminderPassResult {
     onLeave: number
     alreadySent: number
     outsideWindow: number
+    /** Workspaces that have switched the `reminders` category off entirely. */
+    categoryOff: number
+    /** Members whose push was suppressed by their own mute. Their in-app row
+     *  was still written, so this is not a count of dropped notifications. */
+    muted: number
   }
   errors: number
 }
@@ -99,7 +125,15 @@ function emptyResult(): ReminderPassResult {
   return {
     workspaces: 0,
     sent: 0,
-    skipped: { nonWorkingDay: 0, holiday: 0, onLeave: 0, alreadySent: 0, outsideWindow: 0 },
+    skipped: {
+      nonWorkingDay: 0,
+      holiday: 0,
+      onLeave: 0,
+      alreadySent: 0,
+      outsideWindow: 0,
+      categoryOff: 0,
+      muted: 0,
+    },
     errors: 0,
   }
 }
@@ -143,6 +177,12 @@ async function processWorkspaceReminders(
   // Either way there is nothing to send.
   if (checkinMin === null && checkoutMin === null) return
 
+  // ── Gate 1b: has this workspace switched reminders off for everybody? ─────
+  if (parseCategoriesOff(ws.notification_categories_off).has('reminders')) {
+    result.skipped.categoryOff++
+    return
+  }
+
   // ── Gate 2: is today a working day for this workspace? ────────────────────
   const workingDays = parseWorkingDays(ws.working_days)
   if (!workingDays.includes(weekdayOf(localDate))) {
@@ -171,9 +211,14 @@ async function processWorkspaceReminders(
   // `maternity_cases` is a separate table keyed by employee_id, so the leave
   // query cannot see it. Missing the second one means reminding someone to
   // check in every working day of their maternity leave.
-  const [leaves, onMaternity] = await Promise.all([
+  //
+  // ── Gate 7 (gathered once per workspace): members who muted the push ─────
+  // Read here, alongside the leave sets, for the same reason: this pass walks
+  // workspaces, so one query answers the question for every member of it.
+  const [leaves, onMaternity, mutedPush] = await Promise.all([
     getLeaveRequestsInRange(ws.id, localDate, localDate),
     getActiveMaternityUserIds(ws.id, localDate),
+    mutedUserIdsFor(ws.id, 'reminders'),
   ])
   const onLeave = new Set([...leaves.map((l) => l.user_id), ...onMaternity])
 
@@ -184,7 +229,7 @@ async function processWorkspaceReminders(
   if (checkinMin !== null) {
     if (due(checkinMin)) {
       const members = await getMembersMissingCheckin(ws.id, dayStartUtc, dayEndUtc)
-      await notifyMembers(ws, members, 'checkin', localDate, onLeave, result)
+      await notifyMembers(ws, members, 'checkin', localDate, onLeave, mutedPush, result)
     } else {
       result.skipped.outsideWindow++
     }
@@ -193,7 +238,7 @@ async function processWorkspaceReminders(
   if (checkoutMin !== null) {
     if (due(checkoutMin)) {
       const members = await getMembersStillCheckedIn(ws.id, dayStartUtc, dayEndUtc)
-      await notifyMembers(ws, members, 'checkout', localDate, onLeave, result)
+      await notifyMembers(ws, members, 'checkout', localDate, onLeave, mutedPush, result)
     } else {
       result.skipped.outsideWindow++
     }
@@ -206,6 +251,7 @@ async function notifyMembers(
   kind: ReminderKind,
   localDate: string,
   onLeave: Set<string>,
+  mutedPush: Set<string>,
   result: ReminderPassResult,
 ): Promise<void> {
   const configured = kind === 'checkin' ? ws.checkin_reminder_at : ws.checkout_reminder_at
@@ -241,7 +287,14 @@ async function notifyMembers(
         continue
       }
 
-      await Promise.allSettled([
+      // ── Gate 7: the member muted reminder PUSHES ─────────────────────────
+      // The row is written either way. Muting is push-only across the product,
+      // so the feed stays a complete record of what the workspace expected of
+      // them - the same guarantee `notify()` makes at every other call site.
+      const pushMuted = mutedPush.has(member.user_id)
+      if (pushMuted) result.skipped.muted++
+
+      const work: Promise<unknown>[] = [
         createNotification({
           userId: member.user_id,
           workspaceId: ws.id,
@@ -251,8 +304,13 @@ async function notifyMembers(
           refId: localDate,
           refType: 'reminder',
         }),
-        sendPushToUser(member.user_id, { title, body, tag: `${tag}-${localDate}`, data: { url } }),
-      ])
+      ]
+      if (!pushMuted) {
+        work.push(
+          sendPushToUser(member.user_id, { title, body, tag: `${tag}-${localDate}`, data: { url } }),
+        )
+      }
+      await Promise.allSettled(work)
       result.sent++
     } catch (err) {
       result.errors++

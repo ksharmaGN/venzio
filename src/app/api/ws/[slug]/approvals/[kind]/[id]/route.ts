@@ -3,9 +3,7 @@ import { requireWsAccess } from '@/lib/ws-access'
 import { LeaveAction } from '@/lib/db/queries/leaves'
 import { actionRegularizationRequest, RegularizationAction } from '@/lib/db/queries/regularizations'
 import { getUserById } from '@/lib/db/queries/users'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
-import { notificationHref } from '@/lib/client/notification-href'
+import { notify } from '@/lib/notify'
 import { actionLeaveAndNotify } from '@/lib/leave-action'
 import { en } from '@/locales/en'
 import { Action, Resource } from '@/lib/permissions/catalogue'
@@ -94,14 +92,17 @@ export async function PATCH(req: NextRequest, { params }: Props) {
     const notifBody = isApproved
       ? en.notifications.regularizationApprovedBody(result.updated.target_date)
       : en.notifications.regularizationRejectedBody(result.updated.target_date)
-    const url = notificationHref(
-      { type: notifType, ref_type: 'regularization_request', ref_id: result.updated.id, workspace_slug: slug },
-      'me',
-    )
-    await Promise.allSettled([
-      createNotification({ userId: result.updated.user_id, workspaceId: ctx.workspace.id, type: notifType, title, body: notifBody, refId: result.updated.id, refType: 'regularization_request' }),
-      sendPushToUser(result.updated.user_id, { title, body: notifBody, tag: `regularization-${notifType}-${result.updated.id}`, data: { url } }),
-    ])
+    await notify({
+      userIds: [result.updated.user_id],
+      workspaceId: ctx.workspace.id,
+      workspaceSlug: slug,
+      type: notifType,
+      title,
+      body: notifBody,
+      refId: result.updated.id,
+      refType: 'regularization_request',
+      push: { tag: `regularization-${notifType}-${result.updated.id}` },
+    })
   }
 
   return NextResponse.json({ regularizationRequest: result.updated })

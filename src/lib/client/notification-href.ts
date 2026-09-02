@@ -68,6 +68,15 @@ export function notificationHref(n: NotificationTarget, surface: NotificationSur
     return '/me'
   }
 
+  if (type === 'presence_extend') {
+    // The 10h rung of the presence ladder. It is the last push before
+    // auto-checkout, so it opens the extension picker directly rather than
+    // dropping the member on `/me` to find it - `CheckinButtons` reads this
+    // query param and mounts the dialog. Resolved here so the cron route never
+    // writes the literal, which is exactly how the announcement fan-out drifted.
+    return '/me?extend=1'
+  }
+
   if (type.startsWith('document_')) {
     return '/me/documents'
   }

@@ -1,21 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenEventsForCron, updatePushRemindersSent, autoCheckoutEvent } from '@/lib/db/queries/events'
-import { sendPushToUser } from '@/lib/push'
+import { notifyPresence } from '@/lib/notify'
 import { notificationHref } from '@/lib/client/notification-href'
+import { presenceLadder } from '@/locales/en/notifications'
 import { runReminderPass, type ReminderPassResult } from '@/lib/reminders'
 
-const MILESTONES_H = [4, 8, 12, 16, 18, 20, 22]
-
 /**
- * Every push in pass 1 is anchored on an open check-in, so they all want the
- * same destination: the check-in screen. Built through the shared resolver
- * rather than written as a literal so a future move of `/me` cannot leave the
- * service worker opening one URL and the in-app row another.
+ * Destinations are built through the shared resolver rather than written as
+ * literals, so a future move of `/me` cannot leave the service worker opening
+ * one URL and the in-app row another.
  */
 const CHECKIN_URL = notificationHref(
   { type: 'checkin_reminder', ref_type: null, ref_id: null },
   'me',
 )
+const EXTEND_URL = notificationHref(
+  { type: 'presence_extend', ref_type: null, ref_id: null },
+  'me',
+)
+
+/**
+ * The presence ladder, in full.
+ *
+ * It used to be a bare `[4, 8, 12, 16, 18, 20, 22]` sharing one string, which
+ * had two problems. Auto-checkout lands at 12h, so every rung past it was
+ * unreachable code; and seven identical pushes are a nag, which is how somebody
+ * revokes notification permission and loses their approval notices with it.
+ *
+ * Two rungs now, each with its own copy and its own destination. `key` is the
+ * dedupe token written into `push_reminders_sent` and must never be reused for
+ * a different meaning - a claimed key is claimed forever on that row.
+ */
+const LADDER: { hours: number; key: string; title: string; body: string; url: string }[] = [
+  { hours: 5, key: '5h', ...presenceLadder.fiveHour, url: CHECKIN_URL },
+  // The last chance to act, so it opens the picker rather than the home screen.
+  { hours: 10, key: '10h', ...presenceLadder.tenHour, url: EXTEND_URL },
+]
 
 export async function POST(request: NextRequest) {
   const auth = request.headers.get('authorization')
@@ -57,52 +77,34 @@ export async function POST(request: NextRequest) {
       ).getTime()
       const hoursElapsed = (now - checkinMs) / 3_600_000
 
-      // 1. Milestone notifications — fire once per milestone hour
-      for (const h of MILESTONES_H) {
-        const key = `${h}h`
-        if (hoursElapsed >= h && !reminders.includes(key)) {
-          await sendPushToUser(event.user_id, {
-            title: 'Still working?',
-            body: `You've been checked in for ${h} hours.`,
-            tag: `milestone-${h}h`,
-            data: { url: CHECKIN_URL },
+      // 1. Ladder notifications — fire once per rung
+      for (const step of LADDER) {
+        if (hoursElapsed >= step.hours && !reminders.includes(step.key)) {
+          await notifyPresence(event.user_id, {
+            title: step.title,
+            body: step.body,
+            tag: `presence-${step.key}`,
+            data: { url: step.url },
           })
-          await claim(key)
+          await claim(step.key)
         }
       }
 
+      // 2. Auto-checkout — fires when the scheduled time has passed.
+      //
+      // Nothing warns beforehand any more: the 10h rung above is the last chance
+      // to act, and it says so. A separate ≤60-minute warning carrying `Extend
+      // 4h` / `Checkout Now` actions meant two pushes about the same deadline,
+      // the second of which usually arrived while the phone was in a pocket.
       if (event.scheduled_checkout_at) {
         const checkoutMs = new Date(event.scheduled_checkout_at).getTime()
-        const minsRemaining = (checkoutMs - now) / 60_000
-        const warnKey = `warn_${event.scheduled_checkout_at.slice(0, 16)}`
 
-        // 2. Warning push — fires when checkout is within this cron window (≤60 min away)
-        if (minsRemaining > 0 && minsRemaining <= 60 && !reminders.includes(warnKey)) {
-          const hardLimitMs = checkinMs + 24 * 3_600_000
-          const canExtend = checkoutMs + 4 * 3_600_000 <= hardLimitMs
-          const minsLabel = Math.round(minsRemaining)
-
-          await sendPushToUser(event.user_id, {
-            title: 'Auto-checkout soon',
-            body: `Auto-checkout in ~${minsLabel} min. Hours without your location won't count. Checkout with location or extend if still working.`,
-            tag: 'auto-checkout-warning',
-            requireInteraction: true,
-            actions: [
-              ...(canExtend ? [{ action: 'extend', title: 'Extend 4h' }] : []),
-              { action: 'checkout', title: 'Checkout Now' },
-            ],
-            data: { url: CHECKIN_URL },
-          })
-          await claim(warnKey)
-        }
-
-        // 3. Auto-checkout — fires when scheduled time has passed
         if (now >= checkoutMs && !reminders.includes('autocheckedout')) {
           await autoCheckoutEvent(event.id, new Date(now).toISOString())
-          await sendPushToUser(event.user_id, {
-            title: 'Auto-checked out',
-            body: "You've been auto-checked out. Hours logged without location data won't count in reports.",
-            tag: 'auto-checked-out',
+          await notifyPresence(event.user_id, {
+            title: presenceLadder.autoCheckout.title,
+            body: presenceLadder.autoCheckout.body,
+            tag: 'presence-autocheckedout',
             data: { url: CHECKIN_URL },
           })
           await claim('autocheckedout')
@@ -113,7 +115,7 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // 4. Wall-clock check-in / check-out reminders.
+  // 3. Wall-clock check-in / check-out reminders.
   //
   // A second, workspace-anchored pass. The loop above starts from open events,
   // so it can only ever see people who are already checked in - it is

@@ -29,6 +29,22 @@ secrets.
 When the app is **open**: an in-app toast + `playChime()` + the OS notification.
 When the app is **closed**: the SW receives the push event → OS notification.
 
+**One seam, since round 5.** The first three paths all go through `notify()` in
+`src/lib/notify.ts`, which resolves the notification's category, drops it
+entirely if the workspace switched that category off, writes the
+`notifications` row **unconditionally**, and only then decides whether to push —
+suppressing it for a member who muted that category. The URL comes from
+`notificationHref` rather than being rebuilt per call site, which is how the
+announcement fan-out had already drifted to a hardcoded, unencoded slug.
+
+The fourth path uses `notifyPresence()`, which honours the account-level
+`presence` mute and writes no row. Two sanctioned exceptions to the seam exist
+and are documented where they live: that helper, and `src/lib/reminders.ts`,
+which keeps the raw pair so it can filter one bulk mute-set read per workspace
+instead of one lookup per member.
+
+See **Notification preferences** in `CLAUDE.md` for the category catalogue.
+
 ---
 
 ## 1b. The cron was unreachable until 2026-09-02
@@ -44,11 +60,31 @@ Two consequences worth carrying forward:
 
 1. **Add any secret-authenticated endpoint to `PUBLIC_API_ROUTES`.** It does not
    make the route public; it makes it not *cookie*-gated.
-2. **The outage left a backlog.** 2,008 open `presence_events`, the oldest four
-   months old, none auto-checked-out. Enabling the cron without draining them
-   first would fire thousands of pushes about long-dead events. Hence
-   `scripts/drain-open-events.js` (silent, `--apply`-gated) and the permanent
-   48-hour age cutoff in `getOpenEventsForCron()`.
+2. **The outage left a backlog.** Measured in round 5: **2,060 open
+   `presence_events` — 72% of all 2,878 events** — one per user per day, 43
+   people, oldest 2026-04-21. Without a guard the first successful tick would
+   have fired roughly **18,000 pushes** at the 33 people holding live
+   subscriptions. Hence the permanent 48-hour age cutoff in
+   `getOpenEventsForCron()` and `scripts/drain-open-events.js` (silent,
+   `--apply`-gated).
+
+   **The cutoff is the guard; the drain is cleanup.** The cutoff is computed as
+   `now − 48h` on every tick, so the backlog is simply not selected and enabling
+   the cron sends nothing. The drain exists because rows the cutoff excludes can
+   never be auto-checked-out by cron either, so they would stay open forever.
+
+   Why 48 and not 12: auto-checkout fires **at** `checkin + 12h` and extensions
+   reach `checkin + 24h`, so any window under 24h would exclude a session before
+   it could be closed — re-creating this backlog rather than preventing it.
+
+3. **Nothing was ever auto-checked out, and it did not look that way.**
+   `getOpenEventToday()` is bounded by `date(checkin_at) = date('now')`, so when
+   the UTC date ticked the row stopped matching, the button flipped back to
+   *Check in*, and yesterday's row was orphaned. From the outside this is
+   indistinguishable from working auto-checkout. The fingerprint in the data:
+   2,060 (user, day) groups, **zero** with more than one open event. Note
+   `date('now')` is UTC, so that rollover happens at 05:30 IST, not local
+   midnight — registered in `known-gaps.md`.
 
 ## 2. The in-app notification feed
 
@@ -255,14 +291,37 @@ deleted_at IS NULL` and, per event:
 
 | # | Condition | Push |
 |---|-----------|------|
-| 1 | `hoursElapsed >= h` for `h ∈ {4,8,12,16,18,20,22}` | "Still working?" · tag `milestone-<h>h` |
-| 2 | `scheduled_checkout_at` is 0–60 min away | "Auto-checkout soon" · `requireInteraction` · actions `Extend 4h` (only if `checkout + 4h <= checkin + 24h`) and `Checkout Now` |
-| 3 | `now >= scheduled_checkout_at` | `autoCheckoutEvent()` then "Auto-checked out" |
+| 1 | `hoursElapsed >= 5` | "That's half a day" → `/me` · key `5h` |
+| 2 | `hoursElapsed >= 10` | "Your day is complete" → `/me?extend=1` · key `10h` |
+| 3 | `now >= scheduled_checkout_at` | `autoCheckoutEvent()` then "You've been checked out" · key `autocheckedout` |
 
-Dedupe is the `presence_events.push_reminders_sent` JSON array — keys `"4h"`,
-`"warn_<yyyy-mm-ddThh:mm>"`, `"autocheckedout"` — written back once per event
-with `updatePushRemindersSent()`. A per-event `try/catch` keeps one bad row from
-aborting the run.
+**Reworked in round 5.** It used to be seven milestones at
+`{4,8,12,16,18,20,22}` *all sharing one string* (`'Still working?'`), plus a
+≤60-minute "Auto-checkout soon" warning carrying `Extend 4h` / `Checkout Now`
+action buttons. Two problems: auto-checkout lands at 12h so everything from 16h
+up was unreachable, and a ladder that says the same thing seven times is noise
+rather than a ladder. The warning was dropped deliberately — the 10h push is the
+last chance to act, and it links to the extension picker rather than trying to
+express five choices as two notification buttons.
+
+Extending is now a **modal on `/me`** (`ExtendSessionModal`), reached by tapping
+the 10h push or from `CheckinButtons`. `POST /api/checkin/extend` takes an
+`hours` value from `[2,4,6,8,12]`; absent means `4`, which keeps the service
+worker's bodyless `extend` action working unchanged. The `checkin + 24h` hard cap
+still clamps rather than erroring.
+
+All three go through `notifyPresence()`, not `sendPushToUser()` directly, so the
+account-level `presence` mute is honoured. They remain the only messages in the
+product that write **no** `notifications` row — see the gap register.
+
+Dedupe is still the `presence_events.push_reminders_sent` JSON array — now keys
+`"5h"`, `"10h"`, `"autocheckedout"` — written back **after each individual push**
+by `claim()`, not once per event. Older rows carrying `4h`/`8h`/`warn_…` keys are
+simply never matched. A per-event `try/catch` keeps one bad row from aborting the
+run.
+
+`scripts/drain-open-events.js` pre-claims the **union** of old and new keys, so a
+drained row can never produce a push whichever ladder is deployed.
 
 Pass 2, the wall-clock workspace pass, runs after this in its own `try/catch` so
 a failure there cannot discard pass 1's work. See [`reminders.md`](./reminders.md).

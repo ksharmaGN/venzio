@@ -163,10 +163,12 @@ WHERE wm.workspace_id = ? AND wm.status = 'active' AND wm.user_id IS NOT NULL
 predicates on that TEXT column are lexicographic, so a bound carrying `T` and
 `Z` would compare wrong.
 
-### The four skip gates
+### The six skip gates
 
 | # | Gate | Why it exists |
 |---|------|---------------|
+| 1b | **workspace switched `reminders` off** | `parseCategoriesOff(ws.notification_categories_off)`. Placed before gate 2 because the column arrives with the workspace row and costs no query, while gate 3 costs a holidays lookup. Numbered `1b` rather than renumbering 2–6, which are cited here and in `CLAUDE.md` |
+| 7 | **member muted `reminders`** | One bulk `mutedUserIdsFor(ws.id, 'reminders')` per workspace. Suppresses the **push only** — `createNotification` still runs, because the member switch is push-channel by design. Sits *after* the `reminder_log` claim so a muted member still burns their slot: their feed row was written, so the day is genuinely done |
 | 2 | **non-working day** | `working_days` is a JSON array of weekday numbers, 0 = Sunday. A reminder on a Sunday is how a user disables push |
 | 3 | **workspace holiday** | `listHolidayDatesInRange(ws, localDate, localDate)`; skips the entire workspace, both kinds |
 | 5a | **approved leave** | `getLeaveRequestsInRange(ws, localDate, localDate)` where `status = 'approved'` |
@@ -275,25 +277,26 @@ be added to that list**, or it will fail the same silent way.
 Listed roughly by risk. None of these is a bug in the pass; they are the edges
 of the current design.
 
-### 4.1 No per-member opt-out — the biggest risk
+### 4.1 ~~No per-member opt-out~~ — closed in round 5
 
-Reminder configuration is a **workspace-level** setting. A member who finds the
-daily reminder annoying has exactly one lever: revoke notification permission or
-delete the push subscription in their browser. Doing so also loses them **leave
-and regularization approval notifications**, which are the notifications that
-actually matter.
+**This was the biggest risk in this document and it is now fixed.** For the
+record of what it was: reminder configuration was workspace-level only, so a
+member who found the daily reminder annoying had exactly one lever — revoke
+notification permission or delete the push subscription. That also cost them
+leave and regularization approval notifications, and after round 4, workspace
+announcements: the one message class that cannot afford to be missed. The blast
+radius was asymmetric, a nag costing a channel wanted for something else.
 
-The blast radius is asymmetric — a nagging reminder costs the user a
-notification channel they wanted for something else. Until a per-member mute
-exists, treat turning reminders on for a workspace as a decision that affects
-everyone's approval notifications too.
+The fix is deliberately narrow. A member mutes a **category**, and the mute
+applies to the **push channel only** — `createNotification()` still runs, so the
+in-app feed stays a complete record and the bell still shows what happened.
+`announcements` and `approvals_outcome` are not mutable at all, because a
+switch for those rebuilds the exact problem this closed.
 
-**This got worse when announcements landed (round 4).** A workspace-wide notice —
-a policy update, an office day, a closure — is delivered through the same
-channel. So the member who silenced notifications to escape a daily reminder now
-also misses the one message class that cannot afford to be missed. The round-4
-scope was deliberately "correctness only" and left the mute unbuilt; that was a
-decision, and this is its cost.
+See **Notification preferences** in `CLAUDE.md` for the catalogue, the storage
+rule (a `notification_prefs` row means *muted*; absence means on) and the
+`notify()` seam that enforces it. Gate 1b and gate 7 above are where this pass
+honours it.
 
 ### 4.2 Workspace-wide timezone and working days
 

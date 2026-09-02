@@ -10,9 +10,7 @@ import {
 } from '@/lib/db/queries/leaves'
 import { getUserById } from '@/lib/db/queries/users'
 import { getActiveWorkspaceAdmins } from '@/lib/db/queries/workspaces'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
-import { notificationHref } from '@/lib/client/notification-href'
+import { notify } from '@/lib/notify'
 import { en } from '@/locales/en'
 
 interface Props { params: Promise<{ slug: string }> }
@@ -133,19 +131,23 @@ export async function POST(req: NextRequest, { params }: Props) {
     const employeeName = employee?.full_name ?? employee?.email ?? 'Someone'
     const title = en.notifications.leaveSubmittedTitle
     const body = en.notifications.leaveSubmittedBody(employeeName, requestedDays, leaveType.name)
-    // The push opens exactly where the in-app row does: the approvals queue on
-    // the admin surface. Same resolver, so tapping either lands identically.
-    const url = notificationHref(
-      { type: 'leave_submitted', ref_type: 'leave_request', ref_id: leaveRequest.id, workspace_slug: slug },
-      'ws',
-    )
-    await Promise.allSettled(
-      admins
-        .flatMap((a) => [
-          createNotification({ userId: a.user_id, workspaceId: workspace.id, type: 'leave_submitted', title, body, refId: leaveRequest.id, refType: 'leave_request' }),
-          sendPushToUser(a.user_id, { title, body, tag: `leave-submitted-${leaveRequest.id}`, data: { url } }),
-        ]),
-    )
+    // Every approver in one call: the workspace switchboard and the mute set are
+    // then read once for the fan-out rather than once per admin.
+    await notify({
+      userIds: admins.map((a) => a.user_id),
+      workspaceId: workspace.id,
+      workspaceSlug: slug,
+      type: 'leave_submitted',
+      title,
+      body,
+      refId: leaveRequest.id,
+      refType: 'leave_request',
+      // These recipients are approvers, not the requester, so the push has to
+      // open the approvals queue. Without this it resolves to `/me/leave` and
+      // sends an admin to their own leave screen.
+      surface: 'ws',
+      push: { tag: `leave-submitted-${leaveRequest.id}` },
+    })
   } catch { /* notification failure must not block the response */ }
 
   return NextResponse.json({ leaveRequest }, { status: 201 })

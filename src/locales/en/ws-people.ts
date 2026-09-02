@@ -85,6 +85,9 @@ export const wsEmployees = {
   wizardSaveEdit: 'Save changes',
   wizardSaveAdd: 'Create employee',
   wizardSaving: 'Saving…',
+  // Distinct from wizardSaving so a per-step autosave never reads as "the
+  // record has been created" - creation is what the final button does.
+  wizardStepSaving: 'Saving step…',
   wizardCancel: 'Cancel',
   wizardSavedAdd: 'Employee record created',
   wizardSavedEdit: 'Employee profile updated',
@@ -376,6 +379,18 @@ export const wsPeopleUi = {
   inviteModalSend: 'Send invite',
   inviteModalSending: 'Sending…',
   inviteModalSkip: 'Not now',
+
+  // Leaving a part-finished add. The record already exists by then - each step
+  // saves as it is left - so Cancel has to say what it is leaving behind rather
+  // than implying nothing was kept.
+  draftResumed: 'Picking up where you left off. Each step is saved as you leave it.',
+  draftCancelTitle: 'Leave this employee?',
+  draftCancelBody: (name: string) =>
+    `${name} has already been saved, so leaving now keeps the record with whatever you have filled in so far. You can finish it later from People.`,
+  draftCancelKeep: 'Keep the record',
+  draftCancelDiscard: 'Delete the record',
+  draftCancelDiscarding: 'Deleting…',
+  draftDiscardFailed: 'Could not delete the record. It is still in People.',
   inviteSent: (email: string) => `Invitation sent to ${email}`,
   inviteAutoEnrol:
     'No invite needed - their email domain is verified, so they join automatically when they sign up.',

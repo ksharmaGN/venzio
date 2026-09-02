@@ -914,6 +914,7 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 .me-navitem,
 .org-card,
 .org-toggle,
+.choice,
 .tabbar button { min-height: 44px; }
 .icon-btn { min-width: 44px; }
 .dropzone.compact { height: auto; min-height: 44px; }
@@ -1079,3 +1080,59 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 .access-section { max-width: 520px; }
 .btn-flush { padding-left: 0; }
 .modal-body { margin-bottom: 12px; line-height: 1.55; }
+
+/* ── choice list ──────────────────────────────────────────────────────────────
+   A radio group rendered as rows, for a small closed set where a <select> would
+   hide the options behind a tap. Built here rather than in the component that
+   needed it (the session-extension picker) because the 44px touch-target rule is
+   a selector list in this file - `.choice` is in it above, and a padding value
+   written inline would have been silently exempt (invariant 15).
+
+   The native radio is kept and left visible: it carries the group semantics, the
+   arrow-key roving focus and the announced state for free, and every attempt to
+   replace it with a styled span has to reimplement all three. */
+.choice-list { display: flex; flex-direction: column; gap: 8px; }
+.choice {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-0);
+  font-size: 14px; color: var(--text-primary);
+  cursor: pointer;
+}
+.choice:hover { border-color: var(--brand); }
+/* No shadow - this is an inline surface inside the panel, not something floating
+   above it. The selected state is a border plus the focus-ring colour. */
+.choice.is-selected { border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
+.choice input { accent-color: var(--brand); width: 16px; height: 16px; margin: 0; }
+
+/* ── notification switchboard (ws Settings › Notifications, /me/settings) ───── */
+/* One row per notification category, on both surfaces, so the admin's view and
+   the member's view of the same catalogue cannot drift apart visually. Flat
+   fill and a border - it is an inline surface, so it carries no shadow. */
+.switch-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 14px; margin-bottom: 10px;
+  border: 1px solid var(--border); border-radius: var(--radius-md);
+  background: var(--surface-2);
+}
+.switch-row:last-child { margin-bottom: 0; }
+.switch-row-body { min-width: 0; }
+.switch-row-title { font-size: 13.5px; font-weight: 600; }
+/* A locked category is still shown, quieter, with its reason in place of the
+   hint - an admin should be able to see what they cannot switch off. */
+.switch-row.is-locked { background: var(--surface-1); }
+
+/* The reminder-time pair, and the notification group headings. */
+.switch-group + .switch-group { margin-top: 18px; }
+.field-row { display: flex; gap: 16px; flex-wrap: wrap; }
+.mb-8  { margin-bottom: 8px; }
+.mb-16 { margin-bottom: 16px; }
+
+/* The result line under a settings Save button. Every settings tab wrote this
+   as an inline style object, which put it outside the reduced-motion and
+   touch-target selector lists and let five tabs drift on font size. New code
+   uses the class; the older tabs still carry their inline version. */
+.form-status { margin-top: 10px; font-size: 13px; }
+.form-status.is-ok    { color: var(--brand); }
+.form-status.is-error { color: var(--danger); }

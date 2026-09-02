@@ -12,6 +12,8 @@
  * `en.meWsRegularization`, `en.notifications` and `en.auth` are NOT duplicated
  * here - those screens import both modules.
  */
+import type { NotificationCategory } from '@/lib/notifications/categories'
+
 export const meSettings = {
   // ── /me/timeline ──────────────────────────────────────────────────────────
   timeline: {
@@ -113,6 +115,91 @@ export const meSettings = {
       lastUsed: (date: string) => `Last used ${date}`,
       revoke: 'Revoke',
       revokeConfirm: 'Revoke this token? Any apps using it will stop working.',
+    },
+
+    notifications: {
+      title: 'Notifications',
+
+      /**
+       * Two groups, because the two halves are keyed differently: the first is
+       * per (workspace, you), the second is per account. The workspace is NOT
+       * named here - the top-bar pill above already answers "which one".
+       */
+      workspaceGroupLabel: 'This workspace',
+      workspaceGroupHint:
+        'Mute a category and it stops reaching you from this workspace — the phone push and the bell alike. Switch workspaces with the pill at the top to set another one.',
+      deviceGroupLabel: 'Your device',
+      deviceGroupHint:
+        'These follow your account rather than any one workspace, because a check-in session belongs to none.',
+
+      /** Nothing to scope to: no active membership. */
+      noWorkspace: 'You are not in a workspace yet, so there is nothing here to mute.',
+
+      /**
+       * Same withholding rule as the admin switchboard: the default state is
+       * "nothing muted", so painting it after a failed load would let a toggle
+       * write over mutes the member had already set.
+       */
+      loadFailed: 'Your notification settings could not be loaded. Nothing has been changed.',
+      loadFailedRetry: 'Try again',
+      saveError: 'That change could not be saved.',
+
+      /** One entry per category; `satisfies` keeps it total against the catalogue. */
+      categories: {
+        reminders: {
+          label: 'Daily reminders',
+          hint: 'The nudge to check in or out, on working days only.',
+        },
+        approvals_inbox: {
+          label: 'Requests to action',
+          hint: 'Only reaches you if you are the one approving leave or regularizations.',
+        },
+        approvals_outcome: {
+          label: 'Outcomes of your requests',
+          hint: 'What happened to the leave, regularization or document you filed.',
+        },
+        announcements: {
+          label: 'Announcements',
+          hint: 'Workspace-wide notices — a closure, an office day, a policy change.',
+        },
+        presence: {
+          label: 'Check-in session updates',
+          hint: 'Hourly milestones and the warning before an open session is auto-closed.',
+        },
+      } as const satisfies Record<NotificationCategory, { label: string; hint: string }>,
+
+      /** Keyed on `CategoryDef.lockedReason` - why a switch is not offered. */
+      lockedReasons: {
+        always_on_outcome:
+          'Cannot be muted. Not knowing your leave was rejected is worse than one more notification.',
+        always_on_announcement:
+          'Cannot be muted. This is the one notice that cannot afford to be missed.',
+      } as const satisfies Record<string, string>,
+
+      /** Fallback for a locked category with no stated reason. */
+      lockedGeneric: 'Cannot be muted.',
+
+      // ── Push registration, this device only ────────────────────────────────
+      pushTitle: 'Push on this device',
+      pushBody:
+        'Venzio registers this browser for push when you open it. Unregistering stops push here immediately, but opening Venzio again registers it back — mute the categories above to stop the messages themselves.',
+      pushUnsubscribe: 'Unregister this device',
+      pushUnsubscribed: 'This device will no longer receive push notifications.',
+      pushNotSubscribed: 'This device is not registered for push.',
+      pushUnsupported: 'This browser does not support push notifications.',
+      pushError: 'This device could not be unregistered.',
+
+      // ── What the two /api/me/.../notification-prefs routes answer with ─────
+      api: {
+        invalidBody: 'Send { category, muted } as JSON',
+        unknownCategory: 'Unknown notification category',
+        locked: (category: string) =>
+          `The "${category}" category cannot be muted — it is always delivered`,
+        wrongScopeWorkspace: (category: string) =>
+          `"${category}" is an account-level category; set it through /api/me/notification-prefs`,
+        wrongScopeAccount: (category: string) =>
+          `"${category}" belongs to a workspace; set it through /api/me/ws/[slug]/notification-prefs`,
+      },
     },
 
     org: {

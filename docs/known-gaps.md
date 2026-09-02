@@ -91,8 +91,8 @@ branch is reformatted wholesale, so a textual merge silently drops `assets` and
 
 | Gap | Where | Note |
 |---|---|---|
-| The cron's push copy is hardcoded | `api/push/cron/route.ts` | `'Still working?'`, `'Auto-checkout soon'`, `'Auto-checked out'` are string literals, violating invariant 16 — while `en.notifications.stale` / `.autoCheckout` hold near-identical strings that **nothing reads**. Pre-existing; moving them is a locale edit plus a route edit. |
 | `NotificationRow` is built from inline style objects | `src/components/notifications/NotificationRow.tsx` | Pre-existing (9 of them before this round), violating invariant 15, so the reduced-motion and touch-target selector lists never see it. Not in the documented exception list either. |
+| **The whole `/ws/[slug]/settings` directory violates invariant 15** | `SignalsTab` (22), `DomainsTab` (15), `BillingTab` (14), `OrgTab` (12), `LeaveTypesSection` (10) | Counted in round 5: 73 ad-hoc inline style objects across five tabs, none in the documented exception list, all invisible to the reduced-motion and 44px selector lists. `AnnouncementsSection` (round 4) has **zero** and is the proof it is achievable with the existing utilities. `NotificationsTab` (round 5) was brought to zero except the three inside the verbatim-moved `ReminderField`. Left alone because converting five tabs is a styling refactor of its own, and **no page on this branch has been rendered yet** — changing appearance blind is how the walkthrough gets harder, not easier. Do it in the pass right after the walkthrough. |
 | `presence_events` mixes datetime formats | `checkin_at` vs `checkout_at` / `scheduled_checkout_at` | `checkin_at` is SQLite `'YYYY-MM-DD HH:MM:SS'`; the other two are full ISO with `Z`. Comparisons are lexicographic, so every consumer normalises by hand (`toSqliteDt`). A row written with a `T` separator would compare wrong on a boundary day. Needs a data migration, not a code fix. |
 | Announcements have no sidebar entry of their own | `src/lib/permissions/screens.ts` | The section rides the Settings screen. It is gated on `Resource.Announcements` independently so access is correct, but the resource has no `Screen`, so nothing in the nav advertises it. |
 | No dense list-row class | `globals.css` | `DomainsTab`, `LeaveTypesSection` and the announcements list each hand-roll a bordered row. `.card + .card` was used instead, which is correct but 20px-padded where a denser row would read better. |
@@ -104,15 +104,23 @@ Found while fixing the cron outage. None of these is fixed; all are real.
 
 | Gap | Where | Why deferred |
 |---|---|---|
-| **No per-member notification mute** | workspace-level settings only | A member who silences a nagging reminder also loses approval notifications *and now announcements* - an announcement is the one message that cannot afford to be missed. See `reminders.md` §4.1. Explicitly scoped out of round 4; it is the biggest remaining risk in this area. |
+| ~~No per-member notification mute~~ | — | **Fixed in round 5.** Per-category, push-channel-only mutes; `createNotification` is unconditional so the feed stays a complete record. Locked for `announcements` and `approvals_outcome`. |
 | The feed grows forever | `notifications` | No `deleted_at`, no `expires_at`, no retention job, and nothing ever DELETEs. `getNotificationsForUser` takes an `offset` no caller passes, so anything past the newest 50 is unreachable in the UI while still counting toward the unread badge. |
 | Dead push subscriptions are only reaped on `410` | `src/lib/push.ts` | `404` is also permanent for FCM/autopush, and repeated `403` means rotated VAPID keys. Those rows survive forever and every send retries them. |
 | Archived workspaces still inflate the unified `/me` count | `getUnreadCount`, `requireWsMember` | Neither joins `workspaces.archived_at`. The reminder pass filters it correctly; the feed does not. |
 | The bell poll has no ordering or cancellation guard | `NotificationBell.tsx` | A 30s `setInterval` with a bare `fetch` and only a `mounted` flag. A slow response from poll *n* can land after *n+1*; switching workspace does not cancel the in-flight request for the old slug. |
-| Pass-1 cron pushes leave no feed row | `api/push/cron` | Milestones, the auto-checkout warning and auto-checkout itself are push-only. A user with push disabled is auto-checked-out with zero in-app evidence. |
+| Pass-1 cron pushes leave no feed row | `api/push/cron` | The 5h / 10h nudges and the auto-checkout confirmation are push-only. **Re-decided in round 5 and deliberately kept:** a nudge to go home is worthless an hour later, and putting it in the feed fills the bell with things nobody revisits. Accepted cost, now larger than before — muting `presence` (or having push denied) means being auto-checked-out with zero in-app evidence. Revisit if anyone reports being surprised by a closed session. |
 | Announcement fan-out is unchunked | `announcements` POST | One `Promise.allSettled` over every active member. Fine at 34; wants chunking past a few hundred. |
-| `en.notifications.stale` is dead copy | `src/locales/en.ts` | Seven milestone strings that `api/push/cron` never imports - it hardcodes its own. |
 | `getPushSubscriptionsForUser` returning `[]` is a silent no-op | `src/lib/push.ts` | `Promise.allSettled([])` resolves; there is no signal that a notification reached nobody. |
+
+### Presence / check-in audit — deferred (round 5)
+
+| Gap | Where | Why deferred |
+|---|---|---|
+| **The check-in state resets on the UTC day, not the workspace's** | `getOpenEventToday()` (`queries/events.ts:173`), `src/app/me/page.tsx:52` | Both use `date('now')` / `toISOString()`, which are **UTC**, so the button flips from *Check out* back to *Check in* at 00:00 UTC — **05:30 IST**, not local midnight. This is the mechanism that produced the 2,060-row open backlog: the row was never closed, it just stopped matching. The reminder pass does this correctly with `todayInTz(ws.display_timezone)`. Deferred because the fix is genuinely ambiguous: `presence_events` carries no `workspace_id` by design, so a member of two workspaces in two timezones has no single answer to "whose midnight". |
+| `/api/checkin/extend` reads the *unbounded* `getOpenEvent()` | `api/checkin/extend/route.ts:9` | Every other check-in route uses the date-bounded `getOpenEventToday()`. Before the drain this meant extend could act on a months-old orphan. Low impact once the backlog is closed and the cron is live, but the inconsistency is real. |
+| `getActiveMemberIds` does not exclude deactivated users or the author | `queries/workspaces.ts:249` | Weaker than `getMembersWhoCan`, which joins `users` and filters `deleted_at` / `deactivated_at`. Only the announcement fan-out uses it, so a poster is notified of their own announcement and a deactivated member still gets a row. |
+| `MILESTONES_H` is declared twice | `api/push/cron/route.ts`, `scripts/drain-open-events.js` | Bound only by a comment. The drain pre-claims every key so a drained row can never push; if the two drift, that guarantee quietly weakens. |
 
 ### P3 — dead code
 

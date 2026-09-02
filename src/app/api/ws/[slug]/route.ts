@@ -3,7 +3,13 @@ import { requireWsAccess } from '@/lib/ws-access'
 import { updateWorkspace } from '@/lib/db/queries/workspaces'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
+import {
+  isNotificationCategory,
+  parseCategoriesOff,
+  serialiseCategoriesOff,
+} from '@/lib/notifications/categories'
 import { wsReminders } from '@/locales/en/ws-reminders'
+import { wsAdmin } from '@/locales/en/ws-settings'
 
 /**
  * Strict 24-hour 'HH:MM'. The value is wall-clock in the workspace's own
@@ -13,8 +19,12 @@ import { wsReminders } from '@/locales/en/ws-reminders'
  */
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/
 
-/** Sentinel for "the caller sent something that is not a valid time". */
-const INVALID = Symbol('invalid-reminder-time')
+/**
+ * Sentinel for "the caller sent something unusable". A symbol rather than null
+ * or undefined because both of those are legitimate answers here: undefined
+ * means "key absent, leave the column as it is" and null means "clear it".
+ */
+const INVALID = Symbol('invalid-field')
 
 /**
  * Normalise one reminder field. Returns `undefined` when the key is absent,
@@ -28,6 +38,25 @@ function readReminderTime(value: unknown): string | null | undefined | typeof IN
   const trimmed = value.trim()
   if (trimmed === '') return null
   return HHMM.test(trimmed) ? trimmed : INVALID
+}
+
+/**
+ * Normalise the disabled-category list into the column's JSON string. Same
+ * absent/present idiom as `readReminderTime`: `undefined` means the key was not
+ * sent and the stored list must be left alone.
+ *
+ * `null` is deliberately INVALID rather than "clear it". The switchboard always
+ * sends the whole array (an empty one means "everything on"), so a null here is
+ * a client bug, and guessing at it would be a silent mass re-enable.
+ *
+ * `serialiseCategoriesOff` drops anything not `workspaceSwitchable`, so even a
+ * caller past the validation below cannot store "announcements are off".
+ */
+function readCategoriesOff(value: unknown): string | undefined | typeof INVALID {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) return INVALID
+  if (!value.every(isNotificationCategory)) return INVALID
+  return serialiseCategoriesOff(value)
 }
 
 interface Props { params: Promise<{ slug: string }> }
@@ -51,6 +80,10 @@ export async function GET(request: NextRequest, { params }: Props) {
     leave_cutover_date: ctx.workspace.leave_cutover_date,
     checkin_reminder_at: ctx.workspace.checkin_reminder_at,
     checkout_reminder_at: ctx.workspace.checkout_reminder_at,
+    // Parsed rather than passed through raw: the column is JSON TEXT and a
+    // malformed one must reach the switchboard as "nothing off", not as a
+    // string the client then has to guess at.
+    notification_categories_off: [...parseCategoriesOff(ctx.workspace.notification_categories_off)],
     // Archive / restore are ownership-level, so only the owner should see the
     // control. The routes enforce this independently - this flag only stops us
     // showing a button we would immediately 403 on.
@@ -72,6 +105,7 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     leaveCutoverDate?: string | null
     checkinReminderAt?: string | null
     checkoutReminderAt?: string | null
+    notificationCategoriesOff?: unknown
   }
   try { body = await request.json() } catch {
     return NextResponse.json({ error: 'Invalid body', code: 'INVALID_BODY' }, { status: 400 })
@@ -86,6 +120,7 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     leave_cutover_date?: string | null
     checkin_reminder_at?: string | null
     checkout_reminder_at?: string | null
+    notification_categories_off?: string
   } = {}
   if (body.name?.trim()) updates.name = body.name.trim()
   if (body.displayTimezone?.trim()) updates.display_timezone = body.displayTimezone.trim()
@@ -134,6 +169,16 @@ export async function PATCH(request: NextRequest, { params }: Props) {
     )
   }
   if (checkoutReminder !== undefined) updates.checkout_reminder_at = checkoutReminder
+
+  // The notification switchboard. Absent key = leave the stored list alone.
+  const categoriesOff = readCategoriesOff(body.notificationCategoriesOff)
+  if (categoriesOff === INVALID) {
+    return NextResponse.json(
+      { error: wsAdmin.settings.notifInvalidCategories, code: 'VALIDATION_ERROR' },
+      { status: 400 },
+    )
+  }
+  if (categoriesOff !== undefined) updates.notification_categories_off = categoriesOff
 
   if (Object.keys(updates).length > 0) {
     await updateWorkspace(ctx.workspace.id, updates)

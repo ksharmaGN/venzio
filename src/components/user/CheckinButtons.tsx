@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { PresenceEvent } from "@/lib/db/queries/events";
 import type { MatchedBy } from "@/lib/signals";
 import { fmtTime, fmtHours, durationLabel } from "@/lib/client/format-time";
@@ -12,7 +12,9 @@ import {
 import { collectDeviceInfo } from "@/lib/client/device-info";
 import { useToast } from "@/components/shared/Toast";
 import { Button, Chip, Divider, Modal } from "@/components/ui";
+import ExtendSessionModal from "./ExtendSessionModal";
 import { me } from "@/locales/en/me";
+import { extendSession } from "@/locales/en/notifications";
 
 /** Play a short chime via Web Audio API — works regardless of OS notification mode. */
 function playChime(): void {
@@ -68,6 +70,7 @@ export default function CheckinButtons({
   todaySessions = [],
 }: CheckinButtonsProps) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const toast = useToast();
   const [state, setState] = useState<"checked_in" | "checked_out">(
     initialActiveEvent ? "checked_in" : "checked_out",
@@ -85,6 +88,17 @@ export default function CheckinButtons({
     title: string;
     message: string;
   } | null>(null);
+
+  // The extension picker is opened two ways: by the control below, and by the
+  // 10h presence push, which links to `/me?extend=1`.
+  //
+  // `null` means "nobody has decided yet, so the URL decides" - which is what
+  // keeps this a derived value rather than a `useState` seeded from an effect.
+  // Syncing the URL into state in a `useEffect` is the pattern the Modal
+  // primitive went out of its way to avoid, and it would also reopen the dialog
+  // every time this component re-rendered with the param still on the URL.
+  const [extendChoice, setExtendChoice] = useState<boolean | null>(null);
+  const extendOpen = extendChoice ?? searchParams.get("extend") === "1";
 
   function formatRemaining(ms: number): string {
     const totalMins = Math.max(0, Math.ceil(ms / 60_000));
@@ -466,6 +480,20 @@ export default function CheckinButtons({
           </p>
         )}
 
+        {/* The in-app half of the 10h push's offer. Present whenever a session is
+            open, not only near the deadline: somebody who knows at 9am that
+            today runs long should not have to wait to be nagged. */}
+        <div className="mt-10">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setExtendChoice(true)}
+            disabled={loading}
+          >
+            {extendSession.trigger}
+          </Button>
+        </div>
+
         <Divider />
 
         <div
@@ -630,6 +658,20 @@ export default function CheckinButtons({
           {locationAlert?.message}
         </p>
       </Modal>
+
+      {/* Gated on there being an open session as well as on the URL: a `?extend=1`
+          link opened after checking out would otherwise present a picker whose
+          only possible answer is `409 NOT_CHECKED_IN`. */}
+      <ExtendSessionModal
+        open={extendOpen && isCheckedIn}
+        onClose={() => setExtendChoice(false)}
+        onExtended={(scheduledCheckoutAt) => {
+          setActiveEvent((prev) =>
+            prev ? { ...prev, scheduled_checkout_at: scheduledCheckoutAt } : prev,
+          );
+          router.refresh();
+        }}
+      />
     </>
   );
 }

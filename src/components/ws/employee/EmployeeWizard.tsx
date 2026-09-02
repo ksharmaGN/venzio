@@ -244,6 +244,18 @@ interface Props {
   error: string | null
   onCancel: () => void
   onSubmit: (form: EmployeeFormData) => void
+  /**
+   * Persist the step being left, so a refresh on step 4 does not cost the four
+   * steps behind it. Resolves `true` when the step is saved and the wizard may
+   * advance, `false` when it is not - the host has set `error` / `serverErrors`
+   * by then, and the user stays where they are rather than walking forward
+   * believing their work is safe.
+   *
+   * Absent means no autosave, which is how `edit` mode behaves: an existing
+   * record must not be mutated field-by-field just because someone opened the
+   * form and clicked through it.
+   */
+  onStepSave?: (form: EmployeeFormData, stepIndex: number) => Promise<boolean>
 }
 
 /**
@@ -256,11 +268,14 @@ interface Props {
  * does not mean clicking Continue four times to reach the bank details.
  */
 export default function EmployeeWizard({
-  mode, subject, initial, saving, serverErrors, error, onCancel, onSubmit,
+  mode, subject, initial, saving, serverErrors, error, onCancel, onSubmit, onStepSave,
 }: Props) {
   const [step, setStep] = useState(0)
   const [form, setForm] = useState<EmployeeFormData>(initial)
   const [errors, setErrors] = useState<FieldErrors>({})
+  // Separate from `saving`, which the host owns for the final submit. Both dim
+  // the same button, but a step save must not read as "the record was created".
+  const [stepSaving, setStepSaving] = useState(false)
 
   const current = EMPLOYEE_STEPS[step]
   const isReview = step === EMPLOYEE_STEPS.length - 1
@@ -271,10 +286,22 @@ export default function EmployeeWizard({
     if (errors[key]) setErrors(e => ({ ...e, [key]: undefined }))
   }
 
-  function next() {
+  async function next() {
     const found = validateStep(step, form)
     if (Object.keys(found).length > 0) { setErrors(found); return }
     setErrors({})
+
+    // Persist before advancing, never after. A step that advanced first and
+    // saved second would put the user on the next screen with no idea the last
+    // one was lost - which is the failure this whole mechanism exists to end.
+    if (onStepSave) {
+      setStepSaving(true)
+      try {
+        if (!(await onStepSave(form, step))) return
+      } finally {
+        setStepSaving(false)
+      }
+    }
     setStep(s => s + 1)
   }
 
@@ -288,10 +315,25 @@ export default function EmployeeWizard({
    * step, so the guarantee lives at the submit boundary rather than on every
    * forward edge.
    */
-  function jumpTo(target: number) {
+  async function jumpTo(target: number) {
     if (target === step) return
     const found = validateStep(step, form)
     setErrors(prev => ({ ...prev, ...found }))
+
+    // Autosave on the way out too, otherwise clicking a dot instead of Continue
+    // is a silent way to lose a step. Only when the step being left is CLEAN -
+    // the server would refuse invalid values anyway, and blocking the jump would
+    // trap someone on a step they were trying to leave in order to go and fix
+    // something else. A failed save does block it, though: the host has an error
+    // on screen by then and jumping would hide it.
+    if (onStepSave && Object.keys(found).length === 0) {
+      setStepSaving(true)
+      try {
+        if (!(await onStepSave(form, step))) return
+      } finally {
+        setStepSaving(false)
+      }
+    }
     setStep(target)
   }
 
@@ -335,7 +377,7 @@ export default function EmployeeWizard({
             <WizardSteps
               steps={STEP_LABELS}
               currentIndex={step}
-              onStepClick={jumpTo}
+              onStepClick={i => void jumpTo(i)}
               invalidIndexes={invalidSteps}
             />
           </div>
@@ -355,15 +397,21 @@ export default function EmployeeWizard({
         </div>
 
         <div className="row-between" style={{ padding: '16px 22px', borderTop: '1px solid var(--border)' }}>
-          <Button variant="secondary" onClick={() => (step === 0 ? onCancel() : setStep(s => s - 1))}>
+          <Button
+            variant="secondary"
+            disabled={stepSaving || saving}
+            onClick={() => (step === 0 ? onCancel() : setStep(s => s - 1))}
+          >
             {step === 0 ? wsEmployees.wizardCancel : wsEmployees.backToStep}
           </Button>
-          <Button onClick={isReview ? submit : next} loading={saving}>
+          <Button onClick={isReview ? submit : () => void next()} loading={saving || stepSaving}>
             {isReview
               ? saving
                 ? wsEmployees.wizardSaving
                 : mode === 'edit' ? wsEmployees.wizardSaveEdit : wsEmployees.wizardSaveAdd
-              : wsEmployees.wizardContinue}
+              : stepSaving
+                ? wsEmployees.wizardStepSaving
+                : wsEmployees.wizardContinue}
           </Button>
         </div>
       </Card>

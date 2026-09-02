@@ -33,6 +33,13 @@ export interface WorkspaceReminderConfig {
   /** 'HH:MM' in display_timezone, or null when the reminder is off. */
   checkin_reminder_at: string | null
   checkout_reminder_at: string | null
+  /**
+   * JSON array of the notification categories this workspace has switched off.
+   * Selected here so the pass can drop a whole workspace before it queries
+   * holidays or members - the alternative is re-reading the workspace row per
+   * recipient inside `notify()`.
+   */
+  notification_categories_off: string
 }
 
 export interface ReminderMember {
@@ -48,7 +55,8 @@ export interface ReminderMember {
 export async function getWorkspacesWithReminders(): Promise<WorkspaceReminderConfig[]> {
   return db.query<WorkspaceReminderConfig>(
     `SELECT id, slug, name, display_timezone, working_days,
-            checkin_reminder_at, checkout_reminder_at
+            checkin_reminder_at, checkout_reminder_at,
+            notification_categories_off
      FROM workspaces
      WHERE archived_at IS NULL
        AND (checkin_reminder_at IS NOT NULL OR checkout_reminder_at IS NOT NULL)

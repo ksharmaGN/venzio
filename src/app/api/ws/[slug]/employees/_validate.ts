@@ -12,7 +12,7 @@ import {
 
 const DATE_RE        = /^\d{4}-\d{2}-\d{2}$/
 const EMAIL_RE       = /^[^@]+@[^@]+\.[^@]+$/
-const EMPLOYEE_ID_RE = /^[A-Z0-9]+$/i          // alphanumeric, no spaces
+const EMPLOYEE_ID_RE = /^[A-Z0-9][A-Z0-9 _-]*$/i // alphanumeric + - _ space; must start alphanumeric
 const NAME_RE        = /^[A-Za-z\s]+$/          // alphabets + space only
 const PHONE_RE       = /^[6-9]\d{9}$/           // 10 digits, starts 6–9
 const PAN_RE         = /^[A-Z]{5}[0-9]{4}[A-Z]$/ // e.g. ABCDE1234F
@@ -61,7 +61,9 @@ export function validateEmployeeFields(
   const fields: FieldErrors = {}
   const today = new Date().toISOString().slice(0, 10)
 
-  // ── employee_id: alphanumeric, no spaces ──────────────────────────────────
+  // ── employee_id: alphanumeric plus - _ and internal spaces ────────────────
+  // Kept in step with EMPLOYEE_ID_RE in `components/ws/employee/employee-form.ts`.
+  // The two drifting is how a form accepts a value the API then refuses.
   if (body.employee_id != null) {
     const trimmed = String(body.employee_id).trim()
     if (!trimmed) {
@@ -121,10 +123,12 @@ export function validateEmployeeFields(
   // admin left blank, and that means "no joining date", not a bad format.
   if (body.date_of_joining !== undefined && body.date_of_joining !== null) {
     const doj = body.date_of_joining
+    // Format only. A FUTURE joining date is legitimate: an employee record is
+    // routinely created before the person starts - that is what `/people/new`
+    // is for - so refusing it blocked pre-boarding entirely. `date_of_birth`
+    // above still refuses the future, so `today` is still needed here.
     if (typeof doj !== 'string' || !DATE_RE.test(doj)) {
       fields.date_of_joining = FieldErrorCode.INVALID_FORMAT
-    } else if (doj > today) {
-      fields.date_of_joining = FieldErrorCode.MUST_BE_BEFORE_TODAY
     }
   }
 

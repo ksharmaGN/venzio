@@ -13,9 +13,7 @@ import {
 } from '@/lib/db/queries/regularizations'
 import { getUserById, getRateLimitCount, recordRateLimitHit } from '@/lib/db/queries/users'
 import { getActiveWorkspaceAdmins } from '@/lib/db/queries/workspaces'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
-import { notificationHref } from '@/lib/client/notification-href'
+import { notify } from '@/lib/notify'
 import { queryWorkspaceEvents } from '@/lib/signals'
 import { en } from '@/locales/en'
 
@@ -172,17 +170,22 @@ export async function POST(req: NextRequest, { params }: Props) {
     const employeeName = employee?.full_name ?? employee?.email ?? 'Someone'
     const title = en.notifications.regularizationSubmittedTitle
     const notifBody = en.notifications.regularizationSubmittedBody(employeeName, targetDate)
-    const url = notificationHref(
-      { type: 'regularization_submitted', ref_type: 'regularization_request', ref_id: regularizationRequest.id, workspace_slug: slug },
-      'ws',
-    )
-    await Promise.allSettled(
-      admins
-        .flatMap((a) => [
-          createNotification({ userId: a.user_id, workspaceId: workspace.id, type: 'regularization_submitted', title, body: notifBody, refId: regularizationRequest.id, refType: 'regularization_request' }),
-          sendPushToUser(a.user_id, { title, body: notifBody, tag: `regularization-submitted-${regularizationRequest.id}`, data: { url } }),
-        ]),
-    )
+    // Every approver in one call: the workspace switchboard and the mute set are
+    // then read once for the fan-out rather than once per admin.
+    await notify({
+      userIds: admins.map((a) => a.user_id),
+      workspaceId: workspace.id,
+      workspaceSlug: slug,
+      type: 'regularization_submitted',
+      title,
+      body: notifBody,
+      refId: regularizationRequest.id,
+      refType: 'regularization_request',
+      // Approvers, not the requester - the push must open the approvals queue
+      // rather than `/me/timeline`.
+      surface: 'ws',
+      push: { tag: `regularization-submitted-${regularizationRequest.id}` },
+    })
   } catch { /* notification failure must not block the response */ }
 
   return NextResponse.json({ regularizationRequest }, { status: 201 })

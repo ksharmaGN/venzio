@@ -1,6 +1,99 @@
 # SESSION — Venzio design revamp
 
-Branch `feat/revamp`, ahead of `main`. Round 3 is committed; round 4 is in flight.
+Branch `feat/revamp`, ahead of `main`. Rounds 3 and 4 are committed; round 5 is in flight.
+
+## Round 5 — in flight
+
+Plan: `~/.claude/plans/purring-sauteeing-peach.md` (approved). Three parallel
+teams; the shared contract was written first and is committed to the working
+tree already:
+
+| File | State |
+|---|---|
+| `src/lib/notifications/categories.ts` | done — the five-category catalogue |
+| `src/lib/db/queries/notification-prefs.ts` | done — a row means MUTED, absence = on |
+| `src/lib/notify.ts` | done — `notify()` + `notifyPresence()` |
+| `scripts/migrate.js` | done — `workspaces.notification_categories_off`, `notification_prefs` + 2 partial unique indexes |
+| `src/lib/db/queries/workspaces.ts` | done — column on the interface and in `updateWorkspace`'s `Pick` |
+
+Migration has been applied to the local DB. Backup at `.temp/pre-round5.db`
+(`VACUUM INTO`, not `cp`).
+
+Teams in flight: **A2** the seven `createNotification`+`sendPushToUser` call
+sites → `notify()`, plus the reminder pass's bulk mute gate · **B** the presence
+ladder (5h/10h/12h, the ≤60-min warning deleted, `extend` gains an `hours`
+param, the `/me` picker modal) · **C** the two settings surfaces.
+
+**Round 5 gates: `tsc` clean · `npm run build` clean · `eslint` at baseline (1
+pre-existing).** Drain applied locally: 2,060 closed, 0 open. All four preference
+gates verified against a running server (T1 baseline 34 sent; T2 mute → push
+suppressed, **feed row still written**, slot burned; T3 workspace-off → nothing
+written at all; T4 window gate). Local DB restored to the post-drain state.
+
+> **Incident, during that verification.** Testing the reminder pass fired real
+> outbound push requests at 33 users' real endpoints. The wall-clock pass picks
+> its OWN recipients, so choosing subscription-free users for the ladder test did
+> not carry over. Nothing was delivered — a throwaway VAPID keypair does not match
+> what the subscriptions were created with, so push services answer 403 — but 16
+> dead endpoints returned 410 and were pruned. Restored from backup.
+> **The safe procedure is `DELETE FROM push_subscriptions` before any local
+> reminder-pass test**, so `Promise.allSettled([])` makes outbound traffic
+> impossible by construction rather than by judgment.
+
+### The employee wizard — DONE (HR-reported)
+
+**Two blockers on step 1, both were duplicated client and server, both fixed in
+both places:**
+
+| Root cause | Fix |
+|---|---|
+| `EMPLOYEE_ID_RE = /^[A-Z0-9]+$/i` rejected the hyphen in the field's own placeholder, `e.g. EMP-001` | `/^[A-Z0-9][A-Z0-9 _-]*$/i` in `employee-form.ts` **and** `_validate.ts` — the two must stay in step |
+| `date_of_joining` could not be in the future, but pre-boarding a future hire is this screen's whole purpose | format check only; `date_of_birth` still refuses the future, so `today` is still used in both files |
+
+Either made `next()` return early, which reads as "the Next button does
+nothing". The error did render — one red line among twelve fields.
+
+**Per-step autosave** (`/people/new` only): POST creates the record when step 1
+is left, each later step PATCHes it, the id rides in `?draft=` and the page
+resolves it **server-side** so a refresh paints the filled form with no flash.
+
+> **The trap, and it is now the load-bearing comment in `buildEmployeeBody`:**
+> `'update'` mode turns every blank into an explicit `null`. A per-step PATCH
+> built from the whole form while the admin stands on step 2 sends
+> `pan: null, bank_account: null, emergency_contact_name: null…` and wipes every
+> step they have not reached. **The `onlyKeys` argument is what makes save-as-you-go
+> safe.** Verified by running the real function: the step-1 body carries 15 keys
+> and none of pan / aadhaar / bank_account / emergency_contact_name / gender /
+> current_address; the unscoped body sets all of them to `null`.
+
+Deliberately scoped OUT of autosave: `edit` mode (Cancel must still mean cancel)
+and the member-linked create (its insert honours only `MEMBER_POST_HONOURS` and
+drops the rest, so a step-1 create there would lose half of step 1).
+
+Cancel after step 1 offers **Keep the record** or **Delete the record** — the row
+exists by then, and a Cancel that silently leaves a person in the directory is
+the version people complain about.
+
+**Accepted consequence:** the directory shows the person from step 1 onward, and
+an abandoned wizard leaves a row with `employee_status = 'active'`. If that
+becomes noise the fix is a `completed_at` column and a filter — a later round.
+
+**Still unverified:** no page has been opened. There is **no test framework and
+no TS runner in this repo at all**, so the two validators and the body builder
+were exercised by running the real module under `node --experimental-strip-types`
+with only its locale/enum imports stubbed. That is evidence, not a test suite.
+
+### THE ROUND-5 FINDING: nothing was ever auto-checked out
+
+2,060 of 2,878 presence events (**72% of all attendance history**) are open, one
+per user per day, 43 people, 2026-04-21 → 2026-08-31. It was never a push
+problem. `getOpenEventToday()` is bounded by `date(checkin_at) = date('now')`,
+so when the UTC date ticks the row stops matching, the button flips back to
+**Check in**, and yesterday's row is orphaned open forever. The data is the
+proof: 2,060 (user, day) groups, **zero** with more than one open event.
+
+Only 806 events were ever closed by a human. **People do not check out** —
+auto-checkout was always the main closer and it has been dead the whole time.
 
 ## Current position
 
@@ -73,8 +166,22 @@ only people who already have an event that date; announcements get their own
 | Decision | Blocks |
 |---|---|
 | **How to handle AI-written code** — `~/.ai/CORE.md` "THE USER TYPES EVERY LINE" says no project file is AI-written. This branch violates that wholesale (see Process failures). Keep / review line-by-line / discard and rebuild? | Whether this branch has any future |
-| Per-member reminder opt-out | Reminders are live-able but a member who mutes push also loses approval notifications |
+| ~~Per-member reminder opt-out~~ | **Resolved in round 5** — per-category, push-only mutes; the feed row is always written |
 | `login/page.tsx` slug-check race (real bug, see gotchas) | Its own change; auth flow was out of scope |
+
+### Round 5 decisions
+
+| Decision | Choice |
+|---|---|
+| The 2,060 open events | **Drain** at `scheduled_checkout_at`, `checkout_reason='backlog_drain'` |
+| `CRON_MAX_EVENT_AGE_H` | **Unchanged at 48.** Floor is 24h — the extend hard cap — so the 12h the user first wanted would re-orphan every session |
+| Ladder | 5h, 10h, 12h. The ≤60-min warning is deleted; 12h is informational |
+| Extension | Notification opens `/me`; a modal picks 2/4/6/8/12h. `extend` keeps a default of 4 so `sw.js`'s existing action still works |
+| Presence pushes in the feed | **No** — they stay push-only. Accepted cost: muting `presence` means total silence |
+| Member control | Per category, **push channel only**. `createNotification` is unconditional |
+| Workspace control | Category switchboard; `announcements` and `approvals_outcome` locked both ways |
+| Preference scope | `(workspace, member)`, deviations only; `presence` is account-level because `presence_events` has no `workspace_id` |
+| New `Resource`? | **No** — the switchboard rides `Resource.Settings`, avoiding a `system-roles.json` rewrite (invariant 12) |
 
 ## Gotchas already paid for
 
@@ -132,7 +239,14 @@ only people who already have an event that date; announcements get their own
 | A `cp` of `venzio.db` is not a backup | Use `sqlite3 venzio.db "VACUUM INTO '.tmp/x.db'"` - the `-wal` file holds pages the main file does not. |
 | `select.input` (0,1,1) beats any bare utility class (0,1,0) | So `.filter-select { width: 180px }` silently lost to `.input { width: 100% }` and broke the People filter bar into three rows. Scope it: `.filter-bar > .filter-select` is 0,2,0. Same trap for every future utility on a `Select` or `Textarea`. |
 | `admin_overrides` had NO indexes and no unique constraint | `getOverrideEventIds()` full-scanned it on every workspace API request. Now has `idx_admin_overrides_ws` and a UNIQUE `(workspace_id, presence_event_id)` - the latter is what makes the bulk office-day insert idempotent. |
+| **A validator that contradicts its own placeholder reads as a dead button** | `employee_id`'s placeholder was `e.g. EMP-001`; its regex was `/^[A-Z0-9]+$/i`. HR typed the example, `next()` returned early, and the report was "the Next button is not working". The error message rendered correctly the whole time. Check placeholders against regexes whenever a form gate is reported as unresponsive. |
+| `buildEmployeeBody(form,'update')` nulls every blank | By design, so PATCH can clear a field. It makes any partial/per-step PATCH built from the whole form a data-wipe. Always pass `onlyKeys`. |
+| Node 22 `--experimental-strip-types` cannot run this codebase's files directly | `@/` path aliases do not resolve, and `export enum` is rejected in strip-only mode. To exercise a module standalone: sed the aliases to relative stubs and rewrite enums as `const … as const` (values identical). There is no test framework and no TS runner installed. |
 | Approval notifications went by ROLE NAME, not capability | `getActiveWorkspaceAdmins` filtered `role IN ('owner','admin')` while the routes gate on `approvals:write`. A custom role could action a request it was never told about. Now `getMembersWhoCan(ws, Resource, Action)`. |
+| **The check-in button resets on the UTC date, not on auto-checkout** | `getOpenEventToday()` is `date(checkin_at) = date('now')`, and `date('now')` in SQLite is **UTC**. So the state flips at 00:00 UTC = **05:30 IST**, not at midnight local and not because anything closed the row. This is the entire mechanism behind the 2,060-row backlog, and it looks exactly like working auto-checkout from the outside. The reminder pass gets this right (`todayInTz(ws.display_timezone)`); the check-in path does not. Registered in `known-gaps.md` — the fix is genuinely ambiguous because `presence_events` has no `workspace_id`, so "whose midnight" has no answer for a multi-workspace member. |
+| A 12h cron cutoff would rebuild the backlog | Auto-checkout fires **at** `checkin + 12h` and the extend cap is `checkin + 24h`, so any cutoff below 24h excludes rows before they can be closed. 48h = the 24h ceiling plus a day of outage tolerance. The number is not "how long a session may stay open". |
+| SQLite treats NULLs as DISTINCT in a UNIQUE index | So `notification_prefs` needs **two** partial unique indexes, not one — `WHERE workspace_id IS NOT NULL` and `WHERE workspace_id IS NULL`. A single three-column unique index would not constrain the account-level rows at all. Same `NULL = NULL` trap that detached invited people's HR records. |
+| `getActiveMemberIds` is a weaker filter than `getMembersWhoCan` | It does not join `users`, so soft-deleted and deactivated users are included, and it does not exclude the author. Only the announcement fan-out uses it — so a poster gets notified of their own announcement, and a deactivated member still gets a row. |
 
 ## Deferred findings
 
@@ -162,3 +276,13 @@ scratch work live in `./.temp/` (gitignored).
 TYPES EVERY LINE". The user has since granted end-to-end authority per round
 (rounds 3 and 4 explicitly). The standing rule returns by default each round -
 ask rather than assume.
+
+Round 5 was granted the same way, in the user's own words: *"Both parallelly
+using agent teams (subagents for independent tasks)"* — three agents, one shared
+contract written first. **That grant covered the notification work only.** The
+employee-wizard fixes that followed were granted separately, after being asked
+("I write all of it this round"), which is the protocol working as intended.
+
+**Both grants are now spent.** The standing rule — the user types every line, the
+AI supplies the reference layer up front — is back in force for the next piece of
+work unless it is granted again. Ask.

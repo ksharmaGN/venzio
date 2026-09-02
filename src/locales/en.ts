@@ -612,37 +612,9 @@ export const en = {
   },
 
   notifications: {
-    // Stale check-in reminders - fired at 4h, 8h, 12h, 16h, 18h, 20h, 22h after check-in
-    stale: {
-      4: {
-        title: `${brand} - half day?`,
-        body: "You've been in for 4 hours. If you're doing a half day, now's a good time to check out and head home!",
-      },
-      8: {
-        title: `${brand} - time to wrap up?`,
-        body: "It's been 8 hours. Work-life balance matters - feel free to head out!",
-      },
-      12: {
-        title: `${brand} - still going?`,
-        body: "12 hours in! Dedication noted, but rest is important too. Time to head home.",
-      },
-      16: {
-        title: `${brand} - seriously though`,
-        body: "16 hours checked in. Even the most committed need sleep. Please check out!",
-      },
-      18: {
-        title: `${brand} - we are worried`,
-        body: "18 hours! Your productivity has left the building. Be kind to yourself - go home.",
-      },
-      20: {
-        title: `${brand} - this is getting serious`,
-        body: "20 hours and counting. We genuinely recommend a bed over your desk right now.",
-      },
-      22: {
-        title: `${brand} - final warning`,
-        body: "22 hours! Auto-checkout happens in 2 hours. This is your last chance to do it yourself.",
-      },
-    } as Record<number, { title: string; body: string }>,
+    // The seven-rung `stale` ladder that used to sit here is gone: nothing ever
+    // imported it, and the ladder it described no longer exists. The live copy
+    // is `presenceLadder` in src/locales/en/notifications.ts.
     staleFallback: {
       title: `${brand} - still checked in?`,
       body: (hours: number) =>

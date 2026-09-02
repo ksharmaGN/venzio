@@ -5,11 +5,9 @@ import { useRouter } from 'next/navigation'
 import { Button, Card, Chip, Field, Input, Select, Skeleton, Toggle } from '@/components/ui'
 import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-settings'
-import { wsReminders } from '@/locales/en/ws-reminders'
 
 const t = en.wsSettings
 const s = wsAdmin.settings
-const r = wsReminders.settings
 
 /**
  * The timezone menu. Data, not copy - IANA zone ids are identifiers and are
@@ -66,56 +64,6 @@ function SwitchRow({ title, hint, checked, onChange, disabled }: SwitchRowProps)
   )
 }
 
-interface ReminderFieldProps {
-  label: string
-  hint: string
-  id: string
-  value: string
-  onChange: (next: string) => void
-  disabled: boolean
-}
-
-/**
- * One reminder time. `<input type="time">` yields '' when cleared, and ''
- * means the reminder is off - so the state below is stated explicitly rather
- * than left to be inferred from an empty box.
- */
-function ReminderField({ label, hint, id, value, onChange, disabled }: ReminderFieldProps) {
-  const on = value !== ''
-  return (
-    <Field label={label} htmlFor={id} hint={hint} style={{ flex: '1 1 200px', minWidth: '200px' }}>
-      <Input
-        id={id}
-        type="time"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-        <Chip tone={on ? 'verified' : 'leave'}>{on ? r.onBadge(value) : r.offBadge}</Chip>
-        {on && !disabled && (
-          <button
-            type="button"
-            aria-label={r.clearAria(label)}
-            onClick={() => onChange('')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              font: 'inherit',
-              fontSize: '12px',
-              color: 'var(--brand)',
-              cursor: 'pointer',
-            }}
-          >
-            {r.clearButton}
-          </button>
-        )}
-      </div>
-    </Field>
-  )
-}
-
 export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boolean }) {
   const router = useRouter()
   const [name, setName] = useState('')
@@ -123,14 +71,11 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
   const [allowRemote, setAllowRemote] = useState(false)
   const [leavesEnabled, setLeavesEnabled] = useState(true)
   const [workingDays, setWorkingDays] = useState<number[]>([1, 2, 3, 4, 5])
-  // '' means the reminder is off - the same value an emptied time input sends.
-  const [checkinReminderAt, setCheckinReminderAt] = useState('')
-  const [checkoutReminderAt, setCheckoutReminderAt] = useState('')
   /**
    * The state above is a set of defaults, not the workspace's configuration -
    * so "still loading" and "failed to load" must be told apart from "loaded".
    * Painting the form on a failed load would let a save PATCH those defaults
-   * over the real timezone, working days and reminders.
+   * over the real timezone and working days.
    */
   const [load, setLoad] = useState<'loading' | 'ready' | 'error'>('loading')
   const [reloadKey, setReloadKey] = useState(0)
@@ -154,8 +99,6 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
         setAllowRemote(!!data.allow_remote)
         setLeavesEnabled(data.leaves_enabled !== false)
         if (Array.isArray(data.working_days)) setWorkingDays(data.working_days)
-        setCheckinReminderAt(data.checkin_reminder_at ?? '')
-        setCheckoutReminderAt(data.checkout_reminder_at ?? '')
         setLoad('ready')
       })
       .catch(() => { if (!cancelled) setLoad('error') })
@@ -182,8 +125,6 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
           allowRemote,
           leavesEnabled,
           workingDays,
-          checkinReminderAt: checkinReminderAt || null,
-          checkoutReminderAt: checkoutReminderAt || null,
         }),
       })
       setStatus(res.ok ? { text: t.saveSuccess, ok: true } : { text: t.saveError, ok: false })
@@ -286,28 +227,6 @@ export default function OrgTab({ slug, canWrite }: { slug: string; canWrite: boo
           )
         })}
       </div>
-
-      <p className="t-eyebrow" style={{ margin: '4px 0 6px' }}>{r.sectionTitle}</p>
-      <p className="t-muted" style={{ margin: '0 0 10px' }}>{r.sectionHint}</p>
-      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', marginBottom: '8px' }}>
-        <ReminderField
-          label={r.checkinLabel}
-          hint={r.checkinHint}
-          id={r.fieldIds.checkin}
-          value={checkinReminderAt}
-          onChange={setCheckinReminderAt}
-          disabled={!canWrite}
-        />
-        <ReminderField
-          label={r.checkoutLabel}
-          hint={r.checkoutHint}
-          id={r.fieldIds.checkout}
-          value={checkoutReminderAt}
-          onChange={setCheckoutReminderAt}
-          disabled={!canWrite}
-        />
-      </div>
-      <p className="t-muted" style={{ margin: '0 0 16px' }}>{r.approximateNote}</p>
 
       <SwitchRow
         title={t.allowRemoteLabel}

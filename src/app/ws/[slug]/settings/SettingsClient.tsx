@@ -8,6 +8,7 @@ import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-settings'
 import { wsAnnouncements } from '@/locales/en/ws-announcements'
 import OrgTab from './OrgTab'
+import NotificationsTab from './NotificationsTab'
 import LeaveTypesSection from './LeaveTypesSection'
 import OpeningBalancesSection from './OpeningBalancesSection'
 import SignalsTab from './SignalsTab'
@@ -17,7 +18,15 @@ import AnnouncementsSection from './AnnouncementsSection'
 
 const s = wsAdmin.settings
 
-type TabKey = 'org' | 'leave' | 'balances' | 'announcements' | 'signals' | 'domains' | 'billing'
+type TabKey =
+  | 'org'
+  | 'leave'
+  | 'balances'
+  | 'notifications'
+  | 'announcements'
+  | 'signals'
+  | 'domains'
+  | 'billing'
 
 interface Props {
   slug: string
@@ -53,6 +62,9 @@ export default function SettingsClient(props: Props) {
           { key: 'balances', label: s.tabBalances },
         ]
       : []),
+    // `settings:read` opened this page, so the tab is always present - it is
+    // gated on the same resource as Org details, not on one of its own.
+    { key: 'notifications', label: s.tabNotifications },
     ...(props.canReadAnnouncements
       ? [{ key: 'announcements', label: wsAnnouncements.title }]
       : []),
@@ -85,6 +97,10 @@ export default function SettingsClient(props: Props) {
 
       {active === 'balances' && (
         <OpeningBalancesSection slug={props.slug} canWrite={props.canWriteLeaves} />
+      )}
+
+      {active === 'notifications' && (
+        <NotificationsTab slug={props.slug} canWrite={props.canWriteSettings} />
       )}
 
       {active === 'announcements' && (

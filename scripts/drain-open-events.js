@@ -52,8 +52,13 @@ try {
 
 const APPLY = process.argv.includes('--apply')
 
-// Must stay in step with MILESTONES_H in src/app/api/push/cron/route.ts.
-const MILESTONES_H = [4, 8, 12, 16, 18, 20, 22]
+// Must stay in step with LADDER in src/app/api/push/cron/route.ts - and with
+// every ladder that came before it. The point of this list is that a drained row
+// can never produce a push, so it is a UNION, not a copy: the old seven-rung
+// milestones (4/8/12/16/18/20/22h) and the auto-checkout warning are dead code in
+// the route now, but a row this script wrote is immutable, and a future reader
+// that resurrects an old key must still find it claimed.
+const MILESTONES_H = [4, 5, 8, 10, 12, 16, 18, 20, 22]
 
 const SELECT_OPEN = `
   SELECT id, user_id, checkin_at, scheduled_checkout_at

@@ -9,9 +9,7 @@ import {
 } from '@/lib/db/queries/documents'
 import { documentStore } from '@/lib/storage'
 import { getEmployee } from '@/lib/db/queries/employees'
-import { createNotification } from '@/lib/db/queries/notifications'
-import { sendPushToUser } from '@/lib/push'
-import { notificationHref } from '@/lib/client/notification-href'
+import { notify } from '@/lib/notify'
 import { documentNotifications } from '@/locales/en/notifications'
 
 interface Props { params: Promise<{ slug: string; id: string; docId: string }> }
@@ -148,23 +146,17 @@ async function notifyEmployeeOfReview(
       : document.reject_reason
         ? documentNotifications.rejectedBody(document.name, document.reject_reason)
         : documentNotifications.rejectedBodyNoReason(document.name)
-    const url = notificationHref(
-      { type, ref_type: 'employee_document', ref_id: document.id, workspace_slug: slug },
-      'me',
-    )
-
-    await Promise.allSettled([
-      createNotification({
-        userId,
-        workspaceId,
-        type,
-        title,
-        body,
-        refId: document.id,
-        refType: 'employee_document',
-      }),
-      sendPushToUser(userId, { title, body, tag: `document-${type}-${document.id}`, data: { url } }),
-    ])
+    await notify({
+      userIds: [userId],
+      workspaceId,
+      workspaceSlug: slug,
+      type,
+      title,
+      body,
+      refId: document.id,
+      refType: 'employee_document',
+      push: { tag: `document-${type}-${document.id}` },
+    })
   } catch { /* notification failure must not fail the review */ }
 }
 

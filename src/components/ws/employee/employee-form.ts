@@ -259,7 +259,13 @@ export function maskIfSensitive(key: string, value: string): string {
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const EMAIL_RE = /^[^@]+@[^@]+\.[^@]+$/
-const EMPLOYEE_ID_RE = /^[A-Z0-9]+$/i
+// Separators are allowed because real payroll ids carry them - and because this
+// field's own placeholder is `e.g. EMP-001`, which the previous alphanumeric-only
+// pattern rejected. A UI that demonstrates a value its validator refuses reads as
+// a dead button, which is exactly how it was reported. Must still START
+// alphanumeric, so a leading '-' or space is refused; the '-' sits last in the
+// class so it is a literal, not a range. Keep in step with `_validate.ts`.
+const EMPLOYEE_ID_RE = /^[A-Z0-9][A-Z0-9 _-]*$/i
 const NAME_RE = /^[A-Za-z\s]+$/
 const PHONE_RE = /^[6-9]\d{9}$/
 const PAN_RE = /^[A-Z]{5}[0-9]{4}[A-Z]$/
@@ -341,10 +347,13 @@ export function validateStep(step: number, form: EmployeeFormData): FieldErrors 
       errs.employee_id = ERR_MSG.INVALID_EMPLOYEE_ID
     }
 
+    // Format only - a joining date in the FUTURE is not an error here. This
+    // screen exists to enter someone before they start (the record is created
+    // first, the invitation offered second), so refusing a future date made
+    // pre-boarding a new hire impossible. `date_of_birth` above still refuses
+    // the future, which is why `today` is still needed.
     if (form.date_of_joining && !DATE_RE.test(form.date_of_joining)) {
       errs.date_of_joining = ERR_MSG.INVALID_FORMAT
-    } else if (form.date_of_joining && form.date_of_joining > today) {
-      errs.date_of_joining = ERR_MSG.MUST_BE_BEFORE_TODAY
     }
 
     if (form.confirmation_date && !DATE_RE.test(form.confirmation_date)) {
@@ -401,11 +410,26 @@ const NUMERIC_KEYS: readonly EmployeeFormKey[] = ['number_of_children', 'total_w
  * "not supplied". `mode: 'update'` sends blanks as null instead, because PATCH
  * has to be able to CLEAR a field the admin emptied - dropping it would
  * silently keep the old value.
+ *
+ * `onlyKeys` NARROWS the body to those keys, and exists for the wizard's
+ * per-step autosave. **Without it, a step-by-step PATCH destroys data.** In
+ * `update` mode every blank becomes an explicit `null`, so a PATCH built from
+ * the whole form while the admin is standing on step 2 would send
+ * `pan: null, bank_account: null, emergency_contact_name: null…` and wipe every
+ * step they have not reached yet. Narrowing to the step's own fields is what
+ * makes "save as you go" safe.
+ *
+ * The three NOT NULL columns are always included: PATCH validation treats a
+ * supplied blank as REQUIRED rather than as a clear, and the API needs them to
+ * identify the row regardless of which step is being saved.
  */
 export function buildEmployeeBody(
   form: EmployeeFormData,
   mode: 'create' | 'update',
+  onlyKeys?: readonly EmployeeFormKey[],
 ): Record<string, unknown> {
+  const allowed = onlyKeys ? new Set<EmployeeFormKey>(onlyKeys) : null
+
   const body: Record<string, unknown> = {
     first_name: form.first_name.trim(),
     last_name: form.last_name.trim(),
@@ -414,6 +438,7 @@ export function buildEmployeeBody(
 
   for (const key of Object.keys(form) as EmployeeFormKey[]) {
     if (key === 'first_name' || key === 'last_name' || key === 'work_email') continue
+    if (allowed && !allowed.has(key)) continue
     const raw = form[key].trim()
 
     if (NUMERIC_KEYS.includes(key)) {

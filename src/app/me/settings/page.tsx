@@ -1,12 +1,20 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Link from 'next/link'
-import { Button, Card, Divider, Field, Input } from '@/components/ui'
+import { Button, Card, Divider, Field, Input, Skeleton, Toggle } from '@/components/ui'
 import { en } from '@/locales/en'
 import { meSettings } from '@/locales/en/me-settings'
+import {
+  ALL_CATEGORIES,
+  CATEGORY_DEFS,
+  isNotificationCategory,
+  type NotificationCategory,
+} from '@/lib/notifications/categories'
+import { useWorkspaceScope } from '../workspace-scope'
 
 const t = meSettings.settings
+const n = t.notifications
 
 // ─── Shared primitives ────────────────────────────────────────────────────────
 
@@ -428,6 +436,324 @@ function TokensSection() {
   )
 }
 
+// ─── Notifications section ────────────────────────────────────────────────────
+
+type Load = 'loading' | 'ready' | 'error'
+
+/**
+ * One category, as a row. A locked category is rendered disabled with its reason
+ * rather than hidden - "you cannot turn this off" is information the member is
+ * owed, and hiding it just makes them look for the switch again next month.
+ */
+function CategoryRow({
+  label,
+  hint,
+  checked,
+  locked,
+  onChange,
+}: {
+  label: string
+  hint: string
+  checked: boolean
+  locked: boolean
+  onChange: (next: boolean) => void
+}) {
+  return (
+    <div className={locked ? 'switch-row is-locked' : 'switch-row'}>
+      <div className="switch-row-body">
+        <p className="switch-row-title">{label}</p>
+        <p className="t-muted">{hint}</p>
+      </div>
+      <Toggle label={label} checked={checked} disabled={locked} onChange={onChange} />
+    </div>
+  )
+}
+
+/** Why a switch is locked, taken from the catalogue rather than guessed here. */
+function lockedReasonFor(key: NotificationCategory): string {
+  const reason = CATEGORY_DEFS[key].lockedReason
+  const table: Record<string, string> = n.lockedReasons
+  return (reason && table[reason]) || n.lockedGeneric
+}
+
+/** Both endpoints answer `{ muted: string[] }`; this is the shared reader. */
+function readMuted(value: unknown): Set<NotificationCategory> {
+  return new Set(Array.isArray(value) ? value.filter(isNotificationCategory) : [])
+}
+
+/**
+ * The workspace half. Scoped to the active workspace from the top-bar pill -
+ * there is deliberately no picker here and the workspace is deliberately not
+ * named: the pill above already answers "which one", and repeating it inside
+ * content it already scopes is noise.
+ */
+function WorkspaceNotifications() {
+  const { slug } = useWorkspaceScope()
+  const [muted, setMuted] = useState<Set<NotificationCategory>>(new Set())
+  /** What the workspace has switched off for everybody - those rows are hidden. */
+  const [workspaceOff, setWorkspaceOff] = useState<Set<NotificationCategory>>(new Set())
+  /**
+   * Tri-state for the same reason the admin switchboard has one: the default
+   * state is "nothing muted", so painting the switches after a failed load
+   * would let one tap write over a mute the member had already set.
+   */
+  const [load, setLoad] = useState<Load>('loading')
+  const [reloadKey, setReloadKey] = useState(0)
+  const [status, setStatus] = useState<Status>(null)
+
+  useEffect(() => {
+    if (!slug) return
+    let cancelled = false
+    setLoad('loading')
+    fetch(`/api/me/ws/${slug}/notification-prefs`)
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`notification-prefs responded ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setMuted(readMuted(data.muted))
+        setWorkspaceOff(readMuted(data.workspaceOff))
+        setLoad('ready')
+      })
+      .catch(() => { if (!cancelled) setLoad('error') })
+    return () => { cancelled = true }
+  }, [slug, reloadKey])
+
+  // Optimistic, then reverted on failure. A switch that waits for a round trip
+  // before moving reads as broken; a switch that lies about the saved state is
+  // worse, so the revert is not optional.
+  const toggle = useCallback(
+    async (key: NotificationCategory, on: boolean) => {
+      if (!slug) return
+      setStatus(null)
+      setMuted((prev) => {
+        const next = new Set(prev)
+        if (on) next.delete(key)
+        else next.add(key)
+        return next
+      })
+      try {
+        const res = await fetch(`/api/me/ws/${slug}/notification-prefs`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category: key, muted: !on }),
+        })
+        if (!res.ok) throw new Error(`PATCH responded ${res.status}`)
+      } catch {
+        setMuted((prev) => {
+          const next = new Set(prev)
+          if (on) next.add(key)
+          else next.delete(key)
+          return next
+        })
+        setStatus({ text: n.saveError, ok: false })
+      }
+    },
+    [slug],
+  )
+
+  if (!slug) return <p className="t-muted" style={{ margin: 0 }}>{n.noWorkspace}</p>
+
+  if (load === 'loading') {
+    return (
+      <div className="stack-sm">
+        <Skeleton height={64} radius="var(--radius-md)" />
+        <Skeleton height={64} radius="var(--radius-md)" />
+      </div>
+    )
+  }
+
+  if (load === 'error') {
+    return (
+      <div role="alert">
+        <p className="field-error" style={{ margin: '0 0 10px' }}>{n.loadFailed}</p>
+        <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+          {n.loadFailedRetry}
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      {ALL_CATEGORIES.filter(
+        (key) => CATEGORY_DEFS[key].scope === 'workspace' && !workspaceOff.has(key),
+      ).map((key) => {
+        const locked = !CATEGORY_DEFS[key].memberMutable
+        const copy = n.categories[key]
+        return (
+          <CategoryRow
+            key={key}
+            label={copy.label}
+            hint={locked ? lockedReasonFor(key) : copy.hint}
+            checked={locked || !muted.has(key)}
+            locked={locked}
+            onChange={(next) => toggle(key, next)}
+          />
+        )
+      })}
+      <StatusMsg msg={status} />
+    </>
+  )
+}
+
+/**
+ * The account half: categories with no workspace to key them on, plus the push
+ * registration for this browser.
+ */
+function DeviceNotifications() {
+  const [muted, setMuted] = useState<Set<NotificationCategory>>(new Set())
+  const [load, setLoad] = useState<Load>('loading')
+  const [reloadKey, setReloadKey] = useState(0)
+  const [status, setStatus] = useState<Status>(null)
+  const [unsubscribing, setUnsubscribing] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoad('loading')
+    fetch('/api/me/notification-prefs')
+      .then(async (res) => {
+        if (!res.ok) throw new Error(`notification-prefs responded ${res.status}`)
+        return res.json()
+      })
+      .then((data) => {
+        if (cancelled) return
+        setMuted(readMuted(data.muted))
+        setLoad('ready')
+      })
+      .catch(() => { if (!cancelled) setLoad('error') })
+    return () => { cancelled = true }
+  }, [reloadKey])
+
+  const toggle = useCallback(async (key: NotificationCategory, on: boolean) => {
+    setStatus(null)
+    setMuted((prev) => {
+      const next = new Set(prev)
+      if (on) next.delete(key)
+      else next.add(key)
+      return next
+    })
+    try {
+      const res = await fetch('/api/me/notification-prefs', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: key, muted: !on }),
+      })
+      if (!res.ok) throw new Error(`PATCH responded ${res.status}`)
+    } catch {
+      setMuted((prev) => {
+        const next = new Set(prev)
+        if (on) next.add(key)
+        else next.delete(key)
+        return next
+      })
+      setStatus({ text: n.saveError, ok: false })
+    }
+  }, [])
+
+  /**
+   * Drop this browser's push registration.
+   *
+   * The server row goes first: once it is gone nothing can be sent here, so a
+   * failure at the browser step leaves an unreachable local subscription rather
+   * than a live server row pushing to a browser that thinks it opted out. The
+   * mirror of the document delete order, for the same reason.
+   *
+   * This is the only unsubscribe control in the product - `SwRegister` has
+   * always subscribed silently on load and nothing ever undid it. It is also
+   * why the copy says re-opening the app registers it back: the honest fix for
+   * "stop messaging me" is the category mutes, not this.
+   */
+  async function unsubscribeDevice() {
+    setStatus(null)
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+      setStatus({ text: n.pushUnsupported, ok: false })
+      return
+    }
+    setUnsubscribing(true)
+    try {
+      const reg = await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.getSubscription()
+      if (!sub) {
+        setStatus({ text: n.pushNotSubscribed, ok: true })
+        return
+      }
+      const res = await fetch('/api/push/subscribe', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ endpoint: sub.endpoint }),
+      })
+      if (!res.ok) throw new Error(`DELETE /api/push/subscribe responded ${res.status}`)
+      await sub.unsubscribe()
+      setStatus({ text: n.pushUnsubscribed, ok: true })
+    } catch {
+      setStatus({ text: n.pushError, ok: false })
+    } finally {
+      setUnsubscribing(false)
+    }
+  }
+
+  return (
+    <>
+      {load === 'loading' && <Skeleton height={64} radius="var(--radius-md)" />}
+
+      {load === 'error' && (
+        <div role="alert">
+          <p className="field-error" style={{ margin: '0 0 10px' }}>{n.loadFailed}</p>
+          <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+            {n.loadFailedRetry}
+          </Button>
+        </div>
+      )}
+
+      {load === 'ready' &&
+        ALL_CATEGORIES.filter((key) => CATEGORY_DEFS[key].scope === 'account').map((key) => {
+          const locked = !CATEGORY_DEFS[key].memberMutable
+          const copy = n.categories[key]
+          return (
+            <CategoryRow
+              key={key}
+              label={copy.label}
+              hint={locked ? lockedReasonFor(key) : copy.hint}
+              checked={locked || !muted.has(key)}
+              locked={locked}
+              onChange={(next) => toggle(key, next)}
+            />
+          )
+        })}
+
+      <Divider />
+
+      <p className="switch-row-title" style={{ margin: '0 0 4px' }}>{n.pushTitle}</p>
+      <p className="t-muted" style={{ margin: '0 0 12px' }}>{n.pushBody}</p>
+      <Button variant="secondary" size="sm" loading={unsubscribing} onClick={unsubscribeDevice}>
+        {n.pushUnsubscribe}
+      </Button>
+
+      <StatusMsg msg={status} />
+    </>
+  )
+}
+
+function NotificationsSection() {
+  return (
+    <SectionCard title={n.title}>
+      <div className="switch-group">
+        <span className="field-label">{n.workspaceGroupLabel}</span>
+        <p className="t-muted" style={{ margin: '0 0 10px' }}>{n.workspaceGroupHint}</p>
+        <WorkspaceNotifications />
+      </div>
+
+      <div className="switch-group">
+        <span className="field-label">{n.deviceGroupLabel}</span>
+        <p className="t-muted" style={{ margin: '0 0 10px' }}>{n.deviceGroupHint}</p>
+        <DeviceNotifications />
+      </div>
+    </SectionCard>
+  )
+}
+
 // ─── Organisation features section ────────────────────────────────────────────
 
 function OrgSection() {
@@ -660,6 +986,7 @@ export default function SettingsPage() {
         <ProfileSection initialName={profileName} email={profileEmail} />
         <EmailSection />
         <PasswordSection />
+        <NotificationsSection />
         <TokensSection />
         <OrgSection />
         <LogoutSection />

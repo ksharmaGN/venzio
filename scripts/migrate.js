@@ -727,6 +727,48 @@ const ADDITIVE_MIGRATIONS = [
    ON reminder_log(workspace_id, user_id, kind, local_date)
    WHERE kind IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS idx_reminder_log_ws_date ON reminder_log(workspace_id, local_date)`,
+
+  // workspaces - which notification categories this workspace has switched off.
+  // A JSON array of category keys (see src/lib/notifications/categories.ts).
+  //
+  // It stores the DISABLED set, not the enabled one, and the default is '[]'.
+  // That way every existing workspace keeps every notification it has today,
+  // and a category added to the catalogue later is on everywhere with no
+  // backfill - the inverse (storing the enabled set) would mean a new category
+  // is silently off for every workspace that predates it.
+  `ALTER TABLE workspaces ADD COLUMN notification_categories_off TEXT NOT NULL DEFAULT '[]'`,
+
+  // notification_prefs - per-member category mutes.
+  //
+  // A ROW MEANS MUTED. Un-muting deletes the row; there is no boolean column.
+  // Absence is the default and the default is "on", so 47 users across 6
+  // workspaces need no seeding and a member who has never opened the settings
+  // screen has no rows at all.
+  //
+  // workspace_id NULL means an account-level preference. Only the `presence`
+  // category uses it, because presence_events carries no workspace_id and a
+  // check-in session therefore belongs to no workspace.
+  `CREATE TABLE IF NOT EXISTS notification_prefs (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
+  category     TEXT NOT NULL,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+)`,
+  // TWO partial unique indexes, not one. SQLite treats NULLs as DISTINCT in a
+  // unique index, so a single UNIQUE(user_id, workspace_id, category) would not
+  // constrain the account-level rows at all - the same NULL = NULL trap that
+  // silently detached invited people's HR records from their memberships.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_prefs_ws
+   ON notification_prefs(user_id, workspace_id, category)
+   WHERE workspace_id IS NOT NULL`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_notif_prefs_acct
+   ON notification_prefs(user_id, category)
+   WHERE workspace_id IS NULL`,
+  // The bulk read path: "who in this workspace has muted reminders?", run once
+  // per workspace per reminder pass rather than once per member.
+  `CREATE INDEX IF NOT EXISTS idx_notif_prefs_lookup
+   ON notification_prefs(workspace_id, category, user_id)`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

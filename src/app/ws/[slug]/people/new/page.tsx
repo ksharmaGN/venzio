@@ -4,10 +4,13 @@ import { getWorkspaceBySlug } from '@/lib/db/queries/workspaces'
 import { getWsRole } from '@/lib/ws-access'
 import { can } from '@/lib/permissions/can'
 import { Action, Resource } from '@/lib/permissions/catalogue'
+import { getEmployee } from '@/lib/db/queries/employees'
 import NewEmployeeClient from './NewEmployeeClient'
 
 interface Props {
   params: Promise<{ slug: string }>
+  /** `?draft=<employee id>` - an add that has already saved at least one step. */
+  searchParams: Promise<{ draft?: string }>
 }
 
 /**
@@ -19,8 +22,9 @@ interface Props {
  * was never enough to run payroll, holidays or documents against, and it left
  * every new joiner as a row nobody had filled in.
  */
-export default async function NewEmployeePage({ params }: Props) {
+export default async function NewEmployeePage({ params, searchParams }: Props) {
   const { slug } = await params
+  const { draft: draftId } = await searchParams
 
   const session = await getSessionFromCookies()
   if (!session) redirect('/login')
@@ -38,5 +42,14 @@ export default async function NewEmployeePage({ params }: Props) {
   // The modal is simply not offered when they lack it.
   const canInvite = can(role.permissions, Resource.Members, Action.Write)
 
-  return <NewEmployeeClient slug={slug} canInvite={canInvite} />
+  // Resume an in-progress add. Loaded on the server so a refresh paints the
+  // filled form on first render - a client fetch would flash an empty wizard,
+  // which is the very thing this is here to stop looking like.
+  //
+  // `getEmployee` is scoped by workspace id, so a `?draft=` pointing at another
+  // workspace's record resolves to null and the wizard simply starts fresh
+  // rather than leaking a row across the tenant boundary.
+  const draft = draftId ? await getEmployee(draftId, workspace.id) : null
+
+  return <NewEmployeeClient slug={slug} canInvite={canInvite} draft={draft} />
 }
