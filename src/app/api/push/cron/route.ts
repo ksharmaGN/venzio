@@ -1,9 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenEventsForCron, updatePushRemindersSent, autoCheckoutEvent } from '@/lib/db/queries/events'
 import { sendPushToUser } from '@/lib/push'
+import { notificationHref } from '@/lib/client/notification-href'
 import { runReminderPass, type ReminderPassResult } from '@/lib/reminders'
 
 const MILESTONES_H = [4, 8, 12, 16, 18, 20, 22]
+
+/**
+ * Every push in pass 1 is anchored on an open check-in, so they all want the
+ * same destination: the check-in screen. Built through the shared resolver
+ * rather than written as a literal so a future move of `/me` cannot leave the
+ * service worker opening one URL and the in-app row another.
+ */
+const CHECKIN_URL = notificationHref(
+  { type: 'checkin_reminder', ref_type: null, ref_id: null },
+  'me',
+)
 
 export async function POST(request: NextRequest) {
   const auth = request.headers.get('authorization')
@@ -11,8 +23,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  const events = await getOpenEventsForCron()
   const now = Date.now()
+  // The same instant decides both the age cutoff and every elapsed-hours
+  // calculation below, so a slow query cannot make an event pass the cutoff and
+  // then be measured against a later clock.
+  const events = await getOpenEventsForCron(new Date(now))
 
   for (const event of events) {
     try {
@@ -20,7 +35,22 @@ export async function POST(request: NextRequest) {
         const parsed = JSON.parse(event.push_reminders_sent ?? '[]')
         return Array.isArray(parsed) ? parsed : []
       })()
-      let changed = false
+
+      /**
+       * Persist the dedupe key the moment a push is actually delivered.
+       *
+       * This used to be one write at the end of the event, after every push for
+       * that event had been sent. GitHub Actions calls this endpoint with
+       * `curl -m 30`: when the request is cut off mid-flight the pushes are
+       * already out on the wire but `push_reminders_sent` was never written, so
+       * the next tick sees a virgin row and sends the same notifications again.
+       * Writing after each individual push makes the delivered set and the
+       * recorded set diverge by at most one.
+       */
+      const claim = async (key: string) => {
+        reminders.push(key)
+        await updatePushRemindersSent(event.id, reminders)
+      }
 
       const checkinMs = new Date(
         event.checkin_at.includes('T') ? event.checkin_at : event.checkin_at.replace(' ', 'T') + 'Z'
@@ -35,9 +65,9 @@ export async function POST(request: NextRequest) {
             title: 'Still working?',
             body: `You've been checked in for ${h} hours.`,
             tag: `milestone-${h}h`,
+            data: { url: CHECKIN_URL },
           })
-          reminders.push(key)
-          changed = true
+          await claim(key)
         }
       }
 
@@ -61,9 +91,9 @@ export async function POST(request: NextRequest) {
               ...(canExtend ? [{ action: 'extend', title: 'Extend 4h' }] : []),
               { action: 'checkout', title: 'Checkout Now' },
             ],
+            data: { url: CHECKIN_URL },
           })
-          reminders.push(warnKey)
-          changed = true
+          await claim(warnKey)
         }
 
         // 3. Auto-checkout — fires when scheduled time has passed
@@ -73,14 +103,10 @@ export async function POST(request: NextRequest) {
             title: 'Auto-checked out',
             body: "You've been auto-checked out. Hours logged without location data won't count in reports.",
             tag: 'auto-checked-out',
+            data: { url: CHECKIN_URL },
           })
-          reminders.push('autocheckedout')
-          changed = true
+          await claim('autocheckedout')
         }
-      }
-
-      if (changed) {
-        await updatePushRemindersSent(event.id, reminders)
       }
     } catch (err) {
       console.error(`[cron] failed to process event ${event.id}:`, err)

@@ -12,6 +12,7 @@ import { getLeaveRequestsInRange } from '@/lib/db/queries/leaves'
 import { getActiveMaternityUserIds } from '@/lib/db/queries/maternity'
 import { createNotification } from '@/lib/db/queries/notifications'
 import { sendPushToUser } from '@/lib/push'
+import { notificationHref } from '@/lib/client/notification-href'
 import { localMidnightToUtc, todayInTz } from '@/lib/timezone'
 import { wsReminders } from '@/locales/en/ws-reminders'
 
@@ -216,6 +217,11 @@ async function notifyMembers(
       ? wsReminders.push.checkinBody(ws.name, configured)
       : wsReminders.push.checkoutBody(ws.name, configured)
   const tag = kind === 'checkin' ? wsReminders.push.checkinTag : wsReminders.push.checkoutTag
+  const notifType = kind === 'checkin' ? ('checkin_reminder' as const) : ('checkout_reminder' as const)
+  // The push and the in-app row are the same notification seen twice, so both
+  // resolve their destination through the one resolver rather than each
+  // deciding for itself.
+  const url = notificationHref({ type: notifType, ref_type: 'reminder', ref_id: localDate, workspace_slug: ws.slug }, 'me')
 
   for (const member of members) {
     try {
@@ -239,13 +245,13 @@ async function notifyMembers(
         createNotification({
           userId: member.user_id,
           workspaceId: ws.id,
-          type: kind === 'checkin' ? 'checkin_reminder' : 'checkout_reminder',
+          type: notifType,
           title,
           body,
           refId: localDate,
           refType: 'reminder',
         }),
-        sendPushToUser(member.user_id, { title, body, tag: `${tag}-${localDate}` }),
+        sendPushToUser(member.user_id, { title, body, tag: `${tag}-${localDate}`, data: { url } }),
       ])
       result.sent++
     } catch (err) {
