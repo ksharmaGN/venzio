@@ -86,6 +86,34 @@ thread through nine `/api/ws/[slug]/*` routes. **`system-roles.json` on that
 branch is reformatted wholesale, so a textual merge silently drops `assets` and
 `documents` from the owner and admin grids — hand-merge it.**
 
+
+### Round 4 — found while building, not fixed
+
+| Gap | Where | Note |
+|---|---|---|
+| The cron's push copy is hardcoded | `api/push/cron/route.ts` | `'Still working?'`, `'Auto-checkout soon'`, `'Auto-checked out'` are string literals, violating invariant 16 — while `en.notifications.stale` / `.autoCheckout` hold near-identical strings that **nothing reads**. Pre-existing; moving them is a locale edit plus a route edit. |
+| `NotificationRow` is built from inline style objects | `src/components/notifications/NotificationRow.tsx` | Pre-existing (9 of them before this round), violating invariant 15, so the reduced-motion and touch-target selector lists never see it. Not in the documented exception list either. |
+| `presence_events` mixes datetime formats | `checkin_at` vs `checkout_at` / `scheduled_checkout_at` | `checkin_at` is SQLite `'YYYY-MM-DD HH:MM:SS'`; the other two are full ISO with `Z`. Comparisons are lexicographic, so every consumer normalises by hand (`toSqliteDt`). A row written with a `T` separator would compare wrong on a boundary day. Needs a data migration, not a code fix. |
+| Announcements have no sidebar entry of their own | `src/lib/permissions/screens.ts` | The section rides the Settings screen. It is gated on `Resource.Announcements` independently so access is correct, but the resource has no `Screen`, so nothing in the nav advertises it. |
+| No dense list-row class | `globals.css` | `DomainsTab`, `LeaveTypesSection` and the announcements list each hand-roll a bordered row. `.card + .card` was used instead, which is correct but 20px-padded where a denser row would read better. |
+| Free-plan `maxUsers` slice can hide members from the office-day preview | `queryWorkspaceEvents` | The preview reads both the uncapped write set and the capped `matched_by` source, falling back to `has_override` for events the capped read omitted. Documented in `office-days.ts`; only bites a free-plan workspace over its seat cap. |
+
+### Notification audit — deferred (2026-09-02)
+
+Found while fixing the cron outage. None of these is fixed; all are real.
+
+| Gap | Where | Why deferred |
+|---|---|---|
+| **No per-member notification mute** | workspace-level settings only | A member who silences a nagging reminder also loses approval notifications *and now announcements* - an announcement is the one message that cannot afford to be missed. See `reminders.md` §4.1. Explicitly scoped out of round 4; it is the biggest remaining risk in this area. |
+| The feed grows forever | `notifications` | No `deleted_at`, no `expires_at`, no retention job, and nothing ever DELETEs. `getNotificationsForUser` takes an `offset` no caller passes, so anything past the newest 50 is unreachable in the UI while still counting toward the unread badge. |
+| Dead push subscriptions are only reaped on `410` | `src/lib/push.ts` | `404` is also permanent for FCM/autopush, and repeated `403` means rotated VAPID keys. Those rows survive forever and every send retries them. |
+| Archived workspaces still inflate the unified `/me` count | `getUnreadCount`, `requireWsMember` | Neither joins `workspaces.archived_at`. The reminder pass filters it correctly; the feed does not. |
+| The bell poll has no ordering or cancellation guard | `NotificationBell.tsx` | A 30s `setInterval` with a bare `fetch` and only a `mounted` flag. A slow response from poll *n* can land after *n+1*; switching workspace does not cancel the in-flight request for the old slug. |
+| Pass-1 cron pushes leave no feed row | `api/push/cron` | Milestones, the auto-checkout warning and auto-checkout itself are push-only. A user with push disabled is auto-checked-out with zero in-app evidence. |
+| Announcement fan-out is unchunked | `announcements` POST | One `Promise.allSettled` over every active member. Fine at 34; wants chunking past a few hundred. |
+| `en.notifications.stale` is dead copy | `src/locales/en.ts` | Seven milestone strings that `api/push/cron` never imports - it hardcodes its own. |
+| `getPushSubscriptionsForUser` returning `[]` is a silent no-op | `src/lib/push.ts` | `Promise.allSettled([])` resolves; there is no signal that a notification reached nobody. |
+
 ### P3 — dead code
 
 `AccessContext.visibleMemberIds` is now read by `PATCH /api/ws/[slug]/hierarchy`, but

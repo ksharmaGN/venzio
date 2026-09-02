@@ -31,6 +31,25 @@ When the app is **closed**: the SW receives the push event → OS notification.
 
 ---
 
+## 1b. The cron was unreachable until 2026-09-02
+
+`POST /api/push/cron` had never run in production. `src/proxy.ts` cookie-gates
+every `/api/*` route not on `PUBLIC_API_ROUTES`, and `getSessionFromRequest`
+reads only the session cookie, so the GitHub Action's `Authorization: Bearer`
+request was refused by the middleware **before** the route's own — correct —
+`CRON_SECRET` check. Every milestone push, the auto-checkout warning,
+auto-checkout itself and both wall-clock reminders were therefore dead.
+
+Two consequences worth carrying forward:
+
+1. **Add any secret-authenticated endpoint to `PUBLIC_API_ROUTES`.** It does not
+   make the route public; it makes it not *cookie*-gated.
+2. **The outage left a backlog.** 2,008 open `presence_events`, the oldest four
+   months old, none auto-checked-out. Enabling the cron without draining them
+   first would fire thousands of pushes about long-dead events. Hence
+   `scripts/drain-open-events.js` (silent, `--apply`-gated) and the permanent
+   48-hour age cutoff in `getOpenEventsForCron()`.
+
 ## 2. The in-app notification feed
 
 ```sql

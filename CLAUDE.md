@@ -459,9 +459,89 @@ Archive and restore live in the same tab because they are gated on the same reso
 
 ---
 
+## Announcements
+
+A workspace-wide notice — a policy update, an office day, a closure. Posted from
+Settings, delivered to every active member's in-app feed and phone.
+
+`workspace_announcements` is the **canonical record** (soft-deleted, so an admin
+can see and retract what they posted). **Delivery is a fan-out**: one ordinary
+`notifications` row per active member, `type: 'announcement'`, `ref_type:
+'announcement'`, `ref_id` the announcement id. That is what gives each recipient
+their own read state, bell count and feed entry with no new machinery — the same
+shape leave notifications already use to carry their subject.
+
+**Write the announcement row first, then fan out.** A crash mid-fan-out leaves a
+notice some people have and some do not, which is recoverable and visible. The
+reverse order would push a notification whose `ref_id` points at nothing.
+
+**Retraction is not a recall.** Soft-deleting hides it from the list and from
+future reads; notifications and pushes already delivered stay where they are. The
+confirm dialog says so rather than implying otherwise.
+
+Gated by **`Resource.Announcements`** (read/write/delete), seeded to owner and
+admin. Its own resource rather than a fold into `settings` because broadcasting
+to everyone's phone is a different trust level from editing signal config — an HR
+role should be able to do the first without the second.
+
+- `GET|POST /api/ws/[slug]/announcements` · `DELETE /api/ws/[slug]/announcements/[id]`
+
+> **Consequence, accepted deliberately:** there is still no per-member mute, so a
+> member who silenced notifications to escape reminders also misses announcements
+> — the one message class that cannot afford it. See `docs/architecture/reminders.md` §4.1.
+
+---
+
+## Office days (bulk WFO)
+
+An admin declares a date an office day, and everyone who worked from home that
+date counts as **WFO**, so no attendance allowance is cut.
+
+It writes one `admin_overrides` row per presence event on that date, with
+`source = 'office_day'`. `matched_by` then becomes `'override'` in
+`src/lib/signals.ts`, and `isOfficeMatched()` already counts override as office —
+so the monthly grid, analytics, the XLSX export, `/me`'s WFO/WFH tiles and the
+insights trend all update with **no read-path changes**. That is the whole reason
+this reuses invariant 7 rather than inventing a new table.
+
+**Only people who already have an event that date are converted.** Someone who
+never checked in stays absent; someone on approved leave stays on leave. No event
+is ever synthesized — invariant 4 still holds.
+
+Three things the table gained to make this safe:
+
+| Addition | Why |
+|---|---|
+| `admin_overrides.source` | Tells an office day from a regularization, so undo cannot delete an approved correction. Mirrors `presence_events.source`. Existing rows backfilled to `'regularization'` — the only writer before this. |
+| `UNIQUE (workspace_id, presence_event_id)` | **This index IS the idempotency guarantee.** The bulk write is `INSERT OR IGNORE`, so re-declaring a day is a no-op. A pre-read would be two statements and a race. |
+| `INDEX (workspace_id)` | `getOverrideEventIds()` runs on every `queryWorkspaceEvents` call — i.e. every workspace API request — and the table previously had no index at all. |
+
+**Weekends and holidays are refused, loudly.** `summarizeAttendanceDays` checks
+`!isWorkday(...)` and `holidayDates.has(date)` **before** it looks at events, so an
+office day declared on a Saturday or a public holiday would write override rows
+that nothing ever reads. The route reuses the `WEEKOFF_DATE` / `ON_HOLIDAY` refusals
+the single-day regularization path already has. A loud refusal beats a silent no-op.
+
+- `POST /api/ws/[slug]/office-days` · `DELETE /api/ws/[slug]/office-days/[date]`
+- Guarded by `Resource.Approvals` — it is an attendance correction, generalised.
+
+---
+
 ## Scheduled reminders
 
 Two independent passes, both driven by `POST /api/push/cron` (Bearer `CRON_SECRET`, called from GitHub Actions at :00 and :30).
+
+> **`/api/push/cron` must stay in `PUBLIC_API_ROUTES` in `src/proxy.ts`.** That list
+> means *not cookie-gated*, not unauthenticated — the route checks `CRON_SECRET`
+> itself. Leaving it off meant the middleware answered the GitHub Action `401`
+> before the route ran, and **the entire cron silently never executed in
+> production**. Any endpoint authenticating by Bearer token or shared secret has
+> the same requirement.
+>
+> `getOpenEventsForCron()` carries a `LIMIT` and a **48-hour age cutoff** so an
+> outage can never again build a backlog that fires thousands of pushes on
+> recovery. `scripts/drain-open-events.js` (silent, `--apply`-gated) is how an
+> existing backlog is cleared — run it before enabling the workflow.
 
 1. **Event-anchored** (in the cron route): starts from an open `presence_events` row, counts elapsed hours, fires milestone / auto-checkout-warning pushes. Dedupes on `presence_events.push_reminders_sent`.
 2. **Wall-clock** (`src/lib/reminders.ts` → `runReminderPass()`): anchors on *workspaces* instead. The event-anchored design structurally cannot notice somebody who never checked in — there is no row to iterate. This pass reads `workspaces.checkin_reminder_at` / `checkout_reminder_at`, works out whether now is that time in the workspace's own timezone, then finds who still owes a check-in or check-out. Dedupes on the `reminder_log` table (unique on `workspace_id, user_id, kind, local_date`).
@@ -677,7 +757,17 @@ Rules:
     work email. Every accept path must go through `src/lib/membership.ts`, which
     claims the record. A new accept path that skips it leaves a permanently
     unlinked record.
-20. **Document bytes never appear in a JSON response** - every file goes in and out through the `DocumentStore` seam in `src/lib/storage.ts` as a `Buffer`, and comes back to the browser from a dedicated `.../file` route with real bytes and a `Content-Type`. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Putting a payload into a JSON body would also drag megabytes through every list query and turn the S3 swap from a one-file change into a rewrite.
+20. **Secret-authenticated endpoints must be in `PUBLIC_API_ROUTES`** - `proxy.ts`
+    cookie-gates every other `/api/*` route and `getSessionFromRequest` never reads
+    `Authorization`, so a Bearer caller is refused before its own auth check runs.
+    This silently killed the whole push cron.
+21. **An office day writes overrides, never events** - `source = 'office_day'`, and the
+    UNIQUE `(workspace_id, presence_event_id)` index is what makes the bulk insert
+    idempotent. Undo deletes only `source = 'office_day'` rows, so an approved
+    regularization's override survives.
+22. **An announcement is a record plus a fan-out** - the row first, then one
+    `notifications` row per active member. Deleting it does not unsend anything.
+23. **Document bytes never appear in a JSON response** - every file goes in and out through the `DocumentStore` seam in `src/lib/storage.ts` as a `Buffer`, and comes back to the browser from a dedicated `.../file` route with real bytes and a `Content-Type`. Nothing outside `storage.ts` and `db/queries/documents.ts` may see base64. Putting a payload into a JSON body would also drag megabytes through every list query and turn the S3 swap from a one-file change into a rewrite.
 
 ---
 
@@ -698,6 +788,9 @@ Rules:
 - Never print the workspace name inside `/me` content already scoped to the active workspace
 - Never seed a workspace colour on the slug — `swatchColor()` takes the workspace **id**
 - Never change an asset's status while it still has a holder — return it via `DELETE .../assign` first
+- Never add a secret-authenticated API route without adding it to `PUBLIC_API_ROUTES`
+- Never declare an office day on a weekend or holiday — the classifier skips those days before it reads events, so the rows would be written and never read
+- Never delete an `admin_overrides` row without filtering on `source`
 - Never re-add an Employees tab, or a second directory of the same people
 - Never add a role or status control to a directory row — those live on the details page
 - Never key the person details route on a user id — an invited person has none

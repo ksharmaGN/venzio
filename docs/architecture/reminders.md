@@ -254,6 +254,22 @@ abort the run for every other workspace.
 
 ---
 
+## 3b. The pass did not run at all until 2026-09-02
+
+Everything above describes logic that was correct and **never executed in
+production**. `src/proxy.ts` cookie-gates every `/api/*` route that is not on
+`PUBLIC_API_ROUTES`, and `getSessionFromRequest` reads only the session cookie —
+never the `Authorization` header. `/api/push/cron` was not on that list, so the
+GitHub Action's Bearer request was answered `401` by the middleware before the
+route's own `CRON_SECRET` check ever ran.
+
+Fixed by adding the route to `PUBLIC_API_ROUTES`. "Public" there means *not
+cookie-gated*: the route still authenticates itself against `CRON_SECRET` as its
+first act, and refuses outright when that env var is unset.
+
+**Any future endpoint that authenticates by Bearer token or shared secret has to
+be added to that list**, or it will fail the same silent way.
+
 ## 4. Known remaining gaps
 
 Listed roughly by risk. None of these is a bug in the pass; they are the edges
@@ -271,6 +287,13 @@ The blast radius is asymmetric — a nagging reminder costs the user a
 notification channel they wanted for something else. Until a per-member mute
 exists, treat turning reminders on for a workspace as a decision that affects
 everyone's approval notifications too.
+
+**This got worse when announcements landed (round 4).** A workspace-wide notice —
+a policy update, an office day, a closure — is delivered through the same
+channel. So the member who silenced notifications to escape a daily reminder now
+also misses the one message class that cannot afford to be missed. The round-4
+scope was deliberately "correctness only" and left the mute unbuilt; that was a
+decision, and this is its cost.
 
 ### 4.2 Workspace-wide timezone and working days
 
