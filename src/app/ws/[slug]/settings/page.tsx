@@ -10,7 +10,7 @@ import SettingsClient from './SettingsClient'
 interface Props { params: Promise<{ slug: string }> }
 
 /**
- * Settings, as six tabs.
+ * Settings, as its tabs.
  *
  * A server component so the plan and the caller's permissions are known on
  * first paint: the Billing tab needs `workspace.plan`, which GET /api/ws/[slug]
@@ -45,6 +45,9 @@ export default async function SettingsPage({ params }: Props) {
       canWriteDomains={can(role.permissions, Resource.Domains, Action.Write)}
       canDeleteDomains={can(role.permissions, Resource.Domains, Action.Delete)}
       canManageOwnership={can(role.permissions, Resource.Ownership, Action.Write)}
+      canReadAnnouncements={can(role.permissions, Resource.Announcements, Action.Read)}
+      canWriteAnnouncements={can(role.permissions, Resource.Announcements, Action.Write)}
+      canDeleteAnnouncements={can(role.permissions, Resource.Announcements, Action.Delete)}
     />
   )
 }

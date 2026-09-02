@@ -26,6 +26,9 @@ export const wsAnnouncements = {
   listEmpty: 'No announcements yet',
   listEmptyHint: 'Anything you post here reaches every active member, in-app and on their phone.',
   postedBy: (name: string, date: string) => `${name} · ${date}`,
+  /** Byline fallback when the author's account has since been deleted - the
+   *  announcement must still say when it went out, not vanish. */
+  authorRemoved: 'Removed member',
   loadFailed: 'Could not load announcements.',
 
   deleteAction: 'Delete',

@@ -969,6 +969,10 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 .link-plain { text-decoration: none; }
 .t-rowtitle { font-size: 13.5px; font-weight: 500; color: var(--text-primary); }
 .t-rowsub { font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
+/* Preserve the author's line breaks. Anything a human typed into a textarea and
+   expects to read back the way they wrote it - an announcement body, a rejection
+   reason - needs this, or the paragraph collapses into one run. */
+.t-prewrap { white-space: pre-wrap; overflow-wrap: anywhere; }
 .icon-btn-danger { color: var(--danger); }
 
 /* ── org chart ────────────────────────────────────────────────────────────────

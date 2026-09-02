@@ -6,16 +6,18 @@ import type { Tab } from '@/components/ui'
 import type { PlanLimits } from '@/lib/plans'
 import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-settings'
+import { wsAnnouncements } from '@/locales/en/ws-announcements'
 import OrgTab from './OrgTab'
 import LeaveTypesSection from './LeaveTypesSection'
 import OpeningBalancesSection from './OpeningBalancesSection'
 import SignalsTab from './SignalsTab'
 import DomainsTab from './DomainsTab'
 import BillingTab from './BillingTab'
+import AnnouncementsSection from './AnnouncementsSection'
 
 const s = wsAdmin.settings
 
-type TabKey = 'org' | 'leave' | 'balances' | 'signals' | 'domains' | 'billing'
+type TabKey = 'org' | 'leave' | 'balances' | 'announcements' | 'signals' | 'domains' | 'billing'
 
 interface Props {
   slug: string
@@ -36,6 +38,10 @@ interface Props {
    * so write is what gates the Billing tab.
    */
   canManageOwnership: boolean
+  /** `announcements:read` - workspace-wide comms, gated on its own resource. */
+  canReadAnnouncements: boolean
+  canWriteAnnouncements: boolean
+  canDeleteAnnouncements: boolean
 }
 
 export default function SettingsClient(props: Props) {
@@ -46,6 +52,9 @@ export default function SettingsClient(props: Props) {
           { key: 'leave', label: s.tabLeave },
           { key: 'balances', label: s.tabBalances },
         ]
+      : []),
+    ...(props.canReadAnnouncements
+      ? [{ key: 'announcements', label: wsAnnouncements.title }]
       : []),
     ...(props.canReadSignals ? [{ key: 'signals', label: s.tabSignals }] : []),
     ...(props.canReadDomains ? [{ key: 'domains', label: s.tabDomains }] : []),
@@ -76,6 +85,14 @@ export default function SettingsClient(props: Props) {
 
       {active === 'balances' && (
         <OpeningBalancesSection slug={props.slug} canWrite={props.canWriteLeaves} />
+      )}
+
+      {active === 'announcements' && (
+        <AnnouncementsSection
+          slug={props.slug}
+          canWrite={props.canWriteAnnouncements}
+          canDelete={props.canDeleteAnnouncements}
+        />
       )}
 
       {active === 'signals' && (
