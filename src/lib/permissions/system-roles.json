@@ -20,6 +20,7 @@
       "domains": ["read", "write", "delete"],
       "settings": ["read", "write"],
       "members.role": ["write"],
+      "announcements": ["read", "write", "delete"],
       "roles": ["read", "write", "delete"],
       "ownership": ["write", "delete"]
     }
@@ -44,6 +45,7 @@
       "signals": ["read", "write", "delete"],
       "domains": ["read", "write", "delete"],
       "settings": ["read", "write"],
+      "announcements": ["read", "write", "delete"],
       "roles": ["read", "write", "delete"],
       "members.role": ["write"]
     }

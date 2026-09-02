@@ -10,7 +10,8 @@ import { marketing } from './en/marketing'
 import { documents, assets, maternity } from './en/documents'
 import { wsAdmin as wsAdminWorkforce } from './en/ws-overview'
 import { wsAdmin as wsAdminManage } from './en/ws-settings'
-import { wsEmployees, wsAssets, wsLeaveScreen, wsPeopleUi } from './en/ws-people'
+import { wsEmployees, wsAssets, wsLeaveScreen, wsPeopleUi, wsOrg } from './en/ws-people'
+import { wsAnnouncements } from './en/ws-announcements'
 import { wsReminders } from './en/ws-reminders'
 
 export const en = {
@@ -31,6 +32,8 @@ export const en = {
   wsAssets,
   wsLeaveScreen,
   wsPeopleUi,
+  wsOrg,
+  wsAnnouncements,
   wsReminders,
   // Two agents each owned half of the admin copy; sub-keys are disjoint.
   wsAdmin: { ...wsAdminWorkforce, ...wsAdminManage },
@@ -541,7 +544,7 @@ export const en = {
     recentActivityTitle: "Recent activity",
     recentActivityEmpty: "No check-ins yet today.",
     celebrationsTitle: "Upcoming celebrations",
-    celebrationsEmpty: "Nothing in the next two weeks.",
+    celebrationsEmpty: "Nothing coming up.",
     birthdayLabel: "Birthday",
     anniversaryLabel: "work anniversary",
   },

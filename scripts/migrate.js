@@ -344,6 +344,25 @@ const ADDITIVE_MIGRATIONS = [
   // admin_overrides - effective checkout for regularization
   `ALTER TABLE admin_overrides ADD COLUMN effective_checkout_at TEXT`,
 
+  // admin_overrides - tell an office day apart from a regularization
+  //
+  // Both write this table, and undoing a bulk office day must not delete an
+  // approved regularization. Mirrors `presence_events.source`, which already
+  // carries 'regularization' / 'user_app'. Backfilled to 'regularization'
+  // because that route was the only writer before office days existed.
+  `ALTER TABLE admin_overrides ADD COLUMN source TEXT`,
+  `UPDATE admin_overrides SET source = 'regularization' WHERE source IS NULL`,
+
+  // The UNIQUE index IS the idempotency guarantee for the bulk office-day
+  // insert - re-declaring the same day becomes INSERT OR IGNORE and a no-op.
+  // A pre-read would be two statements and a race. Verified 0 duplicate
+  // (workspace_id, presence_event_id) pairs before adding this.
+  `CREATE UNIQUE INDEX IF NOT EXISTS idx_admin_overrides_event
+     ON admin_overrides(workspace_id, presence_event_id)`,
+  // getOverrideEventIds() runs on EVERY queryWorkspaceEvents call, i.e. every
+  // workspace API request, and this table had no index at all.
+  `CREATE INDEX IF NOT EXISTS idx_admin_overrides_ws ON admin_overrides(workspace_id)`,
+
   // user_api_tokens - fast prefix lookup (O(1) instead of O(n) bcrypt scan)
   `ALTER TABLE user_api_tokens ADD COLUMN token_prefix TEXT`,
   `CREATE INDEX IF NOT EXISTS idx_api_tokens_prefix ON user_api_tokens(token_prefix)`,
@@ -388,6 +407,26 @@ const ADDITIVE_MIGRATIONS = [
 )`,
   `CREATE INDEX IF NOT EXISTS idx_workspace_holidays_ws_date ON workspace_holidays(workspace_id, date)`,
   `CREATE UNIQUE INDEX IF NOT EXISTS idx_workspace_holidays_ws_name_date_active ON workspace_holidays(workspace_id, name, date) WHERE deleted_at IS NULL`,
+
+  // workspace_announcements - workspace-wide notices (policy updates, office days)
+  //
+  // The canonical record, so an admin can see and retract what they posted.
+  // DELIVERY is a fan-out of ordinary `notifications` rows referencing this id,
+  // which is what gives every recipient their own read state, bell count and
+  // feed entry with no new machinery. Retracting hides the announcement; it
+  // does not unsend what was already delivered.
+  `CREATE TABLE IF NOT EXISTS workspace_announcements (
+  id           TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  title        TEXT NOT NULL,
+  body         TEXT NOT NULL,
+  created_by   TEXT NOT NULL REFERENCES users(id),
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  deleted_at   TEXT
+)`,
+  `CREATE INDEX IF NOT EXISTS idx_workspace_announcements_ws
+     ON workspace_announcements(workspace_id, created_at DESC)`,
 
   // workspace_leave_types - per-workspace configurable leave types
   `CREATE TABLE IF NOT EXISTS workspace_leave_types (

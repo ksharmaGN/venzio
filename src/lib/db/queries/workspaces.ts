@@ -1,6 +1,7 @@
 import { db } from '../index'
-import { hasAnyOrgAccess, parsePermissions } from '@/lib/permissions/can'
-import { seedSystemRoles } from './roles'
+import { can, hasAnyOrgAccess, parsePermissions } from '@/lib/permissions/can'
+import { Action, Resource } from '@/lib/permissions/catalogue'
+import { listWorkspaceRoles, seedSystemRoles } from './roles'
 
 export interface Workspace {
   id: string
@@ -196,14 +197,55 @@ export async function getWorkspaceMembers(workspaceId: string): Promise<Workspac
   )
 }
 
-export async function getActiveWorkspaceAdmins(workspaceId: string, excludeUserId?: string): Promise<{ user_id: string }[]> {
-  return db.query<{ user_id: string }>(
-    `SELECT wm.user_id FROM workspace_members wm
-     JOIN users u ON u.id = wm.user_id
-     WHERE wm.workspace_id = ? AND wm.role IN ('owner','admin') AND wm.status = 'active' AND u.deleted_at IS NULL
-     ${excludeUserId ? 'AND wm.user_id != ?' : ''}`,
-    excludeUserId ? [workspaceId, excludeUserId] : [workspaceId],
+/**
+ * Members whose ROLE GRANTS a permission - the people who can actually act.
+ *
+ * This replaces a role-name check (`wm.role IN ('owner','admin')`) that was
+ * structurally out of step with the rest of the system: the routes that action
+ * an approval gate on `requireWsAccess(..., Resource.Approvals, Action.Write)`,
+ * a CAPABILITY check. So a custom role holding `approvals:write` could action a
+ * request it was never told existed - the notification went to owners and
+ * admins by name, and to nobody else, however the grid actually read.
+ *
+ * Resolved in JS rather than SQL because the grid is a JSON column; the role
+ * list per workspace is a handful of rows, so this is two small queries and a
+ * filter, not a join over JSON.
+ */
+export async function getMembersWhoCan(
+  workspaceId: string,
+  resource: Resource,
+  action: Action,
+  excludeUserId?: string,
+): Promise<{ user_id: string }[]> {
+  const [members, roles] = await Promise.all([
+    db.query<{ user_id: string; role: string }>(
+      `SELECT wm.user_id, wm.role FROM workspace_members wm
+       JOIN users u ON u.id = wm.user_id
+       WHERE wm.workspace_id = ? AND wm.status = 'active'
+         AND wm.user_id IS NOT NULL
+         AND u.deleted_at IS NULL AND u.deactivated_at IS NULL
+       ${excludeUserId ? 'AND wm.user_id != ?' : ''}`,
+      excludeUserId ? [workspaceId, excludeUserId] : [workspaceId],
+    ),
+    listWorkspaceRoles(workspaceId),
+  ])
+
+  const grantedRoleKeys = new Set(
+    roles.filter((r) => can(r.permissions, resource, action)).map((r) => r.key),
   )
+  return members
+    .filter((m) => grantedRoleKeys.has(m.role))
+    .map((m) => ({ user_id: m.user_id }))
+}
+
+/**
+ * Who to tell about a new pending approval.
+ *
+ * Kept as a named wrapper because that is what the call sites mean, but it is
+ * no longer "holders of a built-in role" - it is holders of `approvals:write`.
+ */
+export async function getActiveWorkspaceAdmins(workspaceId: string, excludeUserId?: string): Promise<{ user_id: string }[]> {
+  return getMembersWhoCan(workspaceId, Resource.Approvals, Action.Write, excludeUserId)
 }
 
 export async function getActiveMemberIds(workspaceId: string): Promise<string[]> {

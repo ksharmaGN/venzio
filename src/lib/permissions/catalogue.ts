@@ -49,6 +49,14 @@ export enum Resource {
   // someone's role are wildly different risk levels. Keeping them on separate
   // rows means the grid stays three columns wide instead of five.
   AssignRoles = 'members.role',
+  /**
+   * Workspace-wide notices - policy updates, an office day, anything the whole
+   * workspace has to be told. Its own resource rather than a fold into
+   * `settings` because broadcasting to everyone's phone is a different trust
+   * level from editing signal config, and an HR role should be able to do the
+   * first without the second.
+   */
+  Announcements = 'announcements',
   Roles = 'roles',
 
   // Transfer ownership, archive/restore, plan and billing.
@@ -87,6 +95,7 @@ const RESOURCE_DEFS: Record<Resource, ResourceDef> = {
   [Resource.Settings]:  { key: Resource.Settings,  label: 'Workspace settings',   actions: [Read, Write] },
 
   [Resource.AssignRoles]: { key: Resource.AssignRoles, label: 'Assign roles',     actions: [Write] },
+  [Resource.Announcements]: { key: Resource.Announcements, label: 'Announcements', actions: [Read, Write, Delete] },
   [Resource.Roles]:       { key: Resource.Roles,       label: 'Roles',            actions: [Read, Write, Delete] },
 
   [Resource.Ownership]: { key: Resource.Ownership, label: 'Ownership & billing',  actions: [Write, Delete] },

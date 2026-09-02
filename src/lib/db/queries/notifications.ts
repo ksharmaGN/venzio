@@ -6,6 +6,14 @@ export type NotificationType =
   // Scheduled wall-clock reminders (see lib/reminders.ts). ref_id is the
   // workspace-local 'YYYY-MM-DD', ref_type is 'reminder'.
   | 'checkin_reminder' | 'checkout_reminder'
+  // An employee document was verified or rejected. ref_id is the document id,
+  // ref_type 'employee_document'. Until this existed, an admin could reject
+  // somebody's ID proof and the employee was never told.
+  | 'document_verified' | 'document_rejected'
+  // A workspace-wide notice. ref_id is the workspace_announcements id,
+  // ref_type 'announcement'. Delivered by fanning one row out per active
+  // member, which is what gives each of them their own read state.
+  | 'announcement'
 
 export interface Notification {
   id: string
