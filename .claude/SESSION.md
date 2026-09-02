@@ -19,10 +19,18 @@ at the rendered UI** for any of it - that remains the only gate that matters.
 
 ## Next step
 
-**Round 4 in flight.** Plan: `~/.claude/plans/use-restart-prompt-md-as-initial-serene-castle.md`.
-Committed so far: the People filter-bar fix, the cron proxy fix, and the schema /
-permissions groundwork (`7f8b206`). Four features are being built in parallel:
-notification correctness, announcements, bulk office days, celebrations window.
+**Round 4 is complete and committed** (`7f8b206..babece8`, 9 commits, each
+typechecking standalone). Plan:
+`~/.claude/plans/use-restart-prompt-md-as-initial-serene-castle.md`.
+
+Shipped: the People filter-bar fix; the cron proxy fix + 48h age cutoff + drain
+script; notification deep links, icons, document-review notifications and a
+single leave-action path; workspace announcements; bulk office days; the new
+celebrations window. All verified against the real local DB, which was then
+restored from `.tmp/pre-round4.db`.
+
+**Deploy order matters:** `npm run migrate` against production, then
+`npm run drain:open-events -- --apply`, and only THEN enable the cron workflow.
 
 ### THE FINDING: the push cron has never run in production
 
