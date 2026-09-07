@@ -1088,7 +1088,7 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
    reduced-motion, 44px touch-target and elevation rules in this file are
    selector lists, and anything declared inline is silently exempt from them. */
 .employee-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-/* An address or a bank account is a line, not a column - it spans the grid. */
+/* An address is a line, not a column - it spans the grid. */
 .field-span-full { grid-column: 1 / -1; }
 .form-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
 .form-narrow { max-width: 520px; }
