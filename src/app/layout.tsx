@@ -75,7 +75,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1a1a2e",
+  themeColor: "#06100d", // --bg-dark: the public shell is bg-venzio-bg-dark
 };
 
 const organizationJsonLd = {
