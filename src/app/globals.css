@@ -979,15 +979,29 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 /* ── org chart ────────────────────────────────────────────────────────────────
    Hand-rolled, no layout engine. A strict tree never needs edge routing that
    avoids nodes, which is the only thing a graph library would buy here. The
-   canvas scales; the container scrolls, so native scroll IS the pan. */
+   canvas scales; the container scrolls, so native scroll IS the pan.
+
+   The layout is an INDENTED OUTLINE, not a top-down chart: children stack
+   downward and indent one step per level, the way a file explorer draws a
+   directory. The top-down version spread siblings across a row, so a workspace
+   with any real headcount was one long horizontal scroll and depth stopped
+   being legible - the thing the screen exists to show. Depth is now
+   indentation, which costs nothing horizontally past the deepest branch.
+
+   Every connector is two pseudo-elements on `.org-node`: `::before` is the
+   vertical spine its siblings share, `::after` the elbow into its own card. */
 .org-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 14px 18px; border-bottom: 1px solid var(--border); }
 .org-toolbar .filter-search { min-width: 220px; }
 .org-zoom-label { font-family: var(--font-mono, monospace); font-size: 12px; color: var(--text-secondary); min-width: 46px; text-align: center; }
-.org-viewport { overflow: auto; padding: 28px 20px 36px; max-height: 72vh; }
+.org-viewport { overflow: auto; padding: 20px 20px 32px; max-height: 72vh; }
+/* `top left`, not `top center`: an outline grows down and to the right from a
+   fixed corner, so scaling about the centre would slide the whole tree sideways
+   on every zoom step. No `min-width: max-content` either - refusing to shrink
+   is what forced the horizontal scroll this layout exists to remove. */
 .org-canvas {
   transform: scale(var(--org-zoom, 1));
-  transform-origin: top center;
-  display: flex; justify-content: center; min-width: max-content;
+  transform-origin: top left;
+  display: flex; flex-direction: column; align-items: flex-start;
   transition: transform 220ms var(--ease-out);
 }
 /* Zoom steps. Discrete on purpose: the value has to live in this file to stay
@@ -1004,36 +1018,65 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 .org-canvas[data-zoom="130"] { --org-zoom: 1.3; }
 .org-canvas[data-zoom="140"] { --org-zoom: 1.4; }
 
-.org-node { display: flex; flex-direction: column; align-items: center; }
-/* The stalk down out of a parent. */
-.org-node-children {
-  display: flex; justify-content: center; align-items: flex-start;
-  padding-top: 22px; position: relative;
-}
-.org-node-children::before {
-  content: ''; position: absolute; top: 0; left: 50%;
-  width: 2px; height: 22px; background: var(--border);
-}
-.org-child { position: relative; padding: 22px 12px 0; display: flex; flex-direction: column; align-items: center; }
-/* The horizontal rail joining siblings, trimmed at the two ends so it does not
-   overhang the outermost cards. */
-.org-child::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0;
-  height: 2px; background: var(--border);
-}
-.org-child:first-child::before { left: 50%; }
-.org-child:last-child::before { right: 50%; }
-.org-child:only-child::before { left: 50%; right: 50%; }
-/* The drop from the rail into this child's own card. */
-.org-child::after {
-  content: ''; position: absolute; top: 0; left: 50%;
-  width: 2px; height: 22px; background: var(--border);
-}
+/* One person and their whole subtree. `position: relative` is load-bearing:
+   both connectors are pseudo-elements measured from this box. */
+.org-node { position: relative; display: flex; flex-direction: column; }
 
+/* The spine this node shares with its siblings, and the elbow into its own
+   card. Both hang 22px to the LEFT of the node, which `.org-branch` pays for
+   with its padding - so the spine lands under the parent's chevron rather than
+   under an arbitrary point of the parent card. */
+.org-node::before,
+.org-node::after { content: ''; position: absolute; background: var(--border); }
+.org-node::before { left: -22px; top: 0; bottom: 0; width: 2px; }
+.org-node::after { left: -22px; top: 32px; width: 22px; height: 2px; }
+/* The LAST child stops its spine at its own elbow. Without this the line runs
+   on past the final card and down the side of that card's subtree, drawing a
+   branch to nobody. 34px = the 32px elbow plus its 2px, so the corner closes. */
+.org-node:last-child::before { bottom: auto; height: 34px; }
+/* The FIRST child reaches 32px UP - half a row - so the spine starts at the
+   parent's chevron instead of below its row. Otherwise the line begins in mid
+   air under the control it hangs from, and the tree reads as loose indent
+   guides rather than as one connected structure. A root never matches: the
+   rule below has already blanked its connectors. */
+.org-node:first-child::before { top: -32px; }
+.org-node:first-child:last-child::before { height: 66px; }
+/* A root hangs from nothing. */
+.org-canvas > .org-node::before,
+.org-canvas > .org-node::after { content: none; }
+
+/* The row IS the rhythm: 64px around a 56px card gives 4px of air above and
+   below, and because the gap lives inside the node rather than between nodes,
+   the spine stays unbroken from one sibling to the next. A `gap` on the branch
+   would slice it. */
+.org-row { display: flex; align-items: center; gap: 6px; min-height: 64px; }
+/* 44px of padding, so a child's spine (at its own -22px) lands on 22px - dead
+   centre of the parent's 44px chevron. */
+.org-branch { display: flex; flex-direction: column; padding-left: 44px; }
+
+/* Icon-only disclosure, deliberately quiet - the border and fill of a button
+   here would read as a second card. It still carries the full 44px target from
+   the selector list above. `.org-toggle-spacer` keeps a childless person's card
+   on the same x as their siblings' - an outline whose cards do not line up is
+   just an indented list. */
+.org-toggle {
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 44px; min-width: 44px;
+  border: 0; border-radius: var(--radius-sm);
+  background: none; color: var(--text-secondary); cursor: pointer;
+  transition: color 200ms var(--ease-out), background 200ms var(--ease-out);
+}
+.org-toggle:hover { color: var(--brand); background: var(--surface-2); }
+.org-toggle-spacer { flex: 0 0 44px; }
+
+/* Fixed height, single line, ellipsis. Two reasons, and neither is taste: a
+   card of unpredictable height has no knowable centre, so the elbow above could
+   not anchor to one; and uniform rows are what make an outline scan as a list.
+   The full name and email stay reachable through `title`. */
 .org-card {
   display: flex; align-items: center; gap: 10px;
-  min-width: 208px; max-width: 240px;
-  padding: 10px 12px; border: 1px solid var(--border);
+  flex: 0 0 auto; width: 320px; height: 56px;
+  padding: 0 14px; border: 1px solid var(--border);
   border-radius: var(--radius-lg); background: var(--surface-0);
   text-align: left; position: relative;
   transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out);
@@ -1041,18 +1084,21 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 .org-card:hover { border-color: var(--brand); }
 .org-card.is-root { border-color: var(--brand); }
 .org-card.is-match { border-color: var(--brand); box-shadow: 0 0 0 4px var(--ring); }
-.org-card-body { min-width: 0; flex: 1; }
-.org-card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); overflow-wrap: anywhere; }
-.org-card-meta { font-size: 11px; color: var(--text-muted); overflow-wrap: anywhere; }
+.org-card-body { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 1px; }
+.org-card-name,
+.org-card-meta { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.org-card-name { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.org-card-meta { font-size: 11px; color: var(--text-muted); }
 
-.org-toggle {
-  display: flex; align-items: center; justify-content: center; gap: 4px;
-  margin-top: 10px; padding: 2px 10px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--surface-0); color: var(--text-secondary);
-  font-size: 11px; font-weight: 600; cursor: pointer;
+/* On a phone the indent is the scarce resource, not the card. The elbow shortens
+   and the padding follows it down by the same 6px, so the spine still lands on
+   22px - the chevron does not shrink, so neither may its alignment. */
+@media (max-width: 640px) {
+  .org-card { width: 232px; }
+  .org-branch { padding-left: 38px; }
+  .org-node::before { left: -16px; }
+  .org-node::after { left: -16px; width: 16px; }
 }
-.org-toggle:hover { border-color: var(--brand); color: var(--brand); }
 
 @media (prefers-reduced-motion: reduce) {
   .org-canvas { transition: none; }

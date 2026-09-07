@@ -335,12 +335,31 @@ whoever actually inherits them.
 ### The chart at `/ws/:slug/org`
 
 Hand-rolled, no layout library. A strict tree never needs edge routing that
-avoids nodes, which is the only thing a graph engine would buy; connectors are
-four `::before`/`::after` borders. Collapse/expand is a `Set` of ids; search
-reveals a match by un-collapsing `ancestorsOf()` and centring it. The zoom step
-is a `data-zoom` attribute resolved to `--org-zoom` **in `globals.css`** — a
-custom property written inline would sit outside the reduced-motion and
-touch-target selector lists (invariant 15).
+avoids nodes, which is the only thing a graph engine would buy. Collapse/expand
+is a `Set` of ids; search reveals a match by un-collapsing `ancestorsOf()` and
+centring it. The zoom step is a `data-zoom` attribute resolved to `--org-zoom`
+**in `globals.css`** — a custom property written inline would sit outside the
+reduced-motion and touch-target selector lists (invariant 15).
+
+**It is an indented outline, not a top-down chart.** Siblings used to sit in a
+row joined by a horizontal rail, so a workspace with real headcount opened as a
+horizontal scroll and depth — the only thing the screen is for — was squeezed
+out of view. Depth is now indentation, which costs no width past the deepest
+branch. Do not put the levels back side by side.
+
+Three pieces of geometry hold it together, and each is load-bearing:
+
+| | |
+|---|---|
+| `.org-node::before` / `::after` | The shared **spine** and this node's **elbow**, both hanging 22px left of the node. `.org-branch` pays for that with `padding-left: 44px`, which is what lands the spine on the centre of the parent's 44px chevron. |
+| `.org-node:last-child::before` | Clips the spine to the last elbow. Without it the line runs on past the final card and down the side of its subtree, drawing a branch to nobody. |
+| `.org-row { min-height: 64px }` | The sibling gap lives **inside** the node, never as a `gap` on `.org-branch` — a gap between nodes would slice the spine at every row. |
+
+The card is a fixed 56px with both lines clipped to one line and a `title`
+carrying the full value. That is not a density choice: a card of unpredictable
+height has no knowable centre, so the elbow above it would have nothing to
+anchor to. A leaf renders `.org-toggle-spacer` in place of the chevron so its
+card keeps the level's `x`.
 
 ---
 
