@@ -49,40 +49,33 @@ export default function WsAccountMenu({ slug, userName, userRoleName, variant }:
     { key: 'signout', label: wsAdmin.shell.menuSignOut, onSelect: () => setConfirmOpen(true), danger: true },
   ]
 
+  // Classes, not inline styles: the sidebar trigger has to shed its name, role
+  // and chevron in the 64px rail, and a media query cannot reach an inline
+  // declaration (invariant 15).
   const trigger = variant === 'sidebar' ? (
     <button
       type="button"
-      className="rowlink pressable"
+      className="rowlink pressable account-trigger"
       onClick={() => setMenuOpen((v) => !v)}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       aria-label={wsAdmin.shell.accountMenu}
-      style={{
-        display: 'flex', alignItems: 'center', gap: '9px', padding: '8px', width: '100%',
-        background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', minHeight: '44px',
-      }}
     >
       <Avatar name={userName} size={30} />
-      <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{
-          display: 'block', fontSize: '12.5px', fontWeight: 700, color: 'var(--text-primary)',
-          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-        }}>
-          {userName}
-        </span>
-        <span className="t-muted" style={{ display: 'block', fontSize: '11px' }}>{userRoleName}</span>
+      <span className="account-identity">
+        <span className="account-name">{userName}</span>
+        <span className="t-muted account-role">{userRoleName}</span>
       </span>
-      <MoreHorizontal size={16} aria-hidden style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+      <MoreHorizontal size={16} aria-hidden className="account-more" />
     </button>
   ) : (
     <button
       type="button"
-      className="pressable"
+      className="pressable account-trigger-bare"
       onClick={() => setMenuOpen((v) => !v)}
       aria-haspopup="menu"
       aria-expanded={menuOpen}
       aria-label={wsAdmin.shell.accountMenu}
-      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
     >
       <Avatar name={userName} size={32} />
     </button>

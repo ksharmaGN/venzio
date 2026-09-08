@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import WsLayoutClient from "@/components/ws/WsLayoutClient";
 
@@ -40,11 +41,18 @@ export default async function WsSlugLayout({ children, params }: Props) {
     redirect("/me");
   }
 
-  const [dbUser, pendingLeaveCount, pendingRegularizationCount] = await Promise.all([
+  const [dbUser, pendingLeaveCount, pendingRegularizationCount, cookieStore] = await Promise.all([
     getUserById(user.userId),
     workspace.leaves_enabled ? getPendingLeaveCount(workspace.id) : Promise.resolve(0),
     getPendingRegularizationCount(workspace.id),
+    cookies(),
   ]);
+
+  // Read here rather than in the client component so the FIRST paint already
+  // has the right sidebar width. `localStorage` cannot do this - the server
+  // would render the expanded sidebar and the browser would snap it to the rail
+  // on every navigation. Same reasoning as `vnz_ws` on the /me surface.
+  const navCollapsed = cookieStore.get(en.constants.cookieNav)?.value === "collapsed";
 
   return (
     <>
@@ -65,6 +73,7 @@ export default async function WsSlugLayout({ children, params }: Props) {
         userName={dbUser?.full_name?.trim() || user.email}
         userRoleName={role.name}
         readableResources={readableResources(role.permissions)}
+        initialNavCollapsed={navCollapsed}
       >
         {children}
       </WsLayoutClient>

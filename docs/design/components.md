@@ -16,7 +16,7 @@ import { Button, Card, Chip, Modal, toneForMatchedBy } from '@/components/ui'
 
 | Component | Root class(es) | Required props | Notes |
 |---|---|---|---|
-| `Card` | `.card` (+`.card-fixed-h`) | — | `padded={false}` sets inline `padding: 0` |
+| `Card` | `.card` (+`.card-fixed-h`) | — | `padded={false}` sets inline `padding: 0`. `fixedHeight` is `340–420px` with a scrolling `.scroll-body`; **the 340px floor is dropped below 640px** — it exists to stop side-by-side panels jumping as each loads, and stacked one per row on a phone there is no neighbour to stay level with, so it was only void under a one-row list. The ceiling stays, so a long queue still scrolls inside the card |
 | `StatCard` | `.card` (+`.rowlink` when `onClick`) | `label`, `value` | `accent` drives `.stat-num.accent-*` and `.dash-ic.accent-*` together; `position: relative` is set only when an `icon` is present |
 | `Divider` | `.divider` (+`.inset`) | — | `role="separator"`; a numeric `inset` becomes inline margins |
 | `EmptyState` | `.empty` | `title` | Title renders `.t-h2`, hint renders `.t-muted` |
@@ -40,7 +40,7 @@ import { Button, Card, Chip, Modal, toneForMatchedBy } from '@/components/ui'
 | `Modal` | `.modal > .scrim + .panel` | `open`, `onClose` | Title `.panel-title`, footer `.panel-actions` |
 | `SlideOver` | `.slideover > .scrim + .panel` | `open`, `onClose` | Title uses `.t-h2`, not `.panel-title` — the only structural difference from `Modal` |
 | `BottomSheet` | `.me-sheet > .scrim + .panel + .handle` | `open`, `onClose` | Deliberately unlabelled: the content supplies its own heading. Handle is decorative — there is no drag-to-dismiss |
-| `AreaChart` | svg, `w-full` | `points`, `label` | `viewBox` 900×282; gridlines spread evenly over `[0, yMax]`; guards the single-point case |
+| `AreaChart` | `div.w-full` wrapping an svg | `points`, `label` | **Measures its own width** and builds the `viewBox` from it, so one user unit is one CSS pixel. `xTickEvery` is a *floor* — the real stride comes from how many 12px labels the measured width fits. Gridlines spread evenly over `[0, yMax]`; guards the single-point case |
 | `BarChart` | `.bar-wrap` (+`.bar-wrap-lg`) | `bars`, `label` | Bar heights are a percentage of the wrapper, so any wrapper height works; `height === 150` picks the `-lg` class |
 | `DeptBars` | `.stack` | `items`, `label` | `role="group"`, **not** `role="img"` — the rows carry real text, so a screen reader should read them, not a summary. The track is `aria-hidden` |
 
@@ -52,11 +52,13 @@ Charts live in `src/components/ui/charts/`.
 
 ### Client vs server
 
-**`'use client'`:** `Button`, `IconButton`, `Chip`, `Toggle`, `Dropzone`, `DropdownMenu`, `TabBar`, `WizardSteps`, `DataTable`, `Modal`, `SlideOver`, `BottomSheet`.
+**`'use client'`:** `Button`, `IconButton`, `Chip`, `Toggle`, `Dropzone`, `DropdownMenu`, `TabBar`, `WizardSteps`, `DataTable`, `Modal`, `SlideOver`, `BottomSheet`, `AreaChart`.
 
-**Server-renderable:** `Card`, `StatCard`, `Divider`, `EmptyState`, `Skeleton`, `Progress`, `SplitBar`, `StageDots`, `Field`, `Input`, `Select`, `Textarea`, and all three charts.
+**Server-renderable:** `Card`, `StatCard`, `Divider`, `EmptyState`, `Skeleton`, `Progress`, `SplitBar`, `StageDots`, `Field`, `Input`, `Select`, `Textarea`, `BarChart` and `DeptBars`.
 
 That split is worth preserving. The default in this codebase is a Server Component, and the reason half these primitives stay server-renderable is so a page made of cards, stats and charts ships no JavaScript for its chrome. Adding an `onClick` to `Card` or `StatCard` to save a wrapper would drag every dashboard into the client bundle.
+
+**`AreaChart` is the one primitive that gave that property up, and the trade is worth naming.** It used to draw into a fixed 900×282 `viewBox` and let the browser scale it to whatever width it got. A `viewBox` scales *everything*, text included: in the dashboard's chart card the factor was 0.35 on a phone and 0.57 on a desktop, so axis labels specified at 12 rendered at **4.2px and 6.8px** — illegible on both — and the same scaling letterboxed a 3.19:1 drawing inside a fixed 220px-tall box, leaving 122px of dead space in the card on mobile. There is no way to un-scale text inside a `viewBox` without knowing the rendered width, so it measures. `BarChart` and `DeptBars` need no such thing: both are CSS boxes with percentage sizes and real HTML text, which is why they stay pure.
 
 `StatCard` is the interesting case: it takes an `onClick` and adds `.rowlink`, but the *component* is still server-renderable because the handler is passed in by whatever client component is rendering it.
 
@@ -76,7 +78,9 @@ No primitive forwards a ref, so **no form primitive can receive one**. That rule
 - `role="dialog"`, `aria-modal="true"`
 - Clicking the scrim closes
 
-**None of the three implements a focus trap.** Tab can walk out of an open overlay into the page behind it. See [accessibility.md](./accessibility.md).
+- A **focus trap**, via `useFocusTrap(panelRef, open && mounted)` — so `aria-modal="true"` is true for keyboard users too
+
+The `/ws` navigation drawer (`WsSidebar` inside `WsLayoutClient`) is the one consumer of `useOverlay` outside this directory. It takes the whole contract and supplies its own markup; it is **not** portalled, so the hook's `mounted` guard goes unused there. If a fourth overlay appears, reuse the hook rather than re-implementing any part of the list above.
 
 ### Miscellaneous invariants
 

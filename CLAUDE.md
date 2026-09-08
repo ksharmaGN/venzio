@@ -770,7 +770,9 @@ WiFi SSID: bcryptjs hash - same library, raw SSID never persisted.
 ### Layouts
 - `src/app/(public)/layout.tsx` - passthrough, public pages
 - `src/app/me/layout.tsx` - `.shell-me`: 460px column, `.me-topbar`, `.me-content`, fixed `.me-bottomnav`. Safe-area insets on `html` (top/left/right) and on the bottom nav's padding
-- `src/app/ws/[slug]/layout.tsx` → `src/components/ws/WsLayoutClient.tsx` - `.shell-ws`: a sticky **228px sidebar** beside a column carrying the 64px `.ws-topbar` and the 1180px `.ws-content`. **Under 860px the sidebar becomes a horizontally scrolling tab strip** across the top, `.sidebar-foot` is hidden and `.topbar-account` takes over the account menu. The *page* scrolls (sidebar is `position: sticky`), not an inner div, so the topbar's own sticky works and browser scroll restoration behaves
+- `src/app/ws/[slug]/layout.tsx` → `src/components/ws/WsLayoutClient.tsx` - `.shell-ws`: a **collapsible sidebar** beside a column carrying the 64px `.ws-topbar` and the 1180px `.ws-content`. It is a sidebar at every width — the ≤860px horizontal tab strip is gone. The *page* scrolls, not an inner div, so the topbar's own sticky works and browser scroll restoration behaves
+- **Two independent states, and neither component reads the viewport.** `.shell-ws` carries `data-nav="expanded|collapsed"` (228px column ↔ 64px icon rail) and `data-drawer="open|closed"` (the off-canvas overlay). The stylesheet decides which one means anything at a given width: every rail rule lives inside `@media (min-width: 861px)`, every drawer rule inside `@media (max-width: 860px)`. `data-nav` is persisted to the `vnz_nav` cookie and **read by the Server Component layout**, so the first paint is already the right width; `data-drawer` is deliberately not persisted — a nav drawer that reopens itself on the next page is a bug, not a preference
+- **The drawer reuses `useOverlay`** (`src/components/ui/use-overlay.ts`) for Escape, body-scroll lock, focus-in/focus-return and the focus trap — the same contract `Modal`, `SlideOver` and `BottomSheet` share. It is not portalled, so the `mounted` guard is unused. The one piece of responsive JS in the shell is a `matchMedia` listener that force-closes the drawer at ≥861px, because the focus trap is only correct while the sidebar is an overlay
 - Sidebar entries come from `visibleScreenGroups()` in `src/lib/permissions/screens.ts` — never a hardcoded nav list. Hiding a tab is a courtesy; the matching route enforces the same permission independently
 
 See `docs/design/shells.md` for the full anatomy.
@@ -915,7 +917,11 @@ Rules:
 - Never skip `requireWsAccess(req, slug, Resource, Action)` on a `/api/ws/[slug]/*` route — and never reintroduce `requireWsAdmin()`
 - Never put a shadow on an inline surface (cards, inputs, chips, rows); shadows are for overlays only
 - Never add gradients to app UI
-- Never write a `<style>` block in a component or an ad-hoc inline style object — add a class to `globals.css`
+- Never write a `<style>` block in a component or an ad-hoc inline style object — add a class to `globals.css`. An inline style is also unreachable by a media query, so anything that has to change at a breakpoint *must* be a class
+- Never put a breakpoint override for a selector *earlier* in `globals.css` than the base rule for the same selector — the file has no cascade layers, so the later rule wins and the override is silently dead. This has now bitten twice (`.stat-row`, `.nav-drawer-toggle` vs `.icon-btn`)
+- Never give a `/ws` screen an icon that only reads next to its own label — the 64px rail removes every label, so the glyph is the whole distinction
+- Never hide a collapsed nav label with `display: none` — it is the link's accessible name; hide it visually
+- Never leave `animation-fill-mode: both` on a class that animates `transform` and contains `position: fixed` children — the held transform becomes their containing block and they anchor to the document instead of the viewport (see `.page-enter` in `docs/design/shells.md`)
 - Never return document bytes (or base64) in a JSON response body
 - Never trust `otpVerified: true` from client
 - Never use spinners - use skeleton loaders
