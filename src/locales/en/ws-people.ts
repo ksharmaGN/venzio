@@ -439,8 +439,13 @@ export const wsOrg = {
   zoomIn: 'Zoom in',
   zoomOut: 'Zoom out',
   expandAll: 'Expand all',
-  collapse: 'Collapse',
-  expand: (n: number) => `${n} ${n === 1 ? 'report' : 'reports'}`,
+  // The outline's disclosure chevron is icon-only - the card's meta line already
+  // prints "3 direct reports", so repeating the count beside it was noise. These
+  // are its accessible name, and they carry the person so a screen reader is not
+  // read a page of identical "Expand" buttons.
+  collapseAria: (name: string) => `Hide ${name}'s reports`,
+  expandAria: (name: string, n: number) =>
+    `Show ${name}'s ${n} ${n === 1 ? 'report' : 'reports'}`,
   reportCount: (n: number) => `${n} direct ${n === 1 ? 'report' : 'reports'}`,
   youSuffix: '(you)',
   openPerson: (name: string) => `Find ${name} in the directory`,

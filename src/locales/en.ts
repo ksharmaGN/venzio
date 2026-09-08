@@ -594,6 +594,12 @@ export const en = {
     // readable by client code - and always re-validated against the caller's
     // real memberships server-side before anything is scoped to it.
     cookieWorkspace: "vnz_ws",
+    // Whether the /ws sidebar is collapsed to its icon rail. Same rationale as
+    // vnz_ws: a UI preference, not a credential, so it is written from the
+    // browser and read by the Server Component layout - which is the whole
+    // point. The layout has to know the width before it paints, or every
+    // navigation flashes an expanded sidebar and then snaps to the rail.
+    cookieNav: "vnz_nav",
 
     // ── Domain verification ───────────────────────────────────────────────────
     // DNS TXT: _venzio-verify.{domain}  IN TXT  "venzio-verify={token}"

@@ -45,6 +45,7 @@ import {
 import { useToast } from '@/components/shared/Toast'
 import type { LeaveTypeWithBalance, LeaveRequestWithType } from '@/lib/db/queries/leaves'
 import type { RegularizationRequest } from '@/lib/db/queries/regularizations'
+import { en } from '@/locales/en'
 import { meScreens } from '@/locales/en/me-screens'
 import { useWorkspaceScope } from '../workspace-scope'
 
@@ -55,11 +56,12 @@ interface Holiday {
   description: string | null
 }
 
-type TabKey = 'balance' | 'apply' | 'history' | 'holidays'
+type TabKey = 'balance' | 'apply' | 'correction' | 'history' | 'holidays'
 
 const TABS: Tab[] = [
   { key: 'balance', label: meScreens.leave.tabBalance },
   { key: 'apply', label: meScreens.leave.tabApply },
+  { key: 'correction', label: meScreens.leave.tabCorrection },
   { key: 'history', label: meScreens.leave.tabHistory },
   { key: 'holidays', label: meScreens.leave.tabHolidays },
 ]
@@ -340,6 +342,159 @@ function ApplyTab({
   )
 }
 
+// ─── Correction ───────────────────────────────────────────────────────────────
+
+/**
+ * Ask an admin to correct a past working day.
+ *
+ * This form used to be a modal opened from a row on `/me/timeline`, which meant
+ * it could only ever reach a day that already had a presence event - and the
+ * case members actually hit is the opposite one: worked, forgot to check in, so
+ * there is no event, no row, and nowhere to click. It lives here now, and the
+ * day comes from a picker rather than from the row that opened it.
+ *
+ * The picker is NOT a free date input. `correctableDates` arrives from
+ * `GET /api/me/ws/[slug]/regularizations`, which has already excluded weekends,
+ * holidays, verified days, leave, the plan history floor and days with a request
+ * already open - every guard `POST` would refuse on. A free input would let a
+ * member pick a Sunday and learn about it only after submitting.
+ */
+function CorrectionTab({
+  slug,
+  correctableDates,
+  loading,
+  onSubmitted,
+}: {
+  slug: string
+  correctableDates: string[]
+  loading: boolean
+  onSubmitted: () => void
+}) {
+  const [date, setDate] = useState('')
+  const [requestedType, setRequestedType] = useState<'office' | 'remote'>('office')
+  const [reason, setReason] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const toast = useToast()
+
+  if (loading) return <ListSkeleton rows={1} />
+  if (correctableDates.length === 0) {
+    return (
+      <EmptyState
+        title={meScreens.leave.correctionNoDays}
+        hint={meScreens.leave.correctionNoDaysHint}
+      />
+    )
+  }
+
+  const canSubmit = !!date && !!reason.trim() && !submitting
+
+  async function submit() {
+    if (!canSubmit) return
+    setSubmitting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/me/ws/${encodeURIComponent(slug)}/regularizations`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          target_date: date,
+          requested_type: requestedType,
+          reason: reason.trim(),
+        }),
+      })
+      const body = (await res.json().catch(() => ({}))) as { error?: string }
+      if (!res.ok) {
+        // The server is the judge - render whatever it refused with.
+        setError(body.error ?? en.meWsRegularization.submitErrorGeneric)
+        setSubmitting(false)
+        return
+      }
+      toast.show(meScreens.leave.correctionSubmitSuccess, 'success')
+      onSubmitted()
+    } catch {
+      setError(en.meWsRegularization.submitErrorGeneric)
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <Card>
+      <p className="t-eyebrow" style={{ marginBottom: '8px' }}>
+        {meScreens.leave.correctionHeading}
+      </p>
+      <p className="t-muted" style={{ margin: '0 0 12px' }}>
+        {meScreens.leave.correctionIntro}
+      </p>
+
+      <Field label={meScreens.leave.correctionFieldDay} htmlFor="cr-date" required>
+        <Select
+          id="cr-date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          placeholder={meScreens.leave.correctionFieldDayPlaceholder}
+          options={correctableDates.map((d) => ({ value: d, label: fmtDate(d, true) }))}
+        />
+      </Field>
+
+      <Field
+        label={en.meWsRegularization.fieldType}
+        htmlFor="cr-type-office"
+        style={{ marginTop: '12px' }}
+        required
+      >
+        <div role="radiogroup" style={{ display: 'flex', gap: '8px' }}>
+          {(['office', 'remote'] as const).map((t) => (
+            <Button
+              key={t}
+              id={`cr-type-${t}`}
+              role="radio"
+              aria-checked={requestedType === t}
+              variant={requestedType === t ? 'primary' : 'secondary'}
+              block
+              onClick={() => setRequestedType(t)}
+            >
+              {t === 'office' ? en.meWsRegularization.typeOffice : en.meWsRegularization.typeRemote}
+            </Button>
+          ))}
+        </div>
+      </Field>
+
+      {/* Required here, unlike leave: an admin approving a correction is
+          overriding the signals, so they need the reason it is warranted. */}
+      <Field
+        label={en.meWsRegularization.fieldReason}
+        htmlFor="cr-reason"
+        style={{ marginTop: '12px' }}
+        required
+      >
+        <Textarea
+          id="cr-reason"
+          value={reason}
+          placeholder={en.meWsRegularization.fieldReasonPlaceholder}
+          onChange={(e) => setReason(e.target.value)}
+        />
+      </Field>
+
+      {error && (
+        <p className="field-error" role="alert">
+          {error}
+        </p>
+      )}
+
+      <Button
+        block
+        style={{ marginTop: '14px' }}
+        disabled={!canSubmit}
+        loading={submitting}
+        onClick={() => void submit()}
+      >
+        {submitting ? en.meWsRegularization.submitting : en.meWsRegularization.submit}
+      </Button>
+    </Card>
+  )
+}
+
 // ─── History ──────────────────────────────────────────────────────────────────
 
 function HistoryTab({
@@ -522,6 +677,12 @@ interface LeaveData {
   types: LeaveTypeWithBalance[]
   requests: LeaveRequestWithType[]
   regularizations: RegularizationRequest[]
+  /**
+   * Which past days the Correction tab may offer. Server-decided and shipped on
+   * the same `/regularizations` read that fills `regularizations` above, so the
+   * tab costs no extra request - see `getCorrectableDates()`.
+   */
+  correctableDates: string[]
   holidays: Holiday[]
 }
 
@@ -558,6 +719,9 @@ export default function LeaveScreen() {
         requests: Array.isArray(requests.leaveRequests) ? requests.leaveRequests : [],
         regularizations: Array.isArray(regularizations.regularizationRequests)
           ? regularizations.regularizationRequests
+          : [],
+        correctableDates: Array.isArray(regularizations.correctableDates)
+          ? regularizations.correctableDates
           : [],
         holidays: Array.isArray(holidays.holidays) ? holidays.holidays : [],
       })
@@ -603,6 +767,19 @@ export default function LeaveScreen() {
           slug={slug}
           types={fresh?.types ?? []}
           holidays={fresh?.holidays ?? []}
+          loading={loading}
+          onSubmitted={() => {
+            setRefreshKey((n) => n + 1)
+            setTab('history')
+          }}
+        />
+      )}
+
+      {tab === 'correction' && (
+        <CorrectionTab
+          key={slug}
+          slug={slug}
+          correctableDates={fresh?.correctableDates ?? []}
           loading={loading}
           onSubmitted={() => {
             setRefreshKey((n) => n + 1)

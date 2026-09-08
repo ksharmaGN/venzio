@@ -544,20 +544,25 @@ const ADDITIVE_MIGRATIONS = [
   `CREATE INDEX IF NOT EXISTS idx_employment_details_type     ON employment_details(workspace_id, employment_type)`,
   `CREATE INDEX IF NOT EXISTS idx_employment_details_manager  ON employment_details(workspace_id, reporting_manager_id)`,
 
-  // employee_sensitive - financial + statutory IDs, all AES-256-GCM encrypted (1:1 with employees)
+  // employee_sensitive - financial + statutory IDs. The columns carrying a
+  // number that identifies an account are AES-256-GCM encrypted (the
+  // `_encrypted` suffix says which); the descriptive ones beside them - IFSC,
+  // bank name, account holder name - are plaintext, because they identify a
+  // branch or repeat a name the employees row already stores in the clear.
   `CREATE TABLE IF NOT EXISTS employee_sensitive (
-  id                     TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
-  employee_id            TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
-  workspace_id           TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  pan_encrypted          TEXT,
-  aadhaar_encrypted      TEXT,
-  uan                    TEXT,
-  passport_number        TEXT,
-  bank_account_encrypted TEXT,
-  bank_ifsc              TEXT,
-  bank_name              TEXT,
-  created_at             TEXT NOT NULL DEFAULT (datetime('now')),
-  updated_at             TEXT NOT NULL DEFAULT (datetime('now'))
+  id                       TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+  employee_id              TEXT NOT NULL UNIQUE REFERENCES employees(id) ON DELETE CASCADE,
+  workspace_id             TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  pan_encrypted            TEXT,
+  aadhaar_encrypted        TEXT,
+  uan                      TEXT,
+  passport_number          TEXT,
+  bank_account_encrypted   TEXT,
+  bank_ifsc                TEXT,
+  bank_name                TEXT,
+  bank_account_holder_name TEXT,
+  created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
   `CREATE INDEX IF NOT EXISTS idx_employee_sensitive_employee ON employee_sensitive(employee_id)`,
 
@@ -814,6 +819,16 @@ const ADDITIVE_MIGRATIONS = [
        WHERE wm.workspace_id = e.workspace_id
          AND (wm.user_id = e.user_id OR lower(wm.email) = lower(e.work_email))
      )`,
+
+  // employee_sensitive - the name the bank account is held in.
+  //
+  // Plaintext, like bank_ifsc and bank_name beside it and unlike
+  // bank_account_encrypted. It is a name, and the employees row already stores
+  // first_name / last_name in the clear, so encrypting this one would cost a
+  // decrypt on every read of the record to protect nothing new. It is likewise
+  // not masked on read-only screens - masking a name that is legible two fields
+  // above it is theatre.
+  `ALTER TABLE employee_sensitive ADD COLUMN bank_account_holder_name TEXT`,
 ];
 
 // ─── SQLite runner (local dev) ────────────────────────────────────────────────

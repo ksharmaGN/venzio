@@ -19,6 +19,12 @@ export const wsAdmin = {
     navLabel: 'Workspace sections',
     switchWorkspace: 'Switch workspace',
     accountMenu: 'Account menu',
+    /** The ≥861px rail toggle. Labels the ACTION, not the current state. */
+    collapseNav: 'Collapse sidebar',
+    expandNav: 'Expand sidebar',
+    /** The ≤860px drawer toggle. */
+    openNav: 'Open navigation',
+    closeNav: 'Close navigation',
     /** Rendered as a chip beside the role badge, e.g. "growth plan". */
     planChip: (plan: string) => `${plan} plan`,
     menuSettings: 'Settings',

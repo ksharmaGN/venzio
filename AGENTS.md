@@ -61,6 +61,8 @@ So: **finish the design-system layer before starting surface work, and give it t
 
 Read `docs/design/` before touching either. A new class goes in `globals.css`, never in a component.
 
+**Order matters inside `globals.css`, and it is easy to get silently wrong.** The file is one flat sheet with no cascade layers, so two rules with the same selector are resolved by *position*: the later one wins, media query or not. A responsive override written into the `@media (max-width: 860px)` shell block near the top of the file will be beaten by a base rule for the same selector declared further down — with no warning, and it looks correct in the source. **Put a breakpoint override immediately after the rule it modifies**, not in whichever media block seems topical. `.stat-row` is the worked example in [docs/design/shells.md](docs/design/shells.md).
+
 ### Layer 2 — surfaces: PARALLELISE FREELY
 
 Once the primitives exist, screens are independent. Safe to run at the same time:
