@@ -42,10 +42,12 @@ export default function WsAccountMenu({ slug, userName, userRoleName, variant }:
     window.location.href = '/login'
   }
 
+  // Narrowing scope: this person, then the workspaces they belong to, then this
+  // one workspace's settings - with the destructive action last and apart.
   const items: DropdownMenuItem[] = [
-    { key: 'settings', label: wsAdmin.shell.menuSettings, onSelect: () => router.push(`/ws/${slug}/settings`) },
-    { key: 'workspaces', label: wsAdmin.shell.menuWorkspaces, onSelect: () => router.push('/ws') },
     { key: 'profile', label: wsAdmin.shell.menuProfile, onSelect: () => router.push('/me') },
+    { key: 'workspaces', label: wsAdmin.shell.menuWorkspaces, onSelect: () => router.push('/ws') },
+    { key: 'settings', label: wsAdmin.shell.menuSettings, onSelect: () => router.push(`/ws/${slug}/settings`) },
     { key: 'signout', label: wsAdmin.shell.menuSignOut, onSelect: () => setConfirmOpen(true), danger: true },
   ]
 
@@ -89,6 +91,19 @@ export default function WsAccountMenu({ slug, userName, userRoleName, variant }:
         onClose={() => setMenuOpen(false)}
         items={items}
         placement={variant === 'sidebar' ? 'above' : 'below'}
+        /* Topbar only. This variant's trigger is a bare avatar, and below 860px
+           `.sidebar-foot` and the topbar's role chip are both hidden - so
+           without this the role name appears nowhere on a phone. The sidebar
+           variant needs no header: its own trigger already prints name + role
+           directly above the menu. */
+        header={
+          variant === 'topbar' ? (
+            <>
+              <span className="account-name">{userName}</span>
+              <span className="t-muted account-role">{userRoleName}</span>
+            </>
+          ) : undefined
+        }
       />
       <Modal
         open={confirmOpen}

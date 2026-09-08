@@ -1,5 +1,5 @@
 import { db } from '../index'
-import { countWorkdays } from '@/lib/attendance-summary'
+import { countWorkdays, nextDateKey } from '@/lib/attendance-summary'
 
 export type AccrualFrequency = 'monthly' | 'quarterly' | 'half-yearly' | 'yearly'
 export type CreditTiming = 'start' | 'end'
@@ -371,6 +371,41 @@ export async function getLeaveRequestsInRange(
        AND end_date >= ?`,
     [workspaceId, endDate, startDate],
   )
+}
+
+/**
+ * The dates in `[startDate, endDate]` on which this member's leave blocks a
+ * correction request.
+ *
+ * The status set is `('approved', 'pending')` and it MUST stay identical to
+ * `hasOverlappingLeaveRequest()` above, which is what the POST
+ * `/api/me/ws/[slug]/regularizations` guard actually refuses on. This exists
+ * precisely so the correction form can leave those days out of its picker:
+ * reusing `getLeaveRequestsInRange()` - approved-only - would offer a day whose
+ * leave is still pending and then have the server answer `ON_LEAVE`.
+ */
+export async function getUserLeaveDatesInRange(
+  workspaceId: string,
+  userId: string,
+  startDate: string,
+  endDate: string,
+): Promise<Set<string>> {
+  const rows = await db.query<{ start_date: string; end_date: string }>(
+    `SELECT start_date, end_date FROM leave_requests
+     WHERE workspace_id = ? AND user_id = ?
+       AND status IN ('approved', 'pending')
+       AND start_date <= ? AND end_date >= ?`,
+    [workspaceId, userId, endDate, startDate],
+  )
+
+  const dates = new Set<string>()
+  for (const row of rows) {
+    // Clamp to the requested window - a request may run well past either end.
+    const from = row.start_date > startDate ? row.start_date : startDate
+    const to = row.end_date < endDate ? row.end_date : endDate
+    for (let date = from; date <= to; date = nextDateKey(date)) dates.add(date)
+  }
+  return dates
 }
 
 export interface MemberOnLeaveToday {

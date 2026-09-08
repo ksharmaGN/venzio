@@ -797,6 +797,13 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
   box-shadow: var(--shadow-md); padding: 6px; z-index: 30; animation: fxSnap 150ms var(--ease-out) both;
 }
 .dropdown-menu .rowlink { display: block; padding: 9px 10px; font-size: 13px; font-weight: 600; }
+/* Static identity row above the items - not a menuitem, so it is deliberately
+   inert: no hover fill, no pointer. `.account-name` / `.account-role` are both
+   display:block and carry their own type, so this only owns the spacing and the
+   rule that separates it from the items. */
+.dropdown-menu-header {
+  padding: 7px 10px 9px; margin-bottom: 4px; border-bottom: 1px solid var(--border);
+}
 .dropdown-menu.below { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; width: 180px; }
 
 .ws-pill {
@@ -965,11 +972,12 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
   .topbar-account { display: block; }
 
   /* The topbar carries five controls, and a 360px phone fits about three of
-     them beside the workspace name. The first to go is the one that changes
-     least and is least actionable - the plan, which is a billing fact and stays
-     one tap away in Settings › Billing. The ROLE chip stays: it is what tells
-     an admin why their screen differs from a colleague's. */
-  .topbar-plan-chip { display: none; }
+     them beside the workspace name. Both chips go, and neither is lost: the
+     plan is a billing fact one tap away in Settings › Billing, and the role -
+     which is what tells an admin why their screen differs from a colleague's -
+     moves into the account menu's header, because `.sidebar-foot` is hidden at
+     this width too and that menu is the only place left that can carry it. */
+  .topbar-plan-chip, .topbar-role-chip { display: none; }
 
   /* 28px of gutter either side is a desktop measure. On a phone it is 56px of
      the 360 the topbar has to lay out in. */

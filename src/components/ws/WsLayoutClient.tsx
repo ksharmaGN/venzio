@@ -177,7 +177,7 @@ export default function WsLayoutClient({
             </div>
 
             <div className="topbar-actions">
-              <Chip tone="owner">{userRoleName}</Chip>
+              <Chip tone="owner" className="topbar-role-chip">{userRoleName}</Chip>
               <Chip tone="verified" className="topbar-plan-chip">
                 {wsAdmin.shell.planChip(plan)}
               </Chip>
