@@ -50,8 +50,12 @@ function readReminderTime(value: unknown): string | null | undefined | typeof IN
  * sends the whole array (an empty one means "everything on"), so a null here is
  * a client bug, and guessing at it would be a silent mass re-enable.
  *
- * `serialiseCategoriesOff` drops anything not `workspaceSwitchable`, so even a
- * caller past the validation below cannot store "announcements are off".
+ * The validation below accepts any key in the catalogue and
+ * `serialiseCategoriesOff` then drops anything not `workspaceSwitchable`, so a
+ * caller cannot store "reminders are off" - it is dropped, not rejected. That
+ * split is deliberate: a stale tab still holding the old four-switch form posts
+ * a valid category the workspace may no longer set, and answering that with a
+ * 400 would fail a save whose two real switches are perfectly legal.
  */
 function readCategoriesOff(value: unknown): string | undefined | typeof INVALID {
   if (value === undefined) return undefined

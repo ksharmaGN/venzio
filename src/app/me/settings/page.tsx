@@ -1,16 +1,26 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { Button, Card, ConfirmDialog, Divider, Field, Input, Skeleton, Toggle } from '@/components/ui'
+import { Button, Card, Chip, ConfirmDialog, Divider, Field, Input, Skeleton } from '@/components/ui'
 import { en } from '@/locales/en'
 import { meSettings } from '@/locales/en/me-settings'
+/**
+ * The ladder's bounds, imported from the PURE module rather than from the query
+ * file that owns the table. This is a client component: a runtime import from
+ * `src/lib/db/**` would pull better-sqlite3 and libSQL into the browser bundle
+ * and fail the build with a long `Can't resolve 'fs'` trace that names none of
+ * that. `src/lib/presence-ladder.ts` exists precisely so this import is safe.
+ */
 import {
-  ALL_CATEGORIES,
-  CATEGORY_DEFS,
-  isNotificationCategory,
-  type NotificationCategory,
-} from '@/lib/notifications/categories'
+  DEFAULT_PRESENCE_PREFS,
+  MAX_AUTO_CHECKOUT_H,
+  MAX_RUNG_H,
+  MIN_AUTO_CHECKOUT_H,
+  MIN_REPEAT_H,
+  MIN_RUNG_H,
+  type MemberPresencePrefs,
+} from '@/lib/presence-ladder'
 import { useWorkspaceScope } from '../workspace-scope'
 
 const t = meSettings.settings
@@ -472,219 +482,689 @@ function TokensSection() {
 
 // ─── Notifications section ────────────────────────────────────────────────────
 
+/**
+ * Two schedules and a device registration. No category switches.
+ *
+ * Notification control is split by WHO the message is for. The two categories
+ * left in the catalogue - `approvals` and `announcements` - are the
+ * organisation talking to its members, configured on
+ * `/ws/[slug]/settings › Notifications`, and neither is `memberMutable`: a
+ * person is entitled to hear what happened to a request they filed, and an
+ * announcement is the one class that cannot afford to be missed. So there is
+ * nothing on this screen to toggle and no locked row to render either - a
+ * disabled switch only invites a member to throw it and be told no.
+ *
+ * What IS here is the nudges addressed to one person about their own working
+ * day, and they are SCHEDULES rather than categories. Having a value set is the
+ * opt-in; there is no separate on/off flag anywhere in the feature, because two
+ * representations of "is this live" drift and nothing can then arbitrate
+ * between them.
+ */
+
 type Load = 'loading' | 'ready' | 'error'
 
-/**
- * One category, as a row. A locked category is rendered disabled with its reason
- * rather than hidden - "you cannot turn this off" is information the member is
- * owed, and hiding it just makes them look for the switch again next month.
- */
-function CategoryRow({
-  label,
-  hint,
-  checked,
-  locked,
-  onChange,
-}: {
-  label: string
-  hint: string
-  checked: boolean
-  locked: boolean
-  onChange: (next: boolean) => void
-}) {
+const rt = n.reminderTimes
+const sl = n.sessionLadder
+
+/** The same refusal panel for both blocks - neither paints a form it cannot fill. */
+function LoadFailed({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className={locked ? 'switch-row is-locked' : 'switch-row'}>
-      <div className="switch-row-body">
-        <p className="switch-row-title">{label}</p>
-        <p className="t-muted">{hint}</p>
-      </div>
-      <Toggle label={label} checked={checked} disabled={locked} onChange={onChange} />
+    <div role="alert">
+      <p className="field-error mt-0 mb-12">{n.loadFailed}</p>
+      <Button variant="secondary" size="sm" onClick={onRetry}>
+        {n.loadFailedRetry}
+      </Button>
     </div>
   )
 }
 
-/** Why a switch is locked, taken from the catalogue rather than guessed here. */
-function lockedReasonFor(key: NotificationCategory): string {
-  const reason = CATEGORY_DEFS[key].lockedReason
-  const table: Record<string, string> = n.lockedReasons
-  return (reason && table[reason]) || n.lockedGeneric
+function GroupHeading({ title, hint }: { title: string; hint: string }) {
+  return (
+    <>
+      <p className="switch-row-title mb-8">{title}</p>
+      <p className="t-muted mb-12">{hint}</p>
+    </>
+  )
 }
 
-/** Both endpoints answer `{ muted: string[] }`; this is the shared reader. */
-function readMuted(value: unknown): Set<NotificationCategory> {
-  return new Set(Array.isArray(value) ? value.filter(isNotificationCategory) : [])
+// ── Reminder times · per workspace ────────────────────────────────────────────
+
+type ReminderKind = 'checkinAt' | 'checkoutAt'
+type ReminderTimes = Record<ReminderKind, string>
+
+/**
+ * What `<input type="time">` yields on a browser that implements it: 'HH:MM',
+ * or '' when cleared. Checked anyway, because Firefox on some platforms and
+ * older Safari fall back to a plain text box and will happily hand over
+ * '9am' - which the route would answer with a 400 the member cannot read.
+ */
+const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
+
+const EMPTY_TIMES: ReminderTimes = { checkinAt: '', checkoutAt: '' }
+
+/** The contract's nullable time, as the '' this form uses for "off". */
+function readTime(value: unknown): string {
+  return typeof value === 'string' && TIME_RE.test(value) ? value : ''
+}
+
+/** One reminder time, its stated on/off state, and the workspace's old value. */
+function TimeField({
+  id,
+  label,
+  hint,
+  value,
+  suggestion,
+  onCommit,
+}: {
+  id: string
+  label: string
+  hint: string
+  value: string
+  /** The workspace's legacy time, or '' when it has none. */
+  suggestion: string
+  onCommit: (next: string) => void
+}) {
+  const on = value !== ''
+  return (
+    <Field label={label} htmlFor={id} hint={hint} className="field-row-item">
+      <Input
+        id={id}
+        type="time"
+        value={value}
+        onChange={(e) => onCommit(e.target.value)}
+      />
+
+      {/* "Empty means off" is stated rather than inferred from an empty box. */}
+      <div className="field-state-row">
+        <Chip tone={on ? 'verified' : 'leave'}>{on ? rt.onBadge(value) : rt.offBadge}</Chip>
+        {on && (
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={rt.clearAria(label)}
+            onClick={() => onCommit('')}
+          >
+            {rt.clearButton}
+          </Button>
+        )}
+      </div>
+
+      {/*
+        A SUGGESTION, never a pre-filled value. The workspace's old
+        admin-configured time is offered only where the member has none of
+        their own, and it is offered - not adopted. Silently seeding the input
+        with it would tell somebody they are already covered when nothing is
+        being sent on their account, and pressing Save would then opt every
+        member back into the reminder this change exists to make opt-in.
+      */}
+      {!on && suggestion !== '' && (
+        <>
+          <p className="field-hint">{rt.suggestion(suggestion)}</p>
+          <div className="field-state-row">
+            <Button variant="secondary" size="sm" onClick={() => onCommit(suggestion)}>
+              {rt.suggestionApply}
+            </Button>
+          </div>
+        </>
+      )}
+    </Field>
+  )
 }
 
 /**
- * The workspace half. Scoped to the active workspace from the top-bar pill -
+ * The per-workspace half. Scoped to the active workspace from the top-bar pill -
  * there is deliberately no picker here and the workspace is deliberately not
  * named: the pill above already answers "which one", and repeating it inside
  * content it already scopes is noise.
  */
-function WorkspaceNotifications() {
+function ReminderTimesBlock() {
   const { slug } = useWorkspaceScope()
-  const [muted, setMuted] = useState<Set<NotificationCategory>>(new Set())
-  /** What the workspace has switched off for everybody - those rows are hidden. */
-  const [workspaceOff, setWorkspaceOff] = useState<Set<NotificationCategory>>(new Set())
+  const [times, setTimes] = useState<ReminderTimes>(EMPTY_TIMES)
+  const [timezone, setTimezone] = useState('')
+  const [suggestion, setSuggestion] = useState<ReminderTimes>(EMPTY_TIMES)
   /**
-   * Tri-state for the same reason the admin switchboard has one: the default
-   * state is "nothing muted", so painting the switches after a failed load
-   * would let one tap write over a mute the member had already set.
+   * Tri-state, and it matters more here than on a switchboard of toggles.
+   *
+   * The initial client state is "no times set", which paints both fields empty -
+   * i.e. OFF. Rendering before the load resolves would therefore show a member
+   * the exact opposite of a schedule they had already saved, and because this
+   * block commits on change, one edit to the other field would write that
+   * phantom "off" over the real value. So the form is withheld until the
+   * server's answer is in hand.
    */
   const [load, setLoad] = useState<Load>('loading')
   const [reloadKey, setReloadKey] = useState(0)
   const [status, setStatus] = useState<Status>(null)
 
+  /**
+   * What the server last confirmed, which is what a failed save reverts TO.
+   * A ref rather than state because nothing renders from it - reading the
+   * previous value out of `times` inside the commit would read whatever that
+   * closure captured, which after an optimistic update is already the new one.
+   */
+  const saved = useRef<ReminderTimes>(EMPTY_TIMES)
+
   useEffect(() => {
     if (!slug) return
     let cancelled = false
     setLoad('loading')
-    fetch(`/api/me/ws/${slug}/notification-prefs`)
+    fetch(`/api/me/ws/${slug}/reminder-times`)
       .then(async (res) => {
-        if (!res.ok) throw new Error(`notification-prefs responded ${res.status}`)
+        if (!res.ok) throw new Error(`reminder-times responded ${res.status}`)
         return res.json()
       })
       .then((data) => {
         if (cancelled) return
-        setMuted(readMuted(data.muted))
-        setWorkspaceOff(readMuted(data.workspaceOff))
+        const next: ReminderTimes = {
+          checkinAt: readTime(data?.checkinAt),
+          checkoutAt: readTime(data?.checkoutAt),
+        }
+        saved.current = next
+        setTimes(next)
+        setTimezone(typeof data?.timezone === 'string' ? data.timezone : '')
+        setSuggestion({
+          checkinAt: readTime(data?.workspaceSuggestion?.checkinAt),
+          checkoutAt: readTime(data?.workspaceSuggestion?.checkoutAt),
+        })
         setLoad('ready')
       })
       .catch(() => { if (!cancelled) setLoad('error') })
     return () => { cancelled = true }
   }, [slug, reloadKey])
 
-  // Optimistic, then reverted on failure. A switch that waits for a round trip
-  // before moving reads as broken; a switch that lies about the saved state is
-  // worse, so the revert is not optional.
-  const toggle = useCallback(
-    async (key: NotificationCategory, on: boolean) => {
+  /**
+   * Optimistic, then reverted on failure. A control that waits for a round trip
+   * before moving reads as broken; one that lies about the saved state is
+   * worse, so the revert is not optional.
+   *
+   * PATCH carries only the field that changed - the contract reads an omitted
+   * key as "leave it alone" - so a failure on one time can never disturb the
+   * other.
+   */
+  const commit = useCallback(
+    async (kind: ReminderKind, next: string) => {
       if (!slug) return
-      setStatus(null)
-      setMuted((prev) => {
-        const next = new Set(prev)
-        if (on) next.delete(key)
-        else next.add(key)
-        return next
-      })
+      if (next !== '' && !TIME_RE.test(next)) {
+        setStatus({ text: rt.invalidTime, ok: false })
+        return
+      }
+      const previous = saved.current[kind]
+      if (next === previous) return
+
+      setTimes((prev) => ({ ...prev, [kind]: next }))
+      setStatus({ text: rt.saving, ok: true })
       try {
-        const res = await fetch(`/api/me/ws/${slug}/notification-prefs`, {
+        const res = await fetch(`/api/me/ws/${slug}/reminder-times`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ category: key, muted: !on }),
+          body: JSON.stringify({ [kind]: next === '' ? null : next }),
         })
-        if (!res.ok) throw new Error(`PATCH responded ${res.status}`)
+        if (!res.ok) throw new Error(`PATCH reminder-times responded ${res.status}`)
+        saved.current = { ...saved.current, [kind]: next }
+        setStatus({ text: rt.saved, ok: true })
       } catch {
-        setMuted((prev) => {
-          const next = new Set(prev)
-          if (on) next.add(key)
-          else next.delete(key)
-          return next
-        })
-        setStatus({ text: n.saveError, ok: false })
+        setTimes((prev) => ({ ...prev, [kind]: previous }))
+        setStatus({ text: rt.saveError, ok: false })
       }
     },
     [slug],
   )
 
-  if (!slug) return <p className="t-muted" style={{ margin: 0 }}>{n.noWorkspace}</p>
-
-  if (load === 'loading') {
-    return (
-      <div className="stack-sm">
-        <Skeleton height={64} radius="var(--radius-md)" />
-        <Skeleton height={64} radius="var(--radius-md)" />
+  let body: React.ReactNode
+  if (!slug) {
+    body = <p className="t-muted">{n.noWorkspace}</p>
+  } else if (load === 'loading') {
+    // Two blocks sharing `.field-row` exactly as the two real fields do, so the
+    // row does not reflow when they resolve.
+    body = (
+      <div className="field-row">
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
       </div>
     )
-  }
+  } else if (load === 'error') {
+    body = <LoadFailed onRetry={() => setReloadKey((k) => k + 1)} />
+  } else {
+    body = (
+      <>
+        <div className="field-row">
+          <TimeField
+            id={rt.fieldIds.checkin}
+            label={rt.checkinLabel}
+            hint={rt.checkinHint}
+            value={times.checkinAt}
+            suggestion={suggestion.checkinAt}
+            onCommit={(next) => void commit('checkinAt', next)}
+          />
+          <TimeField
+            id={rt.fieldIds.checkout}
+            label={rt.checkoutLabel}
+            hint={rt.checkoutHint}
+            value={times.checkoutAt}
+            suggestion={suggestion.checkoutAt}
+            onCommit={(next) => void commit('checkoutAt', next)}
+          />
+        </div>
 
-  if (load === 'error') {
-    return (
-      <div role="alert">
-        <p className="field-error" style={{ margin: '0 0 10px' }}>{n.loadFailed}</p>
-        <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
-          {n.loadFailedRetry}
-        </Button>
-      </div>
+        {/* The workspace's timezone, not the phone's - invisible until somebody
+            travels and is reminded at 04:00, so it is said up front. */}
+        {timezone !== '' && <p className="field-hint">{rt.timezoneNote(timezone)}</p>}
+        <p className="field-hint">{rt.approximateNote}</p>
+
+        <StatusMsg msg={status} />
+      </>
     )
   }
 
   return (
     <>
-      {ALL_CATEGORIES.filter(
-        (key) => CATEGORY_DEFS[key].scope === 'workspace' && !workspaceOff.has(key),
-      ).map((key) => {
-        const locked = !CATEGORY_DEFS[key].memberMutable
-        const copy = n.categories[key]
-        return (
-          <CategoryRow
-            key={key}
-            label={copy.label}
-            hint={locked ? lockedReasonFor(key) : copy.hint}
-            checked={locked || !muted.has(key)}
-            locked={locked}
-            onChange={(next) => toggle(key, next)}
-          />
-        )
-      })}
-      <StatusMsg msg={status} />
+      <GroupHeading title={rt.title} hint={rt.hint} />
+      {body}
     </>
   )
 }
 
+// ── Session ladder · account level ────────────────────────────────────────────
+
+type LadderField = 'halfDay' | 'fullDay' | 'repeat' | 'autoCheckout'
+type LadderDraft = Record<LadderField, string>
+type LadderErrors = Partial<Record<LadderField, string>>
+
 /**
- * The account half: categories with no workspace to key them on, plus the push
- * registration for this browser.
+ * The server's refusal codes, as the member-facing sentence for each.
+ *
+ * The client mirrors every one of these rules below, so in practice none of
+ * them should arrive - but the server is the authority, and a save it rejects
+ * has to say why rather than shrug. `OUT_OF_RANGE` cannot name its field over
+ * the wire, so it renders the rung range; `INVALID_BODY` and anything
+ * unrecognised fall through to the generic failure.
  */
-function DeviceNotifications() {
-  const [muted, setMuted] = useState<Set<NotificationCategory>>(new Set())
+const SERVER_ERROR: Record<string, string> = {
+  OUT_OF_RANGE: sl.errorRange(MIN_RUNG_H, MAX_RUNG_H),
+  NOT_ASCENDING: sl.errorAscending,
+  REPEAT_NEEDS_FULL_DAY: sl.errorRepeatNeedsFullDay,
+  AFTER_CLOSE: sl.errorAfterClose,
+}
+
+const EMPTY_DRAFT: LadderDraft = { halfDay: '', fullDay: '', repeat: '', autoCheckout: '' }
+
+/** `''` → null (this rung is off); a number → itself; anything else → undefined. */
+function parseRung(raw: string): number | null | undefined {
+  const value = raw.trim()
+  if (value === '') return null
+  const num = Number(value)
+  return Number.isFinite(num) ? num : undefined
+}
+
+function readHours(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+/** GET/PATCH both answer with the full object; this is the defensive reader. */
+function readPrefs(data: unknown): MemberPresencePrefs {
+  const d = (data ?? {}) as Record<string, unknown>
+  return {
+    halfDayAfterH: readHours(d.halfDayAfterH),
+    fullDayAfterH: readHours(d.fullDayAfterH),
+    repeatEveryH: readHours(d.repeatEveryH),
+    // Never null in the contract, and never null here either - an open session
+    // has to close or the day's attendance is computed from a row that never
+    // ends. The default is the module's, not a literal invented at this call.
+    autoCheckoutAfterH: readHours(d.autoCheckoutAfterH) ?? DEFAULT_PRESENCE_PREFS.autoCheckoutAfterH,
+  }
+}
+
+function draftFrom(prefs: MemberPresencePrefs): LadderDraft {
+  return {
+    halfDay: prefs.halfDayAfterH === null ? '' : String(prefs.halfDayAfterH),
+    fullDay: prefs.fullDayAfterH === null ? '' : String(prefs.fullDayAfterH),
+    repeat: prefs.repeatEveryH === null ? '' : String(prefs.repeatEveryH),
+    autoCheckout: String(prefs.autoCheckoutAfterH),
+  }
+}
+
+/** The draft as prefs, or null when any field is not a number this form can send. */
+function prefsFromDraft(draft: LadderDraft): MemberPresencePrefs | null {
+  const half = parseRung(draft.halfDay)
+  const full = parseRung(draft.fullDay)
+  const repeat = parseRung(draft.repeat)
+  const close = parseRung(draft.autoCheckout)
+  if (half === undefined || full === undefined || repeat === undefined) return null
+  if (typeof close !== 'number') return null
+  return {
+    halfDayAfterH: half,
+    fullDayAfterH: full,
+    repeatEveryH: repeat,
+    autoCheckoutAfterH: close,
+  }
+}
+
+/**
+ * The server's validation, mirrored - so the member gets the answer before a
+ * round trip rather than after one. The bounds are the constants from
+ * `src/lib/presence-ladder.ts`, which the route validates against too;
+ * restating a number here is how a form ends up promising a range the route
+ * refuses.
+ *
+ * This is a mirror, not the authority. A save is still sent, still checked, and
+ * a code that comes back is still rendered - see `SERVER_ERROR`.
+ */
+function validateDraft(draft: LadderDraft): LadderErrors {
+  const errors: LadderErrors = {}
+  const half = parseRung(draft.halfDay)
+  const full = parseRung(draft.fullDay)
+  const repeat = parseRung(draft.repeat)
+  const close = parseRung(draft.autoCheckout)
+
+  const rungs: [LadderField, number | null | undefined][] = [
+    ['halfDay', half],
+    ['fullDay', full],
+  ]
+  for (const [field, value] of rungs) {
+    if (value === undefined || (value !== null && (value < MIN_RUNG_H || value > MAX_RUNG_H))) {
+      errors[field] = sl.errorRange(MIN_RUNG_H, MAX_RUNG_H)
+    }
+  }
+
+  // No upper bound mirrored for the repeat - the module names a floor and no
+  // ceiling, and inventing one here is exactly the drift the comment above
+  // warns about. An over-long interval comes back as OUT_OF_RANGE.
+  if (repeat === undefined || (repeat !== null && repeat < MIN_REPEAT_H)) {
+    errors.repeat = sl.errorRepeatRange(MIN_REPEAT_H)
+  }
+
+  if (
+    typeof close !== 'number' ||
+    close < MIN_AUTO_CHECKOUT_H ||
+    close > MAX_AUTO_CHECKOUT_H
+  ) {
+    errors.autoCheckout = sl.errorAutoCheckoutRange(MIN_AUTO_CHECKOUT_H, MAX_AUTO_CHECKOUT_H)
+  }
+
+  if (!errors.halfDay && !errors.fullDay && typeof half === 'number' && typeof full === 'number' && full <= half) {
+    errors.fullDay = sl.errorAscending
+  }
+
+  if (!errors.repeat && typeof repeat === 'number' && full === null) {
+    errors.repeat = sl.errorRepeatNeedsFullDay
+  }
+
+  // A rung at or past the close would never arrive - the session is already
+  // shut by then, and one landing exactly on it would be delivered alongside
+  // the auto-checkout notice.
+  if (typeof close === 'number') {
+    if (!errors.halfDay && typeof half === 'number' && half >= close) errors.halfDay = sl.errorAfterClose
+    if (!errors.fullDay && typeof full === 'number' && full >= close) errors.fullDay = sl.errorAfterClose
+  }
+
+  return errors
+}
+
+/** One hour count, with its unit, its error and - for a rung - its off switch. */
+function HoursField({
+  id,
+  label,
+  hint,
+  error,
+  value,
+  min,
+  max,
+  clearable,
+  onChange,
+}: {
+  id: string
+  label: string
+  hint: string
+  error?: string
+  value: string
+  min: number
+  max: number
+  /** Auto-checkout is the one field with no off state - see its hint. */
+  clearable: boolean
+  onChange: (next: string) => void
+}) {
+  return (
+    <Field label={label} htmlFor={id} hint={hint} error={error} className="field-row-item">
+      <div className="input-affix">
+        <Input
+          id={id}
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          min={min}
+          max={max}
+          placeholder={clearable ? sl.offPlaceholder : undefined}
+          value={value}
+          invalid={Boolean(error)}
+          onChange={(e) => onChange(e.target.value)}
+        />
+        <span className="t-muted">{sl.unitSuffix}</span>
+      </div>
+      {clearable && value !== '' && (
+        <div className="field-state-row">
+          <Button
+            variant="ghost"
+            size="sm"
+            aria-label={sl.clearAria(label)}
+            onClick={() => onChange('')}
+          >
+            {sl.clearButton}
+          </Button>
+        </div>
+      )}
+    </Field>
+  )
+}
+
+/**
+ * The account half: the four numbers in `member_presence_prefs`.
+ *
+ * No slug, and that follows from the data rather than from a preference -
+ * `presence_events` has no `workspace_id` and deliberately never will, so a
+ * member of two workspaces has ONE check-in session and there is no workspace
+ * to key these on.
+ *
+ * Saved with a button rather than on change, unlike the reminder times above.
+ * These four are interdependent - ascending, a repeat that needs a full-day
+ * mark, nothing at or past the close - and a number input emits a value on
+ * every keystroke, so committing as you type would send a stream of states the
+ * member never meant and reject most of them.
+ */
+function SessionLadder() {
+  const [prefs, setPrefs] = useState<MemberPresencePrefs>(DEFAULT_PRESENCE_PREFS)
+  const [draft, setDraft] = useState<LadderDraft>(EMPTY_DRAFT)
+  const [errors, setErrors] = useState<LadderErrors>({})
+  /** Errors are withheld until a save is attempted - typing "1" on the way to
+      "10" is not a mistake to shout about. The one exception is below. */
+  const [touched, setTouched] = useState(false)
+  /**
+   * Same tri-state, same reason as the reminder times: the initial state is
+   * `DEFAULT_PRESENCE_PREFS`, i.e. every rung off, so painting the form before
+   * the load resolves would show a member silence they had not chosen and let
+   * one Save write it.
+   */
   const [load, setLoad] = useState<Load>('loading')
   const [reloadKey, setReloadKey] = useState(0)
+  const [saving, setSaving] = useState(false)
   const [status, setStatus] = useState<Status>(null)
-  const [unsubscribing, setUnsubscribing] = useState(false)
 
   useEffect(() => {
     let cancelled = false
     setLoad('loading')
-    fetch('/api/me/notification-prefs')
+    fetch('/api/me/presence-prefs')
       .then(async (res) => {
-        if (!res.ok) throw new Error(`notification-prefs responded ${res.status}`)
+        if (!res.ok) throw new Error(`presence-prefs responded ${res.status}`)
         return res.json()
       })
       .then((data) => {
         if (cancelled) return
-        setMuted(readMuted(data.muted))
+        const next = readPrefs(data)
+        setPrefs(next)
+        setDraft(draftFrom(next))
+        setTouched(false)
+        setErrors({})
         setLoad('ready')
       })
       .catch(() => { if (!cancelled) setLoad('error') })
     return () => { cancelled = true }
   }, [reloadKey])
 
-  const toggle = useCallback(async (key: NotificationCategory, on: boolean) => {
+  function edit(field: LadderField, next: string) {
     setStatus(null)
-    setMuted((prev) => {
-      const next = new Set(prev)
-      if (on) next.delete(key)
-      else next.add(key)
-      return next
-    })
+    setDraft((prev) => ({ ...prev, [field]: next }))
+  }
+
+  async function save() {
+    // Unreachable from the UI - the form is not rendered unless the real values
+    // are in hand - but stated here so it can never become reachable by accident.
+    if (load !== 'ready') return
+    const found = validateDraft(draft)
+    setTouched(true)
+    setErrors(found)
+    setStatus(null)
+    if (Object.keys(found).length > 0) return
+
+    const next = prefsFromDraft(draft)
+    if (!next) return
+
+    setSaving(true)
     try {
-      const res = await fetch('/api/me/notification-prefs', {
+      const res = await fetch('/api/me/presence-prefs', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: key, muted: !on }),
+        body: JSON.stringify(next),
       })
-      if (!res.ok) throw new Error(`PATCH responded ${res.status}`)
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        const code = typeof (data as { code?: unknown })?.code === 'string'
+          ? (data as { code: string }).code
+          : ''
+        setStatus({ text: SERVER_ERROR[code] ?? sl.saveError, ok: false })
+        return
+      }
+      const confirmed = readPrefs(data)
+      setPrefs(confirmed)
+      setDraft(draftFrom(confirmed))
+      setTouched(false)
+      setErrors({})
+      setStatus({ text: sl.saved, ok: true })
     } catch {
-      setMuted((prev) => {
-        const next = new Set(prev)
-        if (on) next.add(key)
-        else next.delete(key)
-        return next
-      })
-      setStatus({ text: n.saveError, ok: false })
+      setStatus({ text: sl.saveError, ok: false })
+    } finally {
+      setSaving(false)
     }
-  }, [])
+  }
+
+  let body: React.ReactNode
+  if (load === 'loading') {
+    // Four, matching the four fields that land. A skeleton promising more than
+    // resolves is a layout jump, not a loading state.
+    body = (
+      <div className="field-row">
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
+        <Skeleton className="field-row-item" height={104} radius="var(--radius-md)" />
+      </div>
+    )
+  } else if (load === 'error') {
+    body = <LoadFailed onRetry={() => setReloadKey((k) => k + 1)} />
+  } else {
+    const shown: LadderErrors = touched ? { ...errors } : {}
+    // The one message shown before a save: a repeat with nothing to repeat
+    // after is silently dropped by `resolveLadder()`, so leaving the member to
+    // discover that at save time would mean rendering a schedule that never runs.
+    if (!shown.repeat && typeof parseRung(draft.repeat) === 'number' && parseRung(draft.fullDay) === null) {
+      shown.repeat = sl.repeatNeedsFullDay
+    }
+
+    // Live where the draft parses, so the line describes what is on screen
+    // rather than what was last saved; it falls back to the saved prefs while
+    // a field is mid-edit and unparseable.
+    const summaryPrefs = prefsFromDraft(draft) ?? prefs
+
+    body = (
+      <>
+        <div className="field-row">
+          <HoursField
+            id={sl.fieldIds.halfDay}
+            label={sl.halfDayLabel}
+            hint={sl.halfDayHint}
+            error={shown.halfDay}
+            value={draft.halfDay}
+            min={MIN_RUNG_H}
+            max={MAX_RUNG_H}
+            clearable
+            onChange={(next) => edit('halfDay', next)}
+          />
+          <HoursField
+            id={sl.fieldIds.fullDay}
+            label={sl.fullDayLabel}
+            hint={sl.fullDayHint}
+            error={shown.fullDay}
+            value={draft.fullDay}
+            min={MIN_RUNG_H}
+            max={MAX_RUNG_H}
+            clearable
+            onChange={(next) => edit('fullDay', next)}
+          />
+          <HoursField
+            id={sl.fieldIds.repeat}
+            label={sl.repeatLabel}
+            hint={sl.repeatHint}
+            error={shown.repeat}
+            value={draft.repeat}
+            min={MIN_REPEAT_H}
+            max={MAX_AUTO_CHECKOUT_H}
+            clearable
+            onChange={(next) => edit('repeat', next)}
+          />
+          <HoursField
+            id={sl.fieldIds.autoCheckout}
+            label={sl.autoCheckoutLabel}
+            hint={sl.autoCheckoutHint}
+            error={shown.autoCheckout}
+            value={draft.autoCheckout}
+            min={MIN_AUTO_CHECKOUT_H}
+            max={MAX_AUTO_CHECKOUT_H}
+            clearable={false}
+            onChange={(next) => edit('autoCheckout', next)}
+          />
+        </div>
+
+        {/* The whole schedule on one line, so the member can see what they built
+            without doing the arithmetic across four fields. */}
+        <p className="field-hint mt-10">{sl.summary(summaryPrefs)}</p>
+
+        <div className="form-actions">
+          <Button loading={saving} onClick={() => void save()}>
+            {saving ? sl.saving : sl.save}
+          </Button>
+        </div>
+
+        <StatusMsg msg={status} />
+      </>
+    )
+  }
+
+  return (
+    <>
+      <GroupHeading title={sl.title} hint={sl.hint} />
+      {body}
+    </>
+  )
+}
+
+// ── Push registration · this browser ──────────────────────────────────────────
+
+/**
+ * The browser's own push registration. Unrelated to either schedule above and
+ * kept exactly as it was: this is the only unsubscribe control in the product,
+ * and without it a member has no way to hand the permission back.
+ */
+function DevicePush() {
+  const [status, setStatus] = useState<Status>(null)
+  const [unsubscribing, setUnsubscribing] = useState(false)
 
   /**
    * Drop this browser's push registration.
@@ -694,10 +1174,9 @@ function DeviceNotifications() {
    * than a live server row pushing to a browser that thinks it opted out. The
    * mirror of the document delete order, for the same reason.
    *
-   * This is the only unsubscribe control in the product - `SwRegister` has
-   * always subscribed silently on load and nothing ever undid it. It is also
-   * why the copy says re-opening the app registers it back: the honest fix for
-   * "stop messaging me" is the category mutes, not this.
+   * `SwRegister` has always subscribed silently on load and nothing ever undid
+   * it. It is also why the copy says re-opening the app registers it back: the
+   * honest fix for "stop messaging me" is the schedules above, not this.
    */
   async function unsubscribeDevice() {
     setStatus(null)
@@ -730,41 +1209,10 @@ function DeviceNotifications() {
 
   return (
     <>
-      {load === 'loading' && <Skeleton height={64} radius="var(--radius-md)" />}
-
-      {load === 'error' && (
-        <div role="alert">
-          <p className="field-error" style={{ margin: '0 0 10px' }}>{n.loadFailed}</p>
-          <Button variant="secondary" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
-            {n.loadFailedRetry}
-          </Button>
-        </div>
-      )}
-
-      {load === 'ready' &&
-        ALL_CATEGORIES.filter((key) => CATEGORY_DEFS[key].scope === 'account').map((key) => {
-          const locked = !CATEGORY_DEFS[key].memberMutable
-          const copy = n.categories[key]
-          return (
-            <CategoryRow
-              key={key}
-              label={copy.label}
-              hint={locked ? lockedReasonFor(key) : copy.hint}
-              checked={locked || !muted.has(key)}
-              locked={locked}
-              onChange={(next) => toggle(key, next)}
-            />
-          )
-        })}
-
-      <Divider />
-
-      <p className="switch-row-title" style={{ margin: '0 0 4px' }}>{n.pushTitle}</p>
-      <p className="t-muted" style={{ margin: '0 0 12px' }}>{n.pushBody}</p>
-      <Button variant="secondary" size="sm" loading={unsubscribing} onClick={unsubscribeDevice}>
+      <GroupHeading title={n.pushTitle} hint={n.pushBody} />
+      <Button variant="secondary" size="sm" loading={unsubscribing} onClick={() => void unsubscribeDevice()}>
         {n.pushUnsubscribe}
       </Button>
-
       <StatusMsg msg={status} />
     </>
   )
@@ -774,15 +1222,16 @@ function NotificationsSection() {
   return (
     <SectionCard title={n.title}>
       <div className="switch-group">
-        <span className="field-label">{n.workspaceGroupLabel}</span>
-        <p className="t-muted" style={{ margin: '0 0 10px' }}>{n.workspaceGroupHint}</p>
-        <WorkspaceNotifications />
+        <ReminderTimesBlock />
       </div>
 
       <div className="switch-group">
-        <span className="field-label">{n.deviceGroupLabel}</span>
-        <p className="t-muted" style={{ margin: '0 0 10px' }}>{n.deviceGroupHint}</p>
-        <DeviceNotifications />
+        <SessionLadder />
+      </div>
+
+      <div className="switch-group">
+        <Divider />
+        <DevicePush />
       </div>
     </SectionCard>
   )
