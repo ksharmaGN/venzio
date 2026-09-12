@@ -1210,6 +1210,18 @@ Rules:
     having done something: the UPDATE carries `AND checkout_at IS NULL`, so a
     member who checked out by hand is not told we closed a session we did not
     close. The key is claimed either way.
+32. **`develop` is `origin/main` plus the commits pushed since the last squash,
+    always — it is REBUILT nightly, never merged into** -
+    `.github/workflows/sync_oss_fork.yaml` resets `main` from OSS `main`, resets
+    `develop` to `origin/main`, replays only that carry set onto it with
+    `git rebase --onto` and force-pushes with `--force-with-lease`. That is what
+    keeps one tree on one history. A hand-merge of `main` into `develop`
+    re-creates the two-histories-of-byte-identical-code divergence the rebuild
+    exists to remove, and every nightly cycle then compounds it. The pre-rebuild
+    tip is pushed to `backup/develop/<UTC-timestamp>` first, and a conflict leaves
+    `origin/develop` untouched and opens a `DO NOT MERGE` PR labeled `sync` —
+    which is a notification, not a fix, and merging it is the same mistake by
+    another route.
 
 ---
 
@@ -1264,6 +1276,7 @@ Rules:
 - Never report an announcement's `delivered` as the roster size without checking the category is on — it is 0 when switched off, and the notice is still posted
 - Never rely on one UNIQUE index across a nullable column in SQLite — NULLs are distinct there
 - Never lower `CRON_MAX_EVENT_AGE_H` below 24h — auto-checkout fires at 12h and extensions reach 24h, so a tighter window orphans the very sessions it should close
+- Never merge `main` into `develop` by hand, and never force-push either branch by hand — `develop` is rebuilt on `main` nightly by `sync_oss_fork.yaml`, and a hand rewrite both re-creates the divergence and races that run's `--force-with-lease`
 
 ---
 
