@@ -17,13 +17,19 @@ const s = wsAdmin.settings
 const r = wsReminders.settings
 
 /**
- * Everything this workspace sends, in one place.
+ * What this workspace broadcasts on everybody's behalf: Approvals and
+ * Announcements.
  *
- * The reminder times used to live in Org details next to the timezone, which is
- * where they are *computed* from - but an admin looking for "why is my team
- * getting pushes" reads the tab called Notifications, not the one called Org
- * details. Times and categories are the same question asked twice, so they save
- * through one button and one PATCH.
+ * It used to be everything this workspace sends - four category switches plus
+ * the two reminder times. The nudges addressed to one person about their own
+ * working day (the daily check-in reminder, and the check-in session ladder)
+ * moved to `/me/settings`, where the person being nagged can stop it. What is
+ * left here is the two categories the organisation sends TO its members, which
+ * are the two they cannot mute. The screens now partition the catalogue rather
+ * than overlapping on it - see `CATEGORY_DEFS`.
+ *
+ * The list is filtered on `workspaceSwitchable` rather than hardcoded, so the
+ * catalogue stays the only place the split is decided.
  *
  * Gated on `Resource.Settings`, deliberately not a resource of its own: adding
  * one means rewriting every seeded grid in `system-roles.json` (invariant 12)
@@ -44,12 +50,19 @@ interface ReminderFieldProps {
  * means the reminder is off - so the state below is stated explicitly rather
  * than left to be inferred from an empty box.
  *
+ * **Deliberately not rendered.** The reminder times came off this screen with
+ * the reminder switch: a daily nudge is the member's to configure, and leaving
+ * an admin the schedule for a notification only the member can silence was the
+ * half-and-half arrangement this change removed. The component is kept rather
+ * than deleted because the decision is a product one and reversing it is
+ * putting the JSX back - the state, the load and the PATCH below are all still
+ * wired (see the save comment). It draws an unused-symbol warning from ESLint,
+ * which is the accepted cost of that.
+ *
  * Moved here verbatim from `OrgTab`, inline styles included, so the diff reads
  * as a move rather than a rewrite. Those three inline style objects predate
  * invariant 15 and are the only ones left in this file - everything below was
- * written against `globals.css`. Rewriting them means changing the appearance
- * of a control nobody has rendered on this branch yet, so it waits for the
- * UI walkthrough. Registered in `docs/known-gaps.md`.
+ * written against `globals.css`. Registered in `docs/known-gaps.md`.
  */
 function ReminderField({ label, hint, id, value, onChange, disabled }: ReminderFieldProps) {
   const on = value !== ''
@@ -87,15 +100,16 @@ function ReminderField({ label, hint, id, value, onChange, disabled }: ReminderF
   )
 }
 
-/** Why a switch is disabled, from the catalogue rather than from a guess here. */
-function lockedReasonFor(key: NotificationCategory): string {
-  const reason = CATEGORY_DEFS[key].lockedReason
-  const table: Record<string, string> = s.notifLockedReasons
-  return (reason && table[reason]) || s.notifLockedAccountScope
-}
-
 export default function NotificationsTab({ slug, canWrite }: { slug: string; canWrite: boolean }) {
-  // '' means the reminder is off - the same value an emptied time input sends.
+  /**
+   * The workspace's reminder times. No longer edited on this screen - see
+   * `ReminderField` - but still loaded and still sent back on save, because
+   * the PATCH below carries both fields on every save. Dropping them from
+   * state would make `checkinReminderAt` default to `''`, and `''` is what an
+   * emptied time input sends: the first Save a workspace pressed would null
+   * out times it had set and had no way to see. Held and round-tripped
+   * unchanged, so this screen can only alter the categories it shows.
+   */
   const [checkinReminderAt, setCheckinReminderAt] = useState('')
   const [checkoutReminderAt, setCheckoutReminderAt] = useState('')
   /** The DISABLED set, mirroring the column. Empty means everything is on. */
@@ -158,8 +172,15 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          // Sent exactly as loaded. No control on this screen changes them any
+          // more; they are here so the PATCH restates the workspace's own
+          // values rather than omitting fields the route would read as a
+          // clear. See the state declaration above.
           checkinReminderAt: checkinReminderAt || null,
           checkoutReminderAt: checkoutReminderAt || null,
+          // `serialiseCategoriesOff()` drops anything not switchable, so this
+          // cannot smuggle `reminders` or `presence` back into the column even
+          // if a stale value arrived in the GET.
           notificationCategoriesOff: [...off],
         }),
       })
@@ -169,13 +190,12 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
     }
   }
 
+  // Two rows, matching the two switches that land. A skeleton promising five
+  // and resolving to two is a layout jump, not a loading state.
   if (load === 'loading') {
     return (
       <Card className="fx-spring">
         <div className="stack">
-          <Skeleton height={42} radius="var(--radius-md)" />
-          <Skeleton height={42} radius="var(--radius-md)" />
-          <Skeleton height={64} radius="var(--radius-md)" />
           <Skeleton height={64} radius="var(--radius-md)" />
           <Skeleton height={64} radius="var(--radius-md)" />
         </div>
@@ -201,50 +221,30 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
 
   return (
     <Card className="fx-spring">
-      <p className="t-eyebrow mb-8">{r.sectionTitle}</p>
-      <p className="t-muted mb-12">{r.sectionHint}</p>
-      <div className="field-row mb-8">
-        <ReminderField
-          label={r.checkinLabel}
-          hint={r.checkinHint}
-          id={r.fieldIds.checkin}
-          value={checkinReminderAt}
-          onChange={setCheckinReminderAt}
-          disabled={!canWrite}
-        />
-        <ReminderField
-          label={r.checkoutLabel}
-          hint={r.checkoutHint}
-          id={r.fieldIds.checkout}
-          value={checkoutReminderAt}
-          onChange={setCheckoutReminderAt}
-          disabled={!canWrite}
-        />
-      </div>
-      <p className="t-muted mb-16">{r.approximateNote}</p>
-
       <p className="t-eyebrow mb-8">{s.notifPageTitle}</p>
       <p className="t-muted mb-12">{s.notifPageHint}</p>
 
-      {/* Every category, including the ones that cannot be switched off. Hiding
-          those would leave an admin unable to see that the decision was made
-          for them - a disabled switch with its reason says so. */}
+      {/*
+        Only what this workspace decides. The filter is the same shape as the
+        one on `/me/settings`, and the opposite half of it: a category the
+        workspace cannot switch is not rendered here locked, it is not rendered
+        - it belongs to the member and appears on their screen instead. So
+        nothing in this loop is ever disabled for being locked, only for
+        `!canWrite`.
+      */}
       <div className="mb-16">
-        {ALL_CATEGORIES.map((key) => {
-          const def = CATEGORY_DEFS[key]
+        {ALL_CATEGORIES.filter((key) => CATEGORY_DEFS[key].workspaceSwitchable).map((key) => {
           const copy = s.notifCategories[key]
-          const locked = !def.workspaceSwitchable
-          const on = locked || !off.has(key)
           return (
-            <div key={key} className={locked ? 'switch-row is-locked' : 'switch-row'}>
+            <div key={key} className="switch-row">
               <div className="switch-row-body">
                 <p className="switch-row-title">{copy.label}</p>
-                <p className="t-muted">{locked ? lockedReasonFor(key) : copy.hint}</p>
+                <p className="t-muted">{copy.hint}</p>
               </div>
               <Toggle
                 label={copy.label}
-                checked={on}
-                disabled={locked || !canWrite}
+                checked={!off.has(key)}
+                disabled={!canWrite}
                 onChange={(next) => setCategoryOn(key, next)}
               />
             </div>

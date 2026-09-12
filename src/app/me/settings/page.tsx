@@ -503,7 +503,17 @@ function CategoryRow({
   )
 }
 
-/** Why a switch is locked, taken from the catalogue rather than guessed here. */
+/**
+ * Why a switch is locked, taken from the catalogue rather than guessed here.
+ *
+ * **No caller today**, and that is not an oversight. This screen no longer
+ * renders locked rows at all: a category a member cannot mute (`approvals`,
+ * `announcements`) is filtered out entirely, because those are the
+ * organisation's to configure and a disabled switch only invites a member to
+ * try. Kept because it resolves the reason from `CategoryDef.lockedReason`
+ * rather than hardcoding it, so a category locked again in future gets its
+ * caption back by setting that field and rendering the row.
+ */
 function lockedReasonFor(key: NotificationCategory): string {
   const reason = CATEGORY_DEFS[key].lockedReason
   const table: Record<string, string> = n.lockedReasons
@@ -527,9 +537,15 @@ function WorkspaceNotifications() {
   /** What the workspace has switched off for everybody - those rows are hidden. */
   const [workspaceOff, setWorkspaceOff] = useState<Set<NotificationCategory>>(new Set())
   /**
-   * Tri-state for the same reason the admin switchboard has one: the default
-   * state is "nothing muted", so painting the switches after a failed load
-   * would let one tap write over a mute the member had already set.
+   * Tri-state for the same reason the admin switchboard has one: the initial
+   * client state is an empty set, which paints every switch ON, so rendering it
+   * after a failed load would show a member the opposite of both possible
+   * truths - these categories are opt-in and default to OFF - and let one tap
+   * write over a choice they had already made.
+   *
+   * The server is what knows the resolved answer. `getMutedCategories()` returns
+   * the effective muted set, defaults applied, so this screen never needs to
+   * know that `reminders` and `presence` start off.
    */
   const [load, setLoad] = useState<Load>('loading')
   const [reloadKey, setReloadKey] = useState(0)
@@ -611,18 +627,38 @@ function WorkspaceNotifications() {
 
   return (
     <>
+      {/*
+        Three filters. `memberMutable` is the one that decides the screen: a
+        category a member cannot mute is not shown here disabled - it is not
+        shown. `approvals` and `announcements` are configured by the
+        organisation on its own settings screen, and a locked switch on this one
+        would only invite a member to throw it and be told no. The admin
+        switchboard now applies the mirror of this filter, so the two screens
+        partition the catalogue instead of overlapping on it.
+
+        `scope` keeps account-level `presence` out of the per-workspace list -
+        it renders in the device group below instead.
+
+        `workspaceOff` is the third, and it is now unreachable: it hid a
+        category the workspace had switched off, and the only category left in
+        this list is `reminders`, which a workspace can no longer switch. Kept
+        because it reads the workspace's set rather than naming a category, so
+        it stays correct however `CATEGORY_DEFS` is configured.
+      */}
       {ALL_CATEGORIES.filter(
-        (key) => CATEGORY_DEFS[key].scope === 'workspace' && !workspaceOff.has(key),
+        (key) =>
+          CATEGORY_DEFS[key].scope === 'workspace' &&
+          CATEGORY_DEFS[key].memberMutable &&
+          !workspaceOff.has(key),
       ).map((key) => {
-        const locked = !CATEGORY_DEFS[key].memberMutable
         const copy = n.categories[key]
         return (
           <CategoryRow
             key={key}
             label={copy.label}
-            hint={locked ? lockedReasonFor(key) : copy.hint}
-            checked={locked || !muted.has(key)}
-            locked={locked}
+            hint={copy.hint}
+            checked={!muted.has(key)}
+            locked={false}
             onChange={(next) => toggle(key, next)}
           />
         )
@@ -742,16 +778,17 @@ function DeviceNotifications() {
       )}
 
       {load === 'ready' &&
-        ALL_CATEGORIES.filter((key) => CATEGORY_DEFS[key].scope === 'account').map((key) => {
-          const locked = !CATEGORY_DEFS[key].memberMutable
+        ALL_CATEGORIES.filter(
+          (key) => CATEGORY_DEFS[key].scope === 'account' && CATEGORY_DEFS[key].memberMutable,
+        ).map((key) => {
           const copy = n.categories[key]
           return (
             <CategoryRow
               key={key}
               label={copy.label}
-              hint={locked ? lockedReasonFor(key) : copy.hint}
-              checked={locked || !muted.has(key)}
-              locked={locked}
+              hint={copy.hint}
+              checked={!muted.has(key)}
+              locked={false}
               onChange={(next) => toggle(key, next)}
             />
           )
@@ -774,7 +811,6 @@ function NotificationsSection() {
   return (
     <SectionCard title={n.title}>
       <div className="switch-group">
-        <span className="field-label">{n.workspaceGroupLabel}</span>
         <p className="t-muted" style={{ margin: '0 0 10px' }}>{n.workspaceGroupHint}</p>
         <WorkspaceNotifications />
       </div>

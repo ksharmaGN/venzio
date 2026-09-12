@@ -743,12 +743,20 @@ const ADDITIVE_MIGRATIONS = [
   // is silently off for every workspace that predates it.
   `ALTER TABLE workspaces ADD COLUMN notification_categories_off TEXT NOT NULL DEFAULT '[]'`,
 
-  // notification_prefs - per-member category mutes.
+  // notification_prefs - per-member category push preferences.
   //
-  // A ROW MEANS MUTED. Un-muting deletes the row; there is no boolean column.
-  // Absence is the default and the default is "on", so 47 users across 6
-  // workspaces need no seeding and a member who has never opened the settings
-  // screen has no rows at all.
+  // A ROW IS AN EXPLICIT CHOICE, and `muted` is what it chose. Absence means
+  // "never touched it" and falls back to `CATEGORY_DEFS[category].defaultOn` in
+  // the catalogue, so nothing is ever seeded and a member who has never opened
+  // the settings screen still has no rows at all.
+  //
+  // It did NOT always carry the boolean: a row used to MEAN muted and un-muting
+  // was a DELETE. That shape could express one default only - absence meant on,
+  // for everything. `reminders` and `presence` are opt-in now, and under the old
+  // shape "off by default" would have had to be spelled as absence, which is
+  // also how every existing row spells itself. The column is what lets the two
+  // defaults coexist, and it is why a stored choice survives a later change to
+  // the default rather than silently inverting with it.
   //
   // workspace_id NULL means an account-level preference. Only the `presence`
   // category uses it, because presence_events carries no workspace_id and a
@@ -758,8 +766,15 @@ const ADDITIVE_MIGRATIONS = [
   user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id TEXT REFERENCES workspaces(id) ON DELETE CASCADE,
   category     TEXT NOT NULL,
+  muted        INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
+  // The additive half, for a database that predates the column. DEFAULT 1 is
+  // not a neutral choice of filler - it is exactly what every pre-existing row
+  // already meant, back when a row's existence WAS the mute. So the backfill
+  // reinterprets nothing: a member who muted reminders last week still has them
+  // muted after this runs.
+  `ALTER TABLE notification_prefs ADD COLUMN muted INTEGER NOT NULL DEFAULT 1`,
   // TWO partial unique indexes, not one. SQLite treats NULLs as DISTINCT in a
   // unique index, so a single UNIQUE(user_id, workspace_id, category) would not
   // constrain the account-level rows at all - the same NULL = NULL trap that
@@ -774,6 +789,34 @@ const ADDITIVE_MIGRATIONS = [
   // per workspace per reminder pass rather than once per member.
   `CREATE INDEX IF NOT EXISTS idx_notif_prefs_lookup
    ON notification_prefs(workspace_id, category, user_id)`,
+
+  // approvals_inbox + approvals_outcome were merged into one `approvals`
+  // category. Two data migrations, and the first one is load-bearing.
+  //
+  // parseCategoriesOff() filters the stored array through the catalogue, so a
+  // key it no longer recognises is silently DROPPED - which for this column
+  // means "not disabled", i.e. switched back ON. Without this rewrite, every
+  // workspace that had deliberately switched approval notifications off would
+  // start sending them again at deploy, with nothing to show it happened.
+  //
+  // REPLACE rather than JSON surgery because the outcome is the same and this
+  // is legible: a workspace that had BOTH keys off ends up with the array
+  // ["approvals","approvals"], which is harmless - parseCategoriesOff returns a
+  // Set, and serialiseCategoriesOff rewrites the column clean on the next save.
+  // Idempotent: a second run finds no old keys and changes nothing.
+  `UPDATE workspaces SET notification_categories_off =
+     REPLACE(REPLACE(notification_categories_off, 'approvals_inbox', 'approvals'),
+             'approvals_outcome', 'approvals')
+   WHERE notification_categories_off LIKE '%approvals_inbox%'
+      OR notification_categories_off LIKE '%approvals_outcome%'`,
+
+  // The merged category is not member-mutable, and invariant 25 says a
+  // preference row may not exist for one that is not. getMutedCategories()
+  // already filters unknown keys so these rows are inert either way - but a row
+  // whose category no longer exists is dead weight that contradicts the
+  // invariant on its face, and the mute it once expressed has no meaning now
+  // that the category cannot be muted at all.
+  `DELETE FROM notification_prefs WHERE category IN ('approvals_inbox', 'approvals_outcome')`,
 
   // workspace_logos - a workspace's own mark, shown in both app shells.
   //

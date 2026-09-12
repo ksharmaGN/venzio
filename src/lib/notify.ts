@@ -1,8 +1,10 @@
 import { createNotification, type NotificationType } from '@/lib/db/queries/notifications'
 import { getWorkspaceById } from '@/lib/db/queries/workspaces'
 import {
+  getCategoryChoices,
   getMutedCategories,
-  mutedUserIdsFor,
+  isPushMuted,
+  presenceSilencedUserIds,
 } from '@/lib/db/queries/notification-prefs'
 import { notificationHref, type NotificationSurface } from '@/lib/client/notification-href'
 import { sendPushToUser, type PushPayload } from '@/lib/push'
@@ -78,12 +80,20 @@ export async function notify(params: {
     if (off.has(category)) return
   }
 
-  // 4. Whose push is muted. An immutable category skips the query entirely -
-  //    nobody can hold a mute for it, so reading is pointless work.
+  // 4. Whose push is suppressed. An immutable category skips the query entirely
+  //    - nobody can hold a preference for it, so reading is pointless work and
+  //    its catalogue default is never consulted.
+  //
+  //    "Muted" is resolved, not read: a member with no row is muted for an
+  //    opt-in category (`reminders`, `presence`) and unmuted for the rest, so
+  //    the set is built by resolving each RECIPIENT rather than by listing the
+  //    table's rows. Step 3 below is unaffected either way - every recipient
+  //    still gets their feed row, whatever this resolves to.
   let muted: Set<string> = new Set()
   if (def.memberMutable) {
     if (params.workspaceId) {
-      muted = await mutedUserIdsFor(params.workspaceId, category)
+      const choices = await getCategoryChoices(params.workspaceId, category)
+      muted = new Set(params.userIds.filter((id) => isPushMuted(choices, id)))
     } else {
       // No workspace to key on, so resolve per member. Only reachable for an
       // account-scoped category, which today means this branch is unused by
@@ -146,15 +156,28 @@ export async function notify(params: {
  *  - It writes **no `notifications` row**. These three are the only messages in
  *    the product that are push-only, a deliberate choice: a nudge to go home is
  *    worthless an hour later, and putting it in the feed would fill the bell
- *    with things nobody will ever revisit. The accepted cost is that muting
+ *    with things nobody will ever revisit. The accepted cost is that silencing
  *    `presence` means total silence, including the auto-checkout confirmation.
  *
- *  - It has **no workspace**. `presence_events` carries no `workspace_id` and
- *    deliberately never will, so the preference has to be account-level. A
- *    member in two workspaces has one check-in session, not two.
+ *  - It has **no workspace to key on**. `presence_events` carries no
+ *    `workspace_id` and deliberately never will, so the member's own preference
+ *    is account-level: a member in two workspaces has one check-in session, not
+ *    two. A workspace may still switch the category off, but because the session
+ *    is not any workspace's, that switch only counts when EVERY workspace the
+ *    member belongs to has thrown it. `presenceSilencedUserIds()` owns that rule
+ *    and is the only place it is written down.
+ *
+ * `silenced` is an optional PRE-RESOLVED set, and passing it is the whole reason
+ * it exists: the cron calls this once per open event, so resolving inside would
+ * be up to 500 extra round trips every thirty minutes. Omitted, it resolves for
+ * itself - identical behaviour, safe at any call site that is not a hot loop.
  */
-export async function notifyPresence(userId: string, payload: PushPayload): Promise<void> {
-  const muted = await getMutedCategories(userId, null)
-  if (muted.has('presence')) return
+export async function notifyPresence(
+  userId: string,
+  payload: PushPayload,
+  silenced?: Set<string>,
+): Promise<void> {
+  const resolved = silenced ?? (await presenceSilencedUserIds([userId]))
+  if (resolved.has(userId)) return
   await sendPushToUser(userId, payload)
 }

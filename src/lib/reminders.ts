@@ -11,7 +11,11 @@ import { listHolidayDatesInRange } from '@/lib/db/queries/holidays'
 import { getLeaveRequestsInRange } from '@/lib/db/queries/leaves'
 import { getActiveParentalUserIds } from '@/lib/db/queries/maternity'
 import { createNotification } from '@/lib/db/queries/notifications'
-import { mutedUserIdsFor } from '@/lib/db/queries/notification-prefs'
+import {
+  getCategoryChoices,
+  isPushMuted,
+  type CategoryChoices,
+} from '@/lib/db/queries/notification-prefs'
 import { parseCategoriesOff } from '@/lib/notifications/categories'
 import { sendPushToUser } from '@/lib/push'
 import { notificationHref } from '@/lib/client/notification-href'
@@ -40,11 +44,22 @@ import { wsReminders } from '@/locales/en/ws-reminders'
  *   4. now is not near the set time  → skip this kind
  *   5. member on approved leave      → skip the member
  *   6. already reminded today        → skip the member (reminder_log)
- *   7. member muted `reminders`      → skip the member's PUSH only
+ *   7. member has not opted in to
+ *      `reminders`                   → skip the member's PUSH only
  *
  * Gate 7 is the odd one out and deliberately so: it suppresses the push and
- * still writes the `notifications` row, because the member-facing mute is
- * push-only across the whole product (see `notify()`). Gate 1b is the opposite -
+ * still writes the `notifications` row, because the member-facing switch is
+ * push-only across the whole product (see `notify()`).
+ *
+ * It also fires for MOST members, not a few. `reminders` is `defaultOn: false`
+ * in the catalogue, so a member who has never visited `/me/settings` is
+ * suppressed here by default and turns the push on themselves. A daily nudge
+ * nobody asked for is what makes a person revoke the browser's push permission
+ * outright, and that permission is shared with the approval notifications they
+ * do want. The in-app row is the compensation: the reminder is still in their
+ * notification list on the day it was due.
+ *
+ * Gate 1b is the opposite -
  * a workspace switching the category off is saying the category does not apply
  * here at all, so there is nothing to keep a record of. It runs before gates 2
  * and 3 because it needs no query at all: the column arrives with the workspace.
@@ -55,7 +70,7 @@ import { wsReminders } from '@/locales/en/ws-reminders'
  * `notify()` reads both per call, and the only shape that fits here is one call
  * per member - inside a loop that runs for every unchecked-in person in every
  * workspace, every thirty minutes. That is the exact round-trip explosion
- * `mutedUserIdsFor()` was written to avoid. Keeping the pair here also leaves
+ * `getCategoryChoices()` was written to avoid. Keeping the pair here also leaves
  * the `reminder_log` claim immediately before the send, which is the ordering
  * that makes an overlapping cron run silent rather than a second push.
  */
@@ -84,8 +99,10 @@ export interface ReminderPassResult {
     outsideWindow: number
     /** Workspaces that have switched the `reminders` category off entirely. */
     categoryOff: number
-    /** Members whose push was suppressed by their own mute. Their in-app row
-     *  was still written, so this is not a count of dropped notifications. */
+    /** Members whose push was suppressed because they have not opted in to
+     *  `reminders` (or muted it explicitly). Their in-app row was still
+     *  written, so this is not a count of dropped notifications - and since the
+     *  category is opt-in, a healthy run has this HIGHER than `sent`. */
     muted: number
   }
   errors: number
@@ -178,6 +195,15 @@ async function processWorkspaceReminders(
   if (checkinMin === null && checkoutMin === null) return
 
   // ── Gate 1b: has this workspace switched reminders off for everybody? ─────
+  //
+  // Cannot fire today. `reminders` is no longer `workspaceSwitchable`, so
+  // `parseCategoriesOff()` filters it out of the stored set even for a
+  // workspace that switched it off while it still could - the gate asks an
+  // honest question and always gets `false`. Kept rather than deleted because
+  // it reads the catalogue through that helper instead of hardcoding the rule:
+  // flipping the flag back in `CATEGORY_DEFS` restores this gate with no edit
+  // here, and `skipped.categoryOff` stays in the result shape for the same
+  // reason. Reminders are now silenced per-member, at gate 7.
   if (parseCategoriesOff(ws.notification_categories_off).has('reminders')) {
     result.skipped.categoryOff++
     return
@@ -215,13 +241,18 @@ async function processWorkspaceReminders(
   // `getActiveParentalUserIds` covers BOTH case types - maternity and
   // paternity. It takes no case_type argument on purpose; see its doc comment.
   //
-  // ── Gate 7 (gathered once per workspace): members who muted the push ─────
+  // ── Gate 7 (gathered once per workspace): the members' push choices ──────
   // Read here, alongside the leave sets, for the same reason: this pass walks
   // workspaces, so one query answers the question for every member of it.
-  const [leaves, onParentalLeave, mutedPush] = await Promise.all([
+  //
+  // It is the CHOICES, not a finished set of muted ids, because `reminders` is
+  // opt-in: the members whose push is suppressed are mostly the ones this table
+  // has no row for, so there is no set of ids to fetch. `isPushMuted()` resolves
+  // each member against the catalogue default, in memory, at gate 7 below.
+  const [leaves, onParentalLeave, pushChoices] = await Promise.all([
     getLeaveRequestsInRange(ws.id, localDate, localDate),
     getActiveParentalUserIds(ws.id, localDate),
-    mutedUserIdsFor(ws.id, 'reminders'),
+    getCategoryChoices(ws.id, 'reminders'),
   ])
   const onLeave = new Set([...leaves.map((l) => l.user_id), ...onParentalLeave])
 
@@ -232,7 +263,7 @@ async function processWorkspaceReminders(
   if (checkinMin !== null) {
     if (due(checkinMin)) {
       const members = await getMembersMissingCheckin(ws.id, dayStartUtc, dayEndUtc)
-      await notifyMembers(ws, members, 'checkin', localDate, onLeave, mutedPush, result)
+      await notifyMembers(ws, members, 'checkin', localDate, onLeave, pushChoices, result)
     } else {
       result.skipped.outsideWindow++
     }
@@ -241,7 +272,7 @@ async function processWorkspaceReminders(
   if (checkoutMin !== null) {
     if (due(checkoutMin)) {
       const members = await getMembersStillCheckedIn(ws.id, dayStartUtc, dayEndUtc)
-      await notifyMembers(ws, members, 'checkout', localDate, onLeave, mutedPush, result)
+      await notifyMembers(ws, members, 'checkout', localDate, onLeave, pushChoices, result)
     } else {
       result.skipped.outsideWindow++
     }
@@ -254,7 +285,7 @@ async function notifyMembers(
   kind: ReminderKind,
   localDate: string,
   onLeave: Set<string>,
-  mutedPush: Set<string>,
+  pushChoices: CategoryChoices,
   result: ReminderPassResult,
 ): Promise<void> {
   const configured = kind === 'checkin' ? ws.checkin_reminder_at : ws.checkout_reminder_at
@@ -290,11 +321,15 @@ async function notifyMembers(
         continue
       }
 
-      // ── Gate 7: the member muted reminder PUSHES ─────────────────────────
-      // The row is written either way. Muting is push-only across the product,
-      // so the feed stays a complete record of what the workspace expected of
-      // them - the same guarantee `notify()` makes at every other call site.
-      const pushMuted = mutedPush.has(member.user_id)
+      // ── Gate 7: the member has not asked for reminder PUSHES ─────────────
+      // The row is written either way. The member-facing switch is push-only
+      // across the product, so the feed stays a complete record of what the
+      // workspace expected of them - the same guarantee `notify()` makes at
+      // every other call site. That matters more now than it did: `reminders`
+      // is opt-in, so this gate suppresses the push for most members rather
+      // than for the few who went looking for the switch, and the feed row is
+      // the only thing left telling them a reminder was due.
+      const pushMuted = isPushMuted(pushChoices, member.user_id)
       if (pushMuted) result.skipped.muted++
 
       const work: Promise<unknown>[] = [

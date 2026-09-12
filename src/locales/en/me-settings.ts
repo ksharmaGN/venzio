@@ -142,14 +142,32 @@ export const meSettings = {
        * named here - the top-bar pill above already answers "which one".
        */
       workspaceGroupLabel: 'This workspace',
+      /**
+       * Three things this line has to get right.
+       *
+       * It leads with the default, because the switches are OFF for a member who
+       * has never been here (`defaultOn: false` in the catalogue). Without that
+       * sentence a screen of off switches reads as a screen of broken switches,
+       * or as somebody else having turned them off.
+       *
+       * It says "phone" and not "bell": the member's switch is push-channel only.
+       * `notify()` runs `createNotification()` unconditionally and the switch
+       * suppresses only `sendPushToUser` (invariant 24), so an un-opted-in
+       * category still lands in the feed. This copy used to promise "the phone
+       * push and the bell alike", which was a straight contradiction of that.
+       *
+       * And it accounts for the categories that are NOT listed. `approvals` and
+       * `announcements` are not member-mutable and no longer render here at all,
+       * so without a word about them the list looks like it is missing rows.
+       */
       workspaceGroupHint:
-        'Mute a category and it stops reaching you from this workspace — the phone push and the bell alike. Switch workspaces with the pill at the top to set another one.',
+        'These are off unless you turn them on. Switching one on lets it buzz your phone from this workspace; either way it arrives in your notifications list, so nothing is lost. Some notifications are set by your organisation and are not listed here. Switch workspaces with the pill at the top to set another one.',
       deviceGroupLabel: 'Your device',
       deviceGroupHint:
-        'These follow your account rather than any one workspace, because a check-in session belongs to none.',
+        'Also off unless you turn them on. These follow your account rather than any one workspace, because a check-in session belongs to none.',
 
       /** Nothing to scope to: no active membership. */
-      noWorkspace: 'You are not in a workspace yet, so there is nothing here to mute.',
+      noWorkspace: 'You are not in a workspace yet, so there is nothing here to set.',
 
       /**
        * Same withholding rule as the admin switchboard: the default state is
@@ -160,36 +178,61 @@ export const meSettings = {
       loadFailedRetry: 'Try again',
       saveError: 'That change could not be saved.',
 
-      /** One entry per category; `satisfies` keeps it total against the catalogue. */
+      /**
+       * One entry per category; `satisfies` keeps it total against the
+       * catalogue.
+       *
+       * Two of these are **not rendered**: `approvals` and `announcements` are
+       * not member-mutable, and this screen now filters those out rather than
+       * showing a disabled switch. Their copy stays anyway, and the Record
+       * stays total, because the totality is the guarantee - it is what turns a
+       * category added to the catalogue with no copy here into a compile error.
+       * Dropping the two unread entries would mean loosening that to a
+       * `Partial`, which trades a real safety net for two dead strings.
+       */
       categories: {
         reminders: {
           label: 'Daily reminders',
           hint: 'The nudge to check in or out, on working days only.',
         },
-        approvals_inbox: {
-          label: 'Requests to action',
-          hint: 'Only reaches you if you are the one approving leave or regularizations.',
+        /** Not rendered - see the note above. */
+        approvals: {
+          label: 'Approvals',
+          hint: 'Requests waiting on you, and what happened to the ones you filed.',
         },
-        approvals_outcome: {
-          label: 'Outcomes of your requests',
-          hint: 'What happened to the leave, regularization or document you filed.',
-        },
+        /** Not rendered - see the note above. */
         announcements: {
           label: 'Announcements',
           hint: 'Workspace-wide notices — a closure, an office day, a policy change.',
         },
+        /**
+         * The hint carries a second sentence the others do not need. This is the
+         * one push-only category - `notifyPresence()` writes no feed row - so
+         * leaving it off is total silence rather than a quiet notification list,
+         * and a member could reasonably fear their session stays open because
+         * nothing told them otherwise. It does not: `autoCheckoutEvent()` runs
+         * before the push and unconditionally.
+         */
         presence: {
           label: 'Check-in session updates',
-          hint: 'Hourly milestones and the warning before an open session is auto-closed.',
+          hint: 'Hourly milestones and the warning before an open session is auto-closed. Sessions still close on time whether or not this is on.',
         },
       } as const satisfies Record<NotificationCategory, { label: string; hint: string }>,
 
-      /** Keyed on `CategoryDef.lockedReason` - why a switch is not offered. */
+      /**
+       * Keyed on `CategoryDef.lockedReason` - why a switch is not offered.
+       *
+       * **Unread today**, alongside `lockedReasonFor()` in the settings screen:
+       * a locked category is filtered off that screen entirely now rather than
+       * rendered disabled with its reason. Kept for the same reason the helper
+       * is - both are driven by the catalogue field, so a category locked again
+       * in future is one `lockedReason` away from having its caption back.
+       */
       lockedReasons: {
-        always_on_outcome:
-          'Cannot be muted. Not knowing your leave was rejected is worse than one more notification.',
+        always_on_approvals:
+          'Set by your organisation. Not knowing your leave was rejected is worse than one more notification.',
         always_on_announcement:
-          'Cannot be muted. This is the one notice that cannot afford to be missed.',
+          'Set by your organisation. This is the one notice that cannot afford to be missed.',
       } as const satisfies Record<string, string>,
 
       /** Fallback for a locked category with no stated reason. */
@@ -198,7 +241,7 @@ export const meSettings = {
       // ── Push registration, this device only ────────────────────────────────
       pushTitle: 'Push on this device',
       pushBody:
-        'Venzio registers this browser for push when you open it. Unregistering stops push here immediately, but opening Venzio again registers it back — mute the categories above to stop the messages themselves.',
+        'Venzio registers this browser for push when you open it. Unregistering stops push here immediately, but opening Venzio again registers it back — the switches above are what decide which messages get sent at all.',
       pushUnsubscribe: 'Unregister this device',
       pushUnsubscribed: 'This device will no longer receive push notifications.',
       pushNotSubscribed: 'This device is not registered for push.',

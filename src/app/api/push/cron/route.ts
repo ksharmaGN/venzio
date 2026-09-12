@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getOpenEventsForCron, updatePushRemindersSent, autoCheckoutEvent } from '@/lib/db/queries/events'
 import { notifyPresence } from '@/lib/notify'
+import { presenceSilencedUserIds } from '@/lib/db/queries/notification-prefs'
 import { notificationHref } from '@/lib/client/notification-href'
 import { presenceLadder } from '@/locales/en/notifications'
 import { runReminderPass, type ReminderPassResult } from '@/lib/reminders'
@@ -49,6 +50,25 @@ export async function POST(request: NextRequest) {
   // then be measured against a later clock.
   const events = await getOpenEventsForCron(new Date(now))
 
+  // Who is silenced for `presence`, resolved ONCE for the whole batch.
+  //
+  // `notifyPresence()` will resolve for itself when this is omitted, which is
+  // correct but wrong here: this loop runs up to CRON_EVENT_LIMIT (500) times
+  // every thirty minutes, so a per-event lookup is 500 round trips to answer a
+  // question about a handful of rows. Same argument, and the same shape, as the
+  // one bulk `mutedUserIdsFor()` read per workspace in `lib/reminders.ts`.
+  //
+  // Silence covers both reasons at once - the member's own account-level mute,
+  // and every workspace they belong to having switched the category off. A
+  // failure here must not take the run down: an empty set means everybody hears
+  // their ladder, which is the pre-existing behaviour and the safe direction.
+  let silenced = new Set<string>()
+  try {
+    silenced = await presenceSilencedUserIds(events.map((e) => e.user_id))
+  } catch (err) {
+    console.error('[cron] presence preference lookup failed; sending unfiltered:', err)
+  }
+
   for (const event of events) {
     try {
       const reminders: string[] = (() => {
@@ -85,7 +105,7 @@ export async function POST(request: NextRequest) {
             body: step.body,
             tag: `presence-${step.key}`,
             data: { url: step.url },
-          })
+          }, silenced)
           await claim(step.key)
         }
       }
@@ -100,13 +120,16 @@ export async function POST(request: NextRequest) {
         const checkoutMs = new Date(event.scheduled_checkout_at).getTime()
 
         if (now >= checkoutMs && !reminders.includes('autocheckedout')) {
+          // The checkout happens FIRST and unconditionally. Silencing the
+          // category suppresses the message, never the mechanic - a workspace
+          // switching off session pushes must not leave sessions open forever.
           await autoCheckoutEvent(event.id, new Date(now).toISOString())
           await notifyPresence(event.user_id, {
             title: presenceLadder.autoCheckout.title,
             body: presenceLadder.autoCheckout.body,
             tag: 'presence-autocheckedout',
             data: { url: CHECKIN_URL },
-          })
+          }, silenced)
           await claim('autocheckedout')
         }
       }

@@ -107,6 +107,17 @@ Set via `PATCH /api/ws/[slug]` (gated `settings:write`); an empty string or
 `null` turns the reminder off, and a malformed value is rejected rather than
 stored — a validation error is kinder than a reminder that quietly does nothing.
 
+> **No UI writes the two times today.** They were edited on Settings ›
+> Notifications, and came off that screen when `reminders` stopped being a
+> workspace-switchable category — a daily nudge is configured by the person it
+> nags, so the whole category moved to `/me/settings`. The columns, the route,
+> the validation and this pass are all unchanged, and the admin tab still loads
+> and re-sends both values on save so nothing it does can clear them. The
+> practical consequence is that a workspace holding NULL in both stays dormant:
+> the query below never selects it, and nothing in the product can give it a
+> time. Restoring the fields is un-deleting the `ReminderField` JSX in
+> `NotificationsTab.tsx`, which is kept in place for exactly that reason.
+
 ```mermaid
 flowchart TD
   CRON["GitHub Actions · 0,30 * * * *\ncurl -X POST /api/push/cron\nAuthorization: Bearer CRON_SECRET"]
@@ -167,8 +178,8 @@ predicates on that TEXT column are lexicographic, so a bound carrying `T` and
 
 | # | Gate | Why it exists |
 |---|------|---------------|
-| 1b | **workspace switched `reminders` off** | `parseCategoriesOff(ws.notification_categories_off)`. Placed before gate 2 because the column arrives with the workspace row and costs no query, while gate 3 costs a holidays lookup. Numbered `1b` rather than renumbering 2–6, which are cited here and in `CLAUDE.md` |
-| 7 | **member muted `reminders`** | One bulk `mutedUserIdsFor(ws.id, 'reminders')` per workspace. Suppresses the **push only** — `createNotification` still runs, because the member switch is push-channel by design. Sits *after* the `reminder_log` claim so a muted member still burns their slot: their feed row was written, so the day is genuinely done |
+| 1b | **workspace switched `reminders` off** — *cannot fire today* | `parseCategoriesOff(ws.notification_categories_off)`. `reminders` is no longer `workspaceSwitchable`, and that helper filters non-switchable keys out of the stored set, so this gate always evaluates false — including for a workspace that switched it off while it still could. Kept because it reads the catalogue rather than hardcoding the rule: flipping the flag in `CATEGORY_DEFS` restores it with no edit to the pass. Reminders are now silenced per member, at gate 7. Placed before gate 2 because the column arrives with the workspace row and costs no query, while gate 3 costs a holidays lookup. Numbered `1b` rather than renumbering 2–6, which are cited here and in `CLAUDE.md` |
+| 7 | **member has not opted in to `reminders`** | One bulk `getCategoryChoices(ws.id, 'reminders')` per workspace, resolved per member by the pure `isPushMuted()`. **Fires for most members, not a few:** `reminders` is `defaultOn: false`, so a member who has never opened `/me/settings` is suppressed here by default and turns the push on themselves. Reads the *choices* rather than a set of muted ids precisely because the suppressed members are the ones the table has no rows for. Suppresses the **push only** — `createNotification` still runs, because the member switch is push-channel by design, and the feed row is now the only thing telling most members a reminder was due. Sits *after* the `reminder_log` claim so a suppressed member still burns their slot: their feed row was written, so the day is genuinely done |
 | 2 | **non-working day** | `working_days` is a JSON array of weekday numbers, 0 = Sunday. A reminder on a Sunday is how a user disables push |
 | 3 | **workspace holiday** | `listHolidayDatesInRange(ws, localDate, localDate)`; skips the entire workspace, both kinds |
 | 5a | **approved leave** | `getLeaveRequestsInRange(ws, localDate, localDate)` where `status = 'approved'` |
@@ -290,13 +301,23 @@ radius was asymmetric, a nag costing a channel wanted for something else.
 The fix is deliberately narrow. A member mutes a **category**, and the mute
 applies to the **push channel only** — `createNotification()` still runs, so the
 in-app feed stays a complete record and the bell still shows what happened.
-`announcements` and `approvals_outcome` are not mutable at all, because a
-switch for those rebuilds the exact problem this closed.
+`announcements` and `approvals` are not mutable at all, because a switch for
+those rebuilds the exact problem this closed — and being unmutable, neither is
+shown on `/me/settings`: they are configured by the workspace and appear only on
+its own notification switchboard.
+
+`approvals` covers both halves of an approval, the request reaching an approver
+and the answer reaching whoever filed it. It was two categories
+(`approvals_inbox` / `approvals_outcome`) until they were merged into one switch;
+the inbox half was member-mutable before that and is not any more, which is the
+one place this round narrowed the lever rather than widening it.
 
 See **Notification preferences** in `CLAUDE.md` for the catalogue, the storage
-rule (a `notification_prefs` row means *muted*; absence means on) and the
-`notify()` seam that enforces it. Gate 1b and gate 7 above are where this pass
-honours it.
+rule (a `notification_prefs` row is an *explicit choice* and its `muted` column
+is what it chose; absence resolves to the category's `defaultOn`, which for
+`reminders` is **off**) and the `notify()` seam that enforces it. Gate 7 above is where this pass honours it —
+gate 1b was the other half and is now inert, because `reminders` belongs to the
+member rather than the workspace.
 
 ### 4.2 Workspace-wide timezone and working days
 

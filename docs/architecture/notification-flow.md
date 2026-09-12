@@ -37,13 +37,42 @@ suppressing it for a member who muted that category. The URL comes from
 `notificationHref` rather than being rebuilt per call site, which is how the
 announcement fan-out had already drifted to a hardcoded, unencoded slug.
 
-The fourth path uses `notifyPresence()`, which honours the account-level
-`presence` mute and writes no row. Two sanctioned exceptions to the seam exist
-and are documented where they live: that helper, and `src/lib/reminders.ts`,
-which keeps the raw pair so it can filter one bulk mute-set read per workspace
-instead of one lookup per member.
+The fourth path uses `notifyPresence()`, which writes no row and resolves
+silence through `presenceSilencedUserIds()` — today, the member's own
+account-level `presence` mute and nothing else. That helper still encodes the
+every-workspace vote ("every" and not "any": a check-in session belongs to no
+workspace, so one workspace must not silence a member on behalf of another), but
+`presence` is no longer workspace-switchable, so the vote can never reach a
+verdict. It takes an optional pre-resolved set so the cron can answer for a whole
+batch in one query rather than once per open event.
 
-See **Notification preferences** in `CLAUDE.md` for the category catalogue.
+Two sanctioned exceptions to the seam exist and are documented where they live:
+that helper, and `src/lib/reminders.ts`, which keeps the raw pair so it can
+filter one bulk mute-set read per workspace instead of one lookup per member.
+
+See **Notification preferences** in `CLAUDE.md` for the category catalogue. The
+two settings screens **partition** it — no category is configurable from both,
+and neither screen renders the other's half as a disabled row:
+
+| Screen | Filters on | Shows |
+|---|---|---|
+| `/ws/[slug]/settings` › Notifications | `workspaceSwitchable` | `approvals`, `announcements` |
+| `/me/settings` › Notifications | `memberMutable` | `reminders`, `presence` |
+
+**The member's two are opt-in** (`defaultOn: false`), so both switches read OFF
+for a member who has never opened that screen, and turning one on is what starts
+the push. For `reminders` the in-app row is still written for everybody, so only
+the buzz is withheld; `presence` is push-only and therefore silent outright,
+though `autoCheckoutEvent()` still runs regardless. The organisation's two are
+`defaultOn: true` and cannot be muted at all.
+
+The split is by whose decision it is. The organisation configures what it
+broadcasts to everybody (and members cannot mute either one); the member
+configures the nudges aimed at their own working day. The reminder *times* came
+off the admin screen with the switch — `workspaces.checkin_reminder_at` /
+`checkout_reminder_at` are still the schedule the wall-clock pass reads, still
+stored per workspace and still round-tripped by that tab's PATCH, but no UI sets
+them, so a workspace with NULLs in both stays dormant.
 
 ---
 
@@ -310,9 +339,18 @@ the 10h push or from `CheckinButtons`. `POST /api/checkin/extend` takes an
 worker's bodyless `extend` action working unchanged. The `checkin + 24h` hard cap
 still clamps rather than erroring.
 
-All three go through `notifyPresence()`, not `sendPushToUser()` directly, so the
-account-level `presence` mute is honoured. They remain the only messages in the
-product that write **no** `notifications` row — see the gap register.
+All three go through `notifyPresence()`, not `sendPushToUser()` directly, so
+`presence` silencing is honoured. The route resolves the whole batch once with
+`presenceSilencedUserIds()` before the loop and passes the set in — a per-event
+lookup would be up to `CRON_EVENT_LIMIT` (500) extra round trips every thirty
+minutes, the same round-trip explosion `getCategoryChoices()` exists to avoid.
+
+**Silencing suppresses the message, never the mechanic.** `autoCheckoutEvent()`
+runs before the push and unconditionally, so a silenced member's session is still
+closed on time. That guarantee carries more weight now that `presence` is
+`defaultOn: false`: silence is the default, so most members are never told their
+session was auto-closed — and it is closed all the same. They remain the only messages in the product that write **no**
+`notifications` row — see the gap register.
 
 Dedupe is still the `presence_events.push_reminders_sent` JSON array — now keys
 `"5h"`, `"10h"`, `"autocheckedout"` — written back **after each individual push**

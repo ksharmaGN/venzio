@@ -489,7 +489,7 @@ Stages: `requested → approved → onleave → returned`. Forward-only, one ste
 - `GET|POST /api/me/ws/[slug]/parental-extensions` — member, `requireWsMember()`. **`unpaid_days` is never read from the body**: `computeUnpaidExtensionDays()` derives it server-side with `countWorkdays()` over `(day after the case's current end_date … requested_end_date)`, using the workspace's `working_days` and holiday calendar, so weekends and company holidays are excluded. The `/me` form's live preview is a server round trip against that same function rather than a client copy of the rule, and the count is **recomputed at approval time** because the holiday calendar can change in between
 - Guarded by **`Resource.Leaves`** — parental leave has no resource of its own.
 
-`parental_leave_extensions` is the sibling table: a member's request to extend an open case by **unpaid** days. Append-only in the `leave_requests` sense — `case_id`, the dates and `unpaid_days` are fixed at insert and the only mutation is the approve/reject transition out of `pending`. `previous_end_date` is stored rather than derived so the request still records what it was extending from after the case's `end_date` has moved. Notification types `extension_submitted` (category `approvals_inbox`) / `extension_approved` / `extension_rejected` (`approvals_outcome`) carry it, with `ref_type: 'parental_extension'`.
+`parental_leave_extensions` is the sibling table: a member's request to extend an open case by **unpaid** days. Append-only in the `leave_requests` sense — `case_id`, the dates and `unpaid_days` are fixed at insert and the only mutation is the approve/reject transition out of `pending`. `previous_end_date` is stored rather than derived so the request still records what it was extending from after the case's `end_date` has moved. Notification types `extension_submitted` / `extension_approved` / `extension_rejected` carry it — all three in the `approvals` category — with `ref_type: 'parental_extension'`.
 
 ---
 
@@ -548,28 +548,145 @@ Two switches over one catalogue. A **workspace** decides which categories are in
 play at all; a **member** decides which of those reach their phone.
 
 `src/lib/notifications/categories.ts` is the catalogue and the contract. Every
-`NotificationType` maps to exactly one of five categories, and `CATEGORY_OF` is a
+`NotificationType` maps to exactly one of four categories, and `CATEGORY_OF` is a
 **total `Record`** over that union — a new notification type with no category is
 a compile error, not a notification that silently bypasses everyone's settings.
 
-| Category | Covers | Scope | Workspace can switch | Member can mute |
-|---|---|---|---|---|
-| `reminders` | `checkin_reminder`, `checkout_reminder` | workspace | yes | yes |
-| `approvals_inbox` | `leave_submitted`, `regularization_submitted`, `extension_submitted` | workspace | yes | yes |
-| `approvals_outcome` | leave / regularization / document / parental-extension outcomes | workspace | **no** | **no** |
-| `announcements` | `announcement` | workspace | **no** | **no** |
-| `presence` | the 5h / 10h / 12h check-in pushes | **account** | no | yes |
+| Category | Covers | Scope | Workspace can switch | Member can mute | Default | Configured on |
+|---|---|---|---|---|---|---|
+| `approvals` | `leave_submitted`, `regularization_submitted`, `extension_submitted` **and** every leave / regularization / document / parental-extension outcome | workspace | yes | **no** | on | `/ws/:slug/settings` |
+| `announcements` | `announcement` | workspace | yes | **no** | on | `/ws/:slug/settings` |
+| `reminders` | `checkin_reminder`, `checkout_reminder` | workspace | **no** | yes | **off** | `/me/settings` |
+| `presence` | the 5h / 10h / 12h check-in pushes | **account** | **no** | yes | **off** | `/me/settings` |
 
-`announcements` is locked because it is the one message class that cannot afford
-to be missed — handing out a switch for it rebuilds the exact problem this
-feature exists to solve. `approvals_outcome` is locked because a person is
-entitled to be told what happened to a request they filed. Both still **render**
-in each settings screen, disabled, with the reason attached: an admin should see
-that they cannot be switched off rather than wonder where they went.
+**The member's two are opt-in.** `defaultOn: false` in `CATEGORY_DEFS`: a member
+who has never opened `/me/settings` gets neither push, and turning one on is what
+starts it. A daily nudge nobody asked for is what makes a person revoke the
+browser's push permission outright — and that permission is shared, so losing it
+also costs them the approval notifications they do want. The default column falls
+out of the same split as the two flags: the organisation's two are things a
+person is *entitled* to receive, so they arrive by default and cannot be muted;
+the member's two are nags about that member's own day, so they are silent until
+asked for.
 
-`presence` is account-scoped because **`presence_events` has no `workspace_id`**
-and deliberately never will. A member of two workspaces has one check-in session,
-not two, so there is no workspace to key the preference on.
+Two consequences worth stating before relying on it:
+
+- **`reminders` off by default still writes the in-app row.** The member-facing
+  switch is push-channel only (invariant 24, step 3), so the reminder is in the
+  member's notification list on the day it was due — it just does not buzz.
+  Expect `ReminderPassResult.skipped.muted` to exceed `sent` in a healthy run.
+- **`presence` off by default is total silence**, because the ladder is the one
+  push-only path in the product and has no feed row to fall back on — the
+  auto-checkout confirmation included. The **mechanic is untouched**:
+  `autoCheckoutEvent()` runs before `notifyPresence()` and unconditionally, so
+  sessions still close on time for everybody. The `/me/settings` copy says so.
+
+**The two flags partition the catalogue, and that diagonal is the design.** No
+category is configurable from both sides, so the two screens can never disagree
+and no member is ever told their organisation overrode a switch they can see.
+The split is by whose decision it is: the organisation configures what it
+**broadcasts to everybody**, the member configures the **nudges about their own
+working day**. Each screen filters on its own flag and renders nothing of the
+other's half — not even disabled.
+
+**`approvals` is one switch over both halves of an approval.** It was two —
+`approvals_inbox` (a request reaching an approver) and `approvals_outcome` (the
+answer reaching whoever filed it) — and they were merged because they are one
+subject to the admin configuring them, where two near-identical rows are harder
+to tell apart than one row is to understand. The cost is real and was accepted
+deliberately: the inbox half used to be member-mutable and no longer is, so an
+approver can no longer silence "a request is waiting for you". The outcome half
+could not be made mutable in exchange, and one category holds one answer.
+
+**The organisation's two cannot be muted by a member.** `approvals` because a
+person is entitled to be told what happened to a request they filed;
+`announcements` because it is the one message class that cannot afford to be
+missed. Neither is **rendered** on `/me/settings`. They used to be, disabled and
+captioned with their reason, on the argument that a member should see the
+decision was made rather than wonder where the switch went. That was the wrong
+trade — a switch nobody may throw still reads as a switch — so the screen
+filters on `memberMutable` and shows only what a member can actually act on.
+
+**The member's two cannot be switched by a workspace**, and the admin
+switchboard applies the mirror of that filter, on `workspaceSwitchable`. Both
+were workspace-switchable and stopped being so for the same reason the first
+pair is not member-mutable, pointed the other way: a daily check-in reminder and
+the session ladder are nags aimed at one person about their own day, so the
+person being nagged is the one who stops them. Two consequences:
+
+- **The reminder *times* came off the admin screen with the switch.**
+  `workspaces.checkin_reminder_at` / `checkout_reminder_at` are still the
+  schedule `runReminderPass()` reads, still per-workspace, still validated by
+  `PATCH /api/ws/[slug]`, and the Notifications tab still loads and re-sends
+  them on save so nothing it does can clear them — but no UI writes them, so a
+  workspace holding NULL in both is dormant. `ReminderField` is kept unrendered
+  in `NotificationsTab.tsx`; restoring the fields is un-deleting its JSX.
+- **Two code paths went inert rather than being deleted**, both because they
+  read the catalogue instead of hardcoding the rule, so one flag brings them
+  back: reminder **gate 1b**, and the every-workspace vote in
+  `presenceSilencedUserIds()` (whose account-mute half is untouched and is now
+  the only way presence is silenced).
+
+Presentation only, on both sides: the member PATCH routes and `setMuted()`
+refuse a non-mutable category, and `serialiseCategoriesOff()` /
+`parseCategoriesOff()` refuse to store or honour a non-switchable one. Those
+remain the enforcement. **`parseCategoriesOff()` filtering on
+`workspaceSwitchable` is what made revoking a switch a one-line change instead
+of a migration** — a workspace that disabled `reminders` while it could still do
+so has that word in its column today, and honouring it would silence a category
+with no switch left anywhere to explain why.
+
+Switching a workspace category off is total — `notify()` returns at step 2, so
+there is **no feed row and no push**. Two consequences worth stating before
+relying on it:
+
+- **`approvals` off means nobody is told at all, on either side.** Not "fewer
+  pushes" — approvers must watch the queue themselves, and a rejected leave
+  leaves no record the employee will see; they must go and look.
+- **`announcements` off means silent, not unposted.** The `workspace_announcements`
+  row is written *before* the fan-out, so the notice still reaches
+  `/me/announcements` with its attachments. The POST's `delivered` count reports
+  **0** in that case rather than the roster size, and the composer says "posted
+  silently" — a count of 34 for a notice nobody was alerted about is a lie on the
+  one screen an admin uses to check it went out.
+
+### `presence` is account-scoped, and the workspace vote is now inert
+
+`presence_events` has **no `workspace_id`** and deliberately never will. A member
+of two workspaces has one check-in session, not two, so the *member's* preference
+has to be account-level — and no single workspace can decide for a member who
+belongs to several.
+
+**The live rule is the first line alone:**
+
+```
+silenced = the member has NOT opted in to `presence` on their account
+           (no row, or a row saying muted — `presence` is defaultOn: false)
+        OR (they have ≥1 active workspace AND all of them switched it off)  ← unreachable
+```
+
+Note the direction: the default answer is **silenced**, so the query looks for
+the rows that opt *in* rather than the rows that mute.
+
+`presence` is no longer `workspaceSwitchable`, so `parseCategoriesOff()` filters
+it out of every stored set and the tally always comes back `off === 0`. The
+unanimity requirement is in fact *why* the switch was dropped: a control that
+only bites when every workspace a member belongs to — workspaces that cannot see
+each other — independently agrees is a poor use of an admin's attention, and the
+member has a switch that always works.
+
+`presenceSilencedUserIds()` in `lib/db/queries/notification-prefs.ts` is still
+the only place the rule is written, and the second line is kept there against
+the flag being flipped back: "every" rather than "any" so one workspace cannot
+silence a member on behalf of another; a member with **no** active workspace is
+not silenced *by that half*, because an empty vote is not a vote to switch off
+(it says nothing about the member's own preference, which the first line has
+already answered); archived workspaces excluded, so a dead workspace cannot cast
+the deciding vote.
+
+**Silencing suppresses the message, never the mechanic.** `autoCheckoutEvent()`
+runs before `notifyPresence()` and unconditionally, so a member muting session
+pushes does not leave sessions open forever.
 
 ### `notify()` is the only way a notification leaves the system
 
@@ -605,9 +722,20 @@ including the auto-checkout confirmation. It is a nudge, not a receipt.
   enabled one means a category added to the catalogue later is on everywhere with
   no backfill; the inverse would ship it silently off for every existing
   workspace.
-- **Member:** `notification_prefs`. **A row means muted**; un-muting deletes it.
-  No boolean column — absence is the default and the default is on, so nothing
-  needed seeding for 47 users across 6 workspaces.
+- **Member:** `notification_prefs`. **A row is an explicit choice**, and the
+  `muted` column is what it chose. Absence means "never touched it" and resolves
+  to the category's `defaultOn`, so nothing needed seeding for 47 users across 6
+  workspaces. Both directions write a row — un-muting is not a DELETE.
+
+  It was not always this shape: a row used to *mean* muted, with no boolean, and
+  un-muting was a DELETE. That could express exactly one default (absence = on,
+  for everything), which stopped being true when `reminders` and `presence`
+  became opt-in — under the old shape "off by default" would have had to be
+  spelled as absence, which is also how every existing row spelled itself. The
+  column is what lets the two defaults coexist, and it means an explicit choice
+  **survives** a later change to the default instead of silently inverting with
+  it. Existing rows backfilled to `muted = 1`, which is exactly what they already
+  meant.
 
 **Two partial unique indexes, not one.** SQLite treats NULLs as *distinct* in a
 unique index, so a single `UNIQUE (user_id, workspace_id, category)` would not
@@ -677,13 +805,13 @@ Two independent passes, both driven by `POST /api/push/cron` (Bearer `CRON_SECRE
 > existing backlog is cleared — run it before enabling the workflow.
 
 1. **Event-anchored** (in the cron route): starts from an open `presence_events` row, counts elapsed hours, fires milestone / auto-checkout-warning pushes. Dedupes on `presence_events.push_reminders_sent`.
-2. **Wall-clock** (`src/lib/reminders.ts` → `runReminderPass()`): anchors on *workspaces* instead. The event-anchored design structurally cannot notice somebody who never checked in — there is no row to iterate. This pass reads `workspaces.checkin_reminder_at` / `checkout_reminder_at`, works out whether now is that time in the workspace's own timezone, then finds who still owes a check-in or check-out. Dedupes on the `reminder_log` table (unique on `workspace_id, user_id, kind, local_date`).
+2. **Wall-clock** (`src/lib/reminders.ts` → `runReminderPass()`): anchors on *workspaces* instead. The event-anchored design structurally cannot notice somebody who never checked in — there is no row to iterate. This pass reads `workspaces.checkin_reminder_at` / `checkout_reminder_at`, works out whether now is that time in the workspace's own timezone, then finds who still owes a check-in or check-out. Dedupes on the `reminder_log` table (unique on `workspace_id, user_id, kind, local_date`). **No UI writes those two times any more** — they came off Settings › Notifications with the `reminders` switch — so a workspace with NULL in both is dormant and the pass never selects it.
 
 Everything in pass 2 is about **not nagging**. A reminder that fires on someone's approved leave, on a public holiday or on a Sunday is how a user disables push permanently — which also costs them the approval notifications that work today. Gates, in order:
 
 ```
 1.  workspace archived            → excluded by the query
-1b. 'reminders' switched off      → skip the whole workspace
+1b. 'reminders' switched off      → skip the whole workspace (INERT — see below)
 2.  today not a working day       → skip the whole workspace
 3.  today is a company holiday    → skip the whole workspace
 4.  now is not near the set time  → skip this kind
@@ -697,17 +825,36 @@ cited in `docs/architecture/reminders.md` and in the pass's own doc block. It
 sits before gate 2 because it costs no query — the column arrives with the
 workspace row — while gate 3 costs a holidays lookup.
 
-Gate **7** sits *after* the `reminder_log` claim, not before, and that order is
-deliberate: a muted member still burns their slot for the day, because their
-in-app row *was* written. The day genuinely is done. Claiming after the mute
-check would leave the slot open and re-evaluate them on the next tick.
+Gate **1b can no longer fire.** `reminders` is not `workspaceSwitchable`, so
+`parseCategoriesOff()` filters it out of the stored set and the gate always
+evaluates false. It is kept, not deleted, because it reads the catalogue through
+that helper rather than hardcoding the rule — flipping the flag in
+`CATEGORY_DEFS` restores it with no edit to the pass, and `skipped.categoryOff`
+stays in the result shape for the same reason. Reminders are now silenced per
+member, at gate 7.
 
-Gate 7 reads a **bulk** set — `mutedUserIdsFor(ws.id, 'reminders')`, once per
-workspace — rather than routing each member through `notify()`. This pass
-iterates workspaces, not members; a per-member `notify()` would re-read the
-workspace row and the mute set for each one, which is ~1000 extra round trips
-every 30 minutes for a 500-person workspace. It is the one sanctioned place that
-still calls `createNotification` and `sendPushToUser` directly (invariant 24).
+Gate **7** now fires for **most** members, not a few: `reminders` is
+`defaultOn: false`, so a member who has never visited `/me/settings` is
+suppressed here by default. The in-app row is the compensation — it is written
+either way, so the reminder is still in their notification list on the day it was
+due.
+
+Gate **7** sits *after* the `reminder_log` claim, not before, and that order is
+deliberate: a suppressed member still burns their slot for the day, because their
+in-app row *was* written. The day genuinely is done. Claiming after the gate
+would leave the slot open and re-evaluate them on the next tick.
+
+Gate 7 reads a **bulk** map — `getCategoryChoices(ws.id, 'reminders')`, once per
+workspace, resolved per member in memory by the pure `isPushMuted()` — rather
+than routing each member through `notify()`. This pass iterates workspaces, not
+members; a per-member `notify()` would re-read the workspace row and the
+preferences for each one, which is ~1000 extra round trips every 30 minutes for a
+500-person workspace. It is the one sanctioned place that still calls
+`createNotification` and `sendPushToUser` directly (invariant 24).
+
+It reads the **choices**, not a finished set of muted user ids, and that is what
+the opt-in default forced: the members whose push is suppressed are precisely the
+ones the table has no rows for, so there is no set of ids to fetch.
 
 `ReminderPassResult.skipped` accordingly gained `categoryOff` and `muted`
 alongside `nonWorkingDay / holiday / onLeave / alreadySent / outsideWindow`.
@@ -746,7 +893,7 @@ import { db } from '@/lib/db'
 - `regularizations.ts` - employee requests to correct a past day
 - `roles.ts` - workspace roles and permission grids
 - `notifications.ts` - in-app notifications
-- `notification-prefs.ts` - per-member category mutes; a row means MUTED, absence means on
+- `notification-prefs.ts` - per-member category push preferences; a row is an EXPLICIT CHOICE and `muted` is what it chose, absence resolves to the category's `defaultOn`
 - `reminders.ts` - the wall-clock reminder pass's reads/writes (`reminder_log`)
 
 ### Migration
@@ -934,12 +1081,23 @@ Rules:
     places, which is how it gets forgotten. Two sanctioned exceptions, both
     documented where they live: the ladder's `notifyPresence()` (push-only by
     design), and `src/lib/reminders.ts`, which keeps the pair so it can filter
-    against one bulk `mutedUserIdsFor()` read per workspace instead of a
+    against one bulk `getCategoryChoices()` read per workspace instead of a
     per-member lookup. Adding a third needs the same kind of argument.
-25. **A `notification_prefs` row means MUTED** - absence is the default and the
-    default is on, so nothing is ever seeded. `workspaces.notification_categories_off`
-    stores the **disabled** set for the same reason. Never invert either one, and
-    never write a preference row for a category whose `memberMutable` is false.
+25. **A `notification_prefs` row is an EXPLICIT CHOICE, and `muted` is what it
+    chose** - absence means the member never touched the switch and resolves to
+    `CATEGORY_DEFS[category].defaultOn`, so nothing is ever seeded. **You cannot
+    answer "is this muted?" from the rows alone**: `reminders` and `presence` are
+    `defaultOn: false`, so the members whose push is suppressed are mostly the
+    ones this table has no row for. Every read resolves through the catalogue —
+    `getMutedCategories()`, `getCategoryChoices()` + `isPushMuted()`,
+    `isAccountCategoryMuted()`, `presenceSilencedUserIds()`. There is no
+    `mutedUserIdsFor()` any more, and a bare set of muted user ids is the wrong
+    shape to bring back. Both directions WRITE a row; un-muting is not a DELETE,
+    because for an opt-in category the absence of a row is what "muted" means.
+    `workspaces.notification_categories_off` still stores the **disabled** set,
+    for the unchanged reason that a category added later should need no backfill
+    — never invert that one. Never write a preference row for a category whose
+    `memberMutable` is false.
 26. **A pending item is actioned in exactly one place** - `/ws/:slug/approvals`.
     `getPendingApprovalItems()` is the only source, and the four duplicate action
     surfaces (attendance queue, leaves Requests tab, People echo, and the second
@@ -959,6 +1117,17 @@ Rules:
     survives. `DROP INDEX IF EXISTS` plus a `CREATE` under a NEW name is the only
     spelling whose outcome is observable. This is why the one-open-case index is
     now `idx_parental_cases_one_open`.
+29. **The two notification settings screens partition the catalogue** - a
+    category is configured on exactly one of them, and neither renders the
+    other's half, not even disabled. `/ws/:slug/settings` filters on
+    `workspaceSwitchable` (`approvals`, `announcements`); `/me/settings` filters
+    on `memberMutable` (`reminders`, `presence`). Both flags are enforced
+    server-side too — `serialiseCategoriesOff()` / `parseCategoriesOff()` for the
+    first, the member PATCH routes and `setMuted()` for the second — so the
+    filters are presentation and `CATEGORY_DEFS` is the only place the split is
+    decided. Never give a category both flags: an organisation's switch
+    overriding one the member can see is the state this partition makes
+    impossible.
 
 ---
 
@@ -1000,7 +1169,14 @@ Rules:
 - Never look for `src/lib/db/schema.ts` — it is deleted; read `scripts/migrate.js`
 - Never call `createNotification` and `sendPushToUser` directly from a route — go through `notify()`
 - Never let a member's mute suppress the in-app row; the mute is push-channel only
-- Never seed a `notification_prefs` row — absence is the default, and the default is on
+- Never seed a `notification_prefs` row — absence means "never chose" and resolves to the category's `defaultOn`, which is what makes `reminders` and `presence` start off without writing anything for anybody
+- Never decide "is this muted?" by testing whether a row exists — `reminders` and `presence` are `defaultOn: false`, so the suppressed members are the ones with *no* row. Resolve through the catalogue (`getMutedCategories`, `getCategoryChoices` + `isPushMuted`), and do not reintroduce a `mutedUserIdsFor()`-shaped helper that returns a bare set of muted ids
+- Never un-mute by DELETEing the row — for an opt-in category that stores the opposite of what the member asked for. Both directions write a row
+- Never silence `presence` on a workspace's say-so — it is not workspace-switchable at all now, and the every-workspace vote kept in `presenceSilencedUserIds()` is inert. That function is still the only place the rule lives; if the switch ever returns it takes **all** of the member's active workspaces, never one
+- Never render a category on the settings screen that does not carry that screen's flag — the admin switchboard filters on `workspaceSwitchable`, `/me/settings` on `memberMutable`, and a locked switch only invites someone to throw it and be told no
+- Never add a control for the reminder times back to the admin Notifications tab without moving the `reminders` category with it — a schedule an admin sets for a notification only the member can silence is the half-and-half arrangement that was removed
+- Never let a silenced category skip `autoCheckoutEvent()` — silencing suppresses the message, never the mechanic
+- Never report an announcement's `delivered` as the roster size without checking the category is on — it is 0 when switched off, and the notice is still posted
 - Never rely on one UNIQUE index across a nullable column in SQLite — NULLs are distinct there
 - Never lower `CRON_MAX_EVENT_AGE_H` below 24h — auto-checkout fires at 12h and extensions reach 24h, so a tighter window orphans the very sessions it should close
 
