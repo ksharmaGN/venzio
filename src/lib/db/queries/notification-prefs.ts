@@ -3,37 +3,66 @@ import {
   ALL_CATEGORIES,
   CATEGORY_DEFS,
   isNotificationCategory,
-  parseCategoriesOff,
   type NotificationCategory,
 } from '@/lib/notifications/categories'
 
 /**
  * Per-member notification push preferences.
  *
- * The storage rule, which every function here depends on: **a row is an explicit
- * choice, and `muted` is what it chose**. Absence means the member has never
- * touched that switch, and resolves to `CATEGORY_DEFS[category].defaultOn` -
- * so nothing is ever seeded and a member who has not opened the settings screen
- * still has no rows at all.
+ * ## THIS MODULE HAS NO LIVE CALLER
  *
- * It was not always this shape. A row used to MEAN muted, with no boolean at
- * all, and un-muting was a DELETE. That could express exactly one default -
- * absence meant on, for every category - and `reminders` and `presence` are now
- * opt-in, which under that shape would have had to be spelled as absence too.
- * The column is what lets the two defaults coexist. It also means an explicit
- * choice SURVIVES a later change to the default instead of silently inverting
- * with it: flip `defaultOn` and only the members with no row move.
+ * Read that before anything else here. Every category remaining in
+ * `lib/notifications/categories.ts` is `memberMutable: false`, so **nothing in
+ * the product reads or writes a `notification_prefs` row today.** The two
+ * categories that were member-mutable - `reminders` and `presence` - left the
+ * catalogue when they became SCHEDULES rather than categories
+ * (`member_reminder_prefs`, `member_presence_prefs`; having a time set is the
+ * opt-in). `notify()` still calls into here, but only from a branch guarded by
+ * `def.memberMutable`, which no category satisfies.
  *
- * The consequence for callers is the one thing to get right here: **you cannot
- * answer "is this muted?" from the rows alone any more.** A member with no row
- * is muted for an opt-in category and not muted for the others, so every read
- * below resolves through the catalogue rather than testing for a row's
- * existence. That is why `mutedUserIdsFor()` is gone - a bare set of user ids
- * from this table cannot express the answer for a `defaultOn: false` category,
- * because the members it concerns are precisely the ones it has no rows for.
+ * It is kept rather than deleted because the machinery is correct and generic -
+ * every function resolves through `CATEGORY_DEFS` rather than naming a category
+ * - so the moment a third category is member-mutable this file works unchanged,
+ * with no edit and no migration. Deleting it would mean rediscovering two things
+ * that are not obvious from the outside and are silent when got wrong:
  *
- * `workspaceId === null` addresses the account-level row, which only the
- * `presence` category uses.
+ *  1. **SQLite treats NULLs as DISTINCT in a unique index.** That is why the
+ *     table carries TWO PARTIAL unique indexes (`WHERE workspace_id IS NOT NULL`
+ *     and `WHERE workspace_id IS NULL`) rather than one plain
+ *     `UNIQUE (user_id, workspace_id, category)`. A single index would not
+ *     constrain the account-level rows at all, and a member could quietly
+ *     accumulate contradictory preferences for the same category. It is the same
+ *     `NULL = NULL` trap that once detached invited people's HR records.
+ *  2. **A boolean column is required for two defaults to coexist**, because
+ *     absence can only ever mean one thing. See the storage rule below.
+ *
+ * ## The storage rule
+ *
+ * **A row is an explicit choice, and `muted` is what it chose.** Absence means
+ * the member has never touched that switch, and resolves to
+ * `CATEGORY_DEFS[category].defaultOn` - so nothing is ever seeded and a member
+ * who has not opened the settings screen has no rows at all.
+ *
+ * It was not always this shape. A row used to MEAN muted, with no boolean, and
+ * un-muting was a DELETE. That can express exactly one default - absence means
+ * on, for every category - so an opt-in (`defaultOn: false`) category would have
+ * had to be spelled as absence too, which is the same absence already meaning
+ * "on" for its neighbour. The column is what lets two defaults coexist. It also
+ * means an explicit choice SURVIVES a later change to the default instead of
+ * silently inverting with it: flip `defaultOn` and only the members with no row
+ * move.
+ *
+ * The consequence for callers is the one thing to get right: **you cannot answer
+ * "is this muted?" from the rows alone.** A member with no row is muted for an
+ * opt-in category and unmuted for the others, so every read below resolves
+ * through the catalogue rather than testing for a row's existence. That is why
+ * `mutedUserIdsFor()` is gone - a bare set of user ids from this table cannot
+ * express the answer for a `defaultOn: false` category, because the members it
+ * concerns are precisely the ones it has no rows for.
+ *
+ * `workspaceId === null` addresses the account-level row, for a category with
+ * `scope: 'account'`. There is none today; the arm is kept for the same reason
+ * the rest of this file is.
  */
 
 export interface NotificationPref {
@@ -70,9 +99,12 @@ function defaultMuted(category: NotificationCategory): boolean {
  *
  * **Resolved, not raw.** The returned set is the effective answer: every
  * member-mutable category in this scope that the member has either muted
- * explicitly or never opted in to. It is what makes `/me/settings` paint an
+ * explicitly or never opted in to. That is what lets a settings screen paint an
  * opt-in category's switch off for a member who has never been there, with no
- * knowledge of defaults on the screen itself.
+ * knowledge of defaults on the screen itself - the resolution rule stays in one
+ * place instead of being re-implemented per surface. No category is
+ * member-mutable today, so this currently returns the empty set for every
+ * member in every scope.
  *
  * Categories are taken from the catalogue and matched against the rows, rather
  * than the other way round: a row left behind by a category that was later
@@ -163,9 +195,10 @@ export async function setCategoryMuted(
  * Every explicit choice held in this workspace for one category, as a map from
  * user id to their `muted` value. Members with no row are simply absent.
  *
- * The bulk read, and the reason `idx_notif_prefs_lookup` exists. The wall-clock
- * reminder pass iterates workspaces, not members, so it reads this once per
- * workspace and resolves each member in memory - the alternative is one
+ * The bulk read, and the reason `idx_notif_prefs_lookup` exists. It is shaped
+ * for a caller that iterates WORKSPACES rather than members - the wall-clock
+ * reminder pass was one, before a reminder became a schedule - so it reads once
+ * per workspace and resolves each member in memory. The alternative is one
  * preference query per member per tick, which for a 500-person workspace is 500
  * round trips every 30 minutes to answer a question about a handful of rows.
  *
@@ -205,8 +238,15 @@ export function isPushMuted(choices: CategoryChoices, userId: string): boolean {
 }
 
 /**
- * The account-level counterpart, for the presence ladder. Same resolution, but
- * keyed on the member alone because a check-in session belongs to no workspace.
+ * The account-level counterpart. Same resolution, but keyed on the member alone,
+ * for a `scope: 'account'` category - one whose subject belongs to no workspace.
+ *
+ * Its one caller was the presence ladder, back when `presence` was a category;
+ * the ladder now resolves its own schedule from `member_presence_prefs` and no
+ * account-scoped category exists. Kept with the rest of this file: the reason
+ * the account scope was needed has not gone away, because `presence_events`
+ * carries no `workspace_id` and deliberately never will, so any future message
+ * about a check-in session still has no workspace to key on.
  */
 export async function isAccountCategoryMuted(
   userId: string,
@@ -217,118 +257,4 @@ export async function isAccountCategoryMuted(
     [userId, category],
   )
   return row ? toMuted(row.muted) : defaultMuted(category)
-}
-
-/**
- * Who must NOT receive a presence push - the 5h / 10h / auto-checkout ladder.
- *
- * **The live rule is now the first line alone:** a member is silenced unless
- * they have turned `presence` on for their account. `presence` is no longer
- * `workspaceSwitchable`, so the workspace half below can no longer reach a
- * verdict - `parseCategoriesOff()` filters the category out of every stored
- * set, and the tally always comes back `off === 0`.
- *
- * Note the direction of that first line. `presence` is `defaultOn: false`, so
- * the default answer for a member with no row is SILENCED and the query below
- * looks for the rows that opt IN rather than the rows that mute. This is the one
- * category where that means total silence rather than a quiet feed row: the
- * ladder is push-only, so a member who has not asked for it hears nothing about
- * their own session, auto-checkout confirmation included. The mechanic is
- * untouched - `autoCheckoutEvent()` runs before `notifyPresence()` and
- * unconditionally, so sessions still close whether anybody is told or not.
- *
- * The rest is kept, inert, and documented as it was, because the flag in
- * `CATEGORY_DEFS` is a product decision rather than a structural one and this
- * is the only place the vote is written down. Restoring the workspace switch is
- * that one flag; re-deriving this rule from scratch would not be.
- *
- * The full rule, when the workspace switch exists:
- *
- *   silenced  =  the member muted `presence` on their own account
- *             OR (they have at least one active workspace
- *                 AND every one of those workspaces has switched `presence` off)
- *
- * Presence is `scope: 'account'` because a check-in session belongs to no
- * workspace: `presence_events` carries no `workspace_id` and deliberately never
- * will, so a member of two workspaces has ONE session, not two, and there is no
- * workspace whose switch obviously governs it. Hence "every" rather than "any":
- * one workspace must not silence a member on behalf of another. A person with a
- * Monday-to-Wednesday job that wants no session pushes and a Thursday-to-Friday
- * job that does should still be told their Thursday session was auto-checked-out
- * - the push is about THEIR session, and the second workspace has not asked for
- * it to stop. That unanimity requirement is also why the switch was dropped: a
- * control that only bites when every workspace a member cannot see agrees is a
- * poor use of an admin's attention.
- *
- * A member with NO active workspace is not silenced BY THE WORKSPACE HALF.
- * Nothing has said otherwise, and an empty vote is not a vote to switch off -
- * the workspace tally is about what workspaces have decided, and none have. It
- * says nothing about the member's own preference, which the first half has
- * already answered and which today silences them unless they opted in.
- *
- * Returns the UNION of both reasons rather than two sets, so `notifyPresence()`
- * has one question to ask and this rule lives in exactly one place.
- *
- * Takes a LIST for the same reason `notify()` does. The cron resolves every
- * open event's user in one call before its loop; asking per event would be up
- * to `CRON_EVENT_LIMIT` (500) extra round trips every thirty minutes, which is
- * the exact round-trip explosion `mutedUserIdsFor()` was written to avoid. That
- * bound is also why the `IN` lists below are not chunked - 500 is comfortably
- * under SQLite's parameter limit.
- */
-export async function presenceSilencedUserIds(userIds: string[]): Promise<Set<string>> {
-  if (userIds.length === 0) return new Set()
-
-  const unique = [...new Set(userIds)]
-  const placeholders = unique.map(() => '?').join(', ')
-
-  const [choices, memberships] = await Promise.all([
-    // The account-level choices. A row is an explicit choice and `muted` is what
-    // it says (see the file header); `workspace_id IS NULL` is what makes it
-    // account-scoped. Members with no row are absent here and pick up the
-    // catalogue default below.
-    db.query<{ user_id: string; muted: number }>(
-      `SELECT user_id, muted FROM notification_prefs
-       WHERE workspace_id IS NULL AND category = 'presence'
-         AND user_id IN (${placeholders})`,
-      unique,
-    ),
-    // Every active membership these users hold, with its workspace's disabled
-    // set. Archived workspaces are excluded: an archived workspace has no say,
-    // and counting one would let a dead workspace cast the deciding vote for a
-    // member whose only OTHER workspace still wants the pushes.
-    db.query<{ user_id: string; notification_categories_off: string | null }>(
-      `SELECT wm.user_id, w.notification_categories_off
-       FROM workspace_members wm
-       JOIN workspaces w ON w.id = wm.workspace_id
-       WHERE wm.status = 'active'
-         AND w.archived_at IS NULL
-         AND wm.user_id IN (${placeholders})`,
-      unique,
-    ),
-  ])
-
-  // Resolve every member asked about, not every member with a row: for an
-  // opt-in category the people who matter are exactly the ones with no row.
-  const explicit = new Map<string, boolean>()
-  for (const row of choices) explicit.set(row.user_id, toMuted(row.muted))
-
-  const silenced = new Set<string>(
-    unique.filter((id) => explicit.get(id) ?? defaultMuted('presence')),
-  )
-
-  // Tally each member's workspaces: total, and how many switched presence off.
-  const tally = new Map<string, { total: number; off: number }>()
-  for (const row of memberships) {
-    const entry = tally.get(row.user_id) ?? { total: 0, off: 0 }
-    entry.total++
-    if (parseCategoriesOff(row.notification_categories_off).has('presence')) entry.off++
-    tally.set(row.user_id, entry)
-  }
-
-  for (const [userId, { total, off }] of tally) {
-    if (total > 0 && off === total) silenced.add(userId)
-  }
-
-  return silenced
 }

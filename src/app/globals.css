@@ -1561,6 +1561,17 @@ table.datatable th:last-child,  table.datatable td:last-child  { padding-right: 
 /* The reminder-time pair, and the notification group headings. */
 .switch-group + .switch-group { margin-top: 18px; }
 .field-row { display: flex; gap: 16px; flex-wrap: wrap; }
+/* A field sharing a `.field-row` with its siblings: an equal share of the line,
+   dropping to a line of its own rather than squeezing below 200px. A class
+   rather than the `flex: 1 1 200px` the old reminder pair wrote inline - an
+   inline style sits outside this file's reduced-motion, touch-target and
+   elevation selector lists and is silently exempt from all three (invariant 15). */
+.field-row-item { flex: 1 1 200px; min-width: 200px; }
+/* The state line under a schedule input: the on/off chip, and the control that
+   turns it off. A row of its own because "empty means off" has to be STATED -
+   every one of these fields opens empty, and an empty box with nothing beside
+   it reads as broken rather than as off. */
+.field-state-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
 .mb-8  { margin-bottom: 8px; }
 .mb-16 { margin-bottom: 16px; }
 

@@ -12,7 +12,8 @@
  * `en.meWsRegularization`, `en.notifications` and `en.auth` are NOT duplicated
  * here - those screens import both modules.
  */
-import type { NotificationCategory } from '@/lib/notifications/categories'
+import type { MemberPresencePrefs } from '@/lib/presence-ladder'
+import { formatHours } from './notifications'
 
 export const meSettings = {
   // ── /me/timeline ──────────────────────────────────────────────────────────
@@ -136,129 +137,235 @@ export const meSettings = {
     notifications: {
       title: 'Notifications',
 
-      /**
-       * Two groups, because the two halves are keyed differently: the first is
-       * per (workspace, you), the second is per account. The workspace is NOT
-       * named here - the top-bar pill above already answers "which one".
-       */
-      workspaceGroupLabel: 'This workspace',
-      /**
-       * Three things this line has to get right.
-       *
-       * It leads with the default, because the switches are OFF for a member who
-       * has never been here (`defaultOn: false` in the catalogue). Without that
-       * sentence a screen of off switches reads as a screen of broken switches,
-       * or as somebody else having turned them off.
-       *
-       * It says "phone" and not "bell": the member's switch is push-channel only.
-       * `notify()` runs `createNotification()` unconditionally and the switch
-       * suppresses only `sendPushToUser` (invariant 24), so an un-opted-in
-       * category still lands in the feed. This copy used to promise "the phone
-       * push and the bell alike", which was a straight contradiction of that.
-       *
-       * And it accounts for the categories that are NOT listed. `approvals` and
-       * `announcements` are not member-mutable and no longer render here at all,
-       * so without a word about them the list looks like it is missing rows.
-       */
-      workspaceGroupHint:
-        'These are off unless you turn them on. Switching one on lets it buzz your phone from this workspace; either way it arrives in your notifications list, so nothing is lost. Some notifications are set by your organisation and are not listed here. Switch workspaces with the pill at the top to set another one.',
-      deviceGroupLabel: 'Your device',
-      deviceGroupHint:
-        'Also off unless you turn them on. These follow your account rather than any one workspace, because a check-in session belongs to none.',
-
       /** Nothing to scope to: no active membership. */
       noWorkspace: 'You are not in a workspace yet, so there is nothing here to set.',
 
       /**
-       * Same withholding rule as the admin switchboard: the default state is
-       * "nothing muted", so painting it after a failed load would let a toggle
-       * write over mutes the member had already set.
+       * Withheld rather than painted from defaults, the same rule the admin
+       * switchboard follows and for a sharper reason here: every control on
+       * this screen defaults to "off" or "unset", so rendering the form after a
+       * failed load and letting one Save through would clear reminder times and
+       * ladder rungs the member had already configured and could not see.
        */
       loadFailed: 'Your notification settings could not be loaded. Nothing has been changed.',
       loadFailedRetry: 'Try again',
-      saveError: 'That change could not be saved.',
+      // No shared `saveError` here any more. It served the category toggles this
+      // screen no longer renders; each block below now owns its own failure
+      // string, because "your reminder times could not be saved" and "your
+      // session nudges could not be saved" are different facts and a member
+      // seeing one status line needs to know which half it is about.
 
+      // ── Reminder times · per workspace ───────────────────────────────────
       /**
-       * One entry per category; `satisfies` keeps it total against the
-       * catalogue.
+       * The daily check-in / check-out nudge, which used to be one time set by
+       * an admin for the whole workspace and is now a time each member sets for
+       * themselves, per workspace. The workspace is NOT named anywhere in this
+       * copy - the top-bar pill above already answers "which one", and repeating
+       * it inside content already scoped to it is noise.
        *
-       * Two of these are **not rendered**: `approvals` and `announcements` are
-       * not member-mutable, and this screen now filters those out rather than
-       * showing a disabled switch. Their copy stays anyway, and the Record
-       * stays total, because the totality is the guarantee - it is what turns a
-       * category added to the catalogue with no copy here into a compile error.
-       * Dropping the two unread entries would mean loosening that to a
-       * `Partial`, which trades a real safety net for two dead strings.
+       * Three things this block has to state, because each one is a support
+       * question otherwise: that nothing is sent until a time is picked (every
+       * field opens empty, which without a word reads as broken rather than as
+       * off); that these are push-only, so an empty notifications list is not
+       * evidence they failed; and that they are already suppressed on days off,
+       * because a member who fears being nagged through their holiday will
+       * simply never set one.
        */
-      categories: {
-        reminders: {
-          label: 'Daily reminders',
-          hint: 'The nudge to check in or out, on working days only.',
+      reminderTimes: {
+        title: 'Reminder times',
+        hint: 'Two nudges you set for yourself: one if you have not checked in yet, one if you are still checked in at the end of the day. Both are off until you pick a time. They only ever buzz your phone — they are not added to your notifications list. And they already follow this workspace’s working days, its holiday calendar and your approved leave, so they will not reach you on a day off.',
+
+        checkinLabel: 'Remind me to check in',
+        checkinHint: 'Sent only if you have not checked in by this time. Leave it empty to send nothing.',
+        checkoutLabel: 'Remind me to check out',
+        checkoutHint: 'Sent only if you are still checked in at this time. Leave it empty to send nothing.',
+
+        fieldIds: {
+          checkin: 'me-checkin-reminder',
+          checkout: 'me-checkout-reminder',
         },
-        /** Not rendered - see the note above. */
-        approvals: {
-          label: 'Approvals',
-          hint: 'Requests waiting on you, and what happened to the ones you filed.',
-        },
-        /** Not rendered - see the note above. */
-        announcements: {
-          label: 'Announcements',
-          hint: 'Workspace-wide notices — a closure, an office day, a policy change.',
-        },
+
+        /** Stated, not inferred from an empty box - see the block comment. */
+        offBadge: 'Off',
+        onBadge: (time: string) => `On · ${time}`,
+        clearButton: 'Turn off',
+        clearAria: (which: string) => `Turn off the ${which}`,
+
         /**
-         * The hint carries a second sentence the others do not need. This is the
-         * one push-only category - `notifyPresence()` writes no feed row - so
-         * leaving it off is total silence rather than a quiet notification list,
-         * and a member could reasonably fear their session stays open because
-         * nothing told them otherwise. It does not: `autoCheckoutEvent()` runs
-         * before the push and unconditionally.
+         * The timezone is the workspace's, not the phone's, and that difference
+         * is invisible until somebody travels and gets reminded at 04:00. Said
+         * up front rather than discovered.
          */
-        presence: {
-          label: 'Check-in session updates',
-          hint: 'Hourly milestones and the warning before an open session is auto-closed. Sessions still close on time whether or not this is on.',
-        },
-      } as const satisfies Record<NotificationCategory, { label: string; hint: string }>,
+        timezoneNote: (timezone: string) =>
+          `Times are wall-clock in this workspace’s timezone, ${timezone} — not your phone’s.`,
 
+        /**
+         * Offered when the workspace still carries the old admin-configured
+         * time, so a member is not made to invent one from nothing.
+         *
+         * Phrased as a SUGGESTION and in the past tense on purpose. It is not
+         * this member's setting and nothing is sent on its account; presenting
+         * it as a current value would tell somebody they are already covered
+         * when they are not.
+         */
+        suggestion: (time: string) =>
+          `This workspace used to remind everyone at ${time}. Use that, or pick your own.`,
+        suggestionApply: 'Use this time',
+
+        /**
+         * Both halves matter. The first sets the expectation that delivery
+         * drifts; the second is the part people find surprising, so it is said
+         * plainly rather than left as a mystery missing notification.
+         */
+        approximateNote: 'Delivery is approximate — the job that sends these runs on a schedule, so a reminder can arrive a few minutes late. One that would be more than 30 minutes late is dropped rather than sent: a check-in reminder arriving at lunchtime is a nag, not a reminder.',
+
+        invalidTime: 'Enter a time as HH:MM, or leave the field empty to turn the reminder off.',
+
+        /**
+         * No `save` label: unlike the session ladder below, this block commits
+         * each field on change. The two times are independent, so there is
+         * nothing to hold back and confirm together - whereas the ladder's four
+         * numbers validate against each other and need one atomic submit.
+         */
+        saving: 'Saving…',
+        saved: 'Reminder times saved',
+        saveError: 'Your reminder times could not be saved.',
+      },
+
+      // ── Session ladder · account level ───────────────────────────────────
       /**
-       * Keyed on `CategoryDef.lockedReason` - why a switch is not offered.
+       * The four numbers in `member_presence_prefs`, edited as one block because
+       * they are one schedule: three of them are rungs on the same ladder and
+       * the fourth is where that ladder ends.
        *
-       * **Unread today**, alongside `lockedReasonFor()` in the settings screen:
-       * a locked category is filtered off that screen entirely now rather than
-       * rendered disabled with its reason. Kept for the same reason the helper
-       * is - both are driven by the catalogue field, so a category locked again
-       * in future is one `lockedReason` away from having its caption back.
+       * Account-level, and the hint says why rather than just asserting it. A
+       * member of two workspaces will look for this under each of them
+       * otherwise, and conclude it is missing from one.
+       *
+       * The push-only sentence is load-bearing here in a way it is not for the
+       * reminder times: `notifyPresence()` writes NO feed row at all, so a
+       * member who has these on and their phone locked has no record anywhere
+       * that anything was sent. Without the sentence that reads as a bug.
        */
-      lockedReasons: {
-        always_on_approvals:
-          'Set by your organisation. Not knowing your leave was rejected is worse than one more notification.',
-        always_on_announcement:
-          'Set by your organisation. This is the one notice that cannot afford to be missed.',
-      } as const satisfies Record<string, string>,
+      sessionLadder: {
+        title: 'Check-in session nudges',
+        hint: 'These are about your own open check-in session — how far into it you are, and when it closes. Each one is off until you give it an hour count. They only buzz your phone and never appear in your notifications list, so there is nothing to come back and read. They follow your account rather than any one workspace, because a check-in session belongs to none.',
 
-      /** Fallback for a locked category with no stated reason. */
-      lockedGeneric: 'Cannot be muted.',
+        halfDayLabel: 'Half-day nudge after',
+        halfDayHint: 'Hours since you checked in. A quiet marker with nothing to do about it. Empty means it is never sent.',
+
+        fullDayLabel: 'Full-day nudge after',
+        fullDayHint: 'Hours since you checked in. This is the one that offers to extend your session, so set it near the end of a normal day for you. Empty means it is never sent.',
+
+        repeatLabel: 'Then repeat every',
+        repeatHint: 'Hours between overtime nudges once you are past the full-day mark. They stop when your session closes. Empty means it is sent once and no more.',
+        /** Shown against the field itself, before a save is ever attempted. */
+        repeatNeedsFullDay: 'Set a full-day nudge first — a repeat has nothing to count from without one.',
+
+        autoCheckoutLabel: 'Close my session after',
+        /**
+         * The one field with no off state, and the hint has to earn that rather
+         * than assert it: an open `presence_events` row is what the day's
+         * attendance is computed from, so a session that never closes leaves
+         * that day wrong - for the member and for every workspace they are in -
+         * until somebody notices by hand.
+         */
+        autoCheckoutHint: 'Hours since you checked in. This one cannot be turned off. An open session is what your attendance for the day is measured from, so a session that never closes leaves that day wrong until someone fixes it by hand. You can move it, within limits.',
+
+        fieldIds: {
+          halfDay: 'me-ladder-half-day',
+          fullDay: 'me-ladder-full-day',
+          repeat: 'me-ladder-repeat',
+          autoCheckout: 'me-ladder-auto-checkout',
+        },
+
+        unitSuffix: 'hours',
+        /** The empty state of a rung input - "off", not "0". */
+        offPlaceholder: 'Off',
+        clearButton: 'Turn off',
+        clearAria: (which: string) => `Turn off the ${which}`,
+
+        /**
+         * The whole schedule on one line, so the member can check what they
+         * built without re-reading four fields.
+         *
+         * Auto-checkout is always in it, because it is the only part that is
+         * always true. When no rung is set the line leads with that fact rather
+         * than showing a lone close time, which would read as a ladder with one
+         * mysterious step.
+         *
+         * A repeat with no full-day mark is omitted rather than rendered: it is
+         * exactly what `resolveLadder()` does with it, and a summary that
+         * promised a repeat the ladder never generates is worse than a short
+         * summary.
+         */
+        summary: (prefs: MemberPresencePrefs) => {
+          const parts: string[] = []
+          if (prefs.halfDayAfterH !== null)
+            parts.push(`half day ${formatHours(prefs.halfDayAfterH)}h`)
+          if (prefs.fullDayAfterH !== null)
+            parts.push(`full day ${formatHours(prefs.fullDayAfterH)}h`)
+          if (prefs.repeatEveryH !== null && prefs.fullDayAfterH !== null)
+            parts.push(`then every ${formatHours(prefs.repeatEveryH)}h`)
+          if (parts.length === 0) parts.push('no nudges')
+          parts.push(`closes at ${formatHours(prefs.autoCheckoutAfterH)}h`)
+          return parts.join(' · ')
+        },
+
+        /**
+         * Save-time refusals. Each names the rule AND the reason, because every
+         * one of these rejects a configuration the member deliberately typed -
+         * "invalid" on its own reads as the form being fussy.
+         *
+         * The bounds are arguments rather than literals: they come from
+         * `MIN_RUNG_H` / `MAX_RUNG_H` / `MIN_REPEAT_H` / `MIN_AUTO_CHECKOUT_H` /
+         * `MAX_AUTO_CHECKOUT_H` in `src/lib/presence-ladder.ts`, which the API
+         * route validates against too. Restating a number here is how the form
+         * ends up promising a range the route refuses.
+         */
+        errorAscending: 'Your full-day nudge has to come after your half-day one — otherwise they arrive out of order, or together.',
+        errorRepeatNeedsFullDay: 'A repeat needs a full-day nudge to count from. Set one, or clear the repeat.',
+        errorAfterClose: 'That is after your session closes, so it would never arrive. Move it earlier, or close your session later.',
+        errorRange: (min: number, max: number) =>
+          `Enter between ${formatHours(min)} and ${formatHours(max)} hours, or leave it empty to turn this off.`,
+        errorRepeatRange: (min: number) =>
+          `A repeat shorter than ${formatHours(min)} hours cannot be delivered on time.`,
+        errorAutoCheckoutRange: (min: number, max: number) =>
+          `Your session has to close between ${formatHours(min)} and ${formatHours(max)} hours after you check in.`,
+
+        /**
+         * The refusal for a body the route could not read at all - unparseable
+         * JSON, a non-object, a value that is not a finite number, or a null
+         * `autoCheckoutAfterH`. Deliberately separate from `saveError`, which
+         * means "we understood you and could not store it": conflating the two
+         * tells a member their schedule failed to save when what actually
+         * happened is that the client sent something no screen can produce, and
+         * "try again" is then the wrong advice.
+         */
+        errorInvalidBody: 'That request could not be read. Reload the page and set your nudges again.',
+
+        save: 'Save session nudges',
+        saving: 'Saving…',
+        saved: 'Session nudges saved',
+        saveError: 'Your session nudges could not be saved.',
+      },
 
       // ── Push registration, this device only ────────────────────────────────
       pushTitle: 'Push on this device',
+      /**
+       * The registration is per browser and the settings above are per person,
+       * which is the distinction this paragraph exists to draw: unregistering
+       * silences this one browser, and it re-registers itself on the next visit,
+       * so it is not a way to turn anything off permanently. The times and hour
+       * counts above are.
+       */
       pushBody:
-        'Venzio registers this browser for push when you open it. Unregistering stops push here immediately, but opening Venzio again registers it back — the switches above are what decide which messages get sent at all.',
+        'Venzio registers this browser for push when you open it. Unregistering stops push here immediately, but opening Venzio again registers it back — the times and hour counts above are what decide which messages get sent at all.',
       pushUnsubscribe: 'Unregister this device',
       pushUnsubscribed: 'This device will no longer receive push notifications.',
       pushNotSubscribed: 'This device is not registered for push.',
       pushUnsupported: 'This browser does not support push notifications.',
       pushError: 'This device could not be unregistered.',
-
-      // ── What the two /api/me/.../notification-prefs routes answer with ─────
-      api: {
-        invalidBody: 'Send { category, muted } as JSON',
-        unknownCategory: 'Unknown notification category',
-        locked: (category: string) =>
-          `The "${category}" category cannot be muted — it is always delivered`,
-        wrongScopeWorkspace: (category: string) =>
-          `"${category}" is an account-level category; set it through /api/me/notification-prefs`,
-        wrongScopeAccount: (category: string) =>
-          `"${category}" belongs to a workspace; set it through /api/me/ws/[slug]/notification-prefs`,
-      },
     },
 
     org: {

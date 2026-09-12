@@ -67,11 +67,12 @@ export const wsAdmin = {
 
     // Shown instead of the org form when GET /api/ws/[slug] fails. The form is
     // withheld on purpose: its initial state is a set of defaults, and saving
-    // those would overwrite the workspace's real timezone, working days and
-    // reminders with values nobody chose.
+    // those would overwrite the workspace's real timezone and working days with
+    // values nobody chose. The reminder times it also used to guard are no
+    // longer edited anywhere on /ws - they are each member's own now.
     orgLoadFailedTitle: 'Settings could not be loaded',
     orgLoadFailedBody:
-      'Nothing has been changed. This form stays hidden until the saved configuration is on screen — editing it now would overwrite your timezone, working days and reminders with defaults.',
+      'Nothing has been changed. This form stays hidden until the saved configuration is on screen — editing it now would overwrite your timezone and working days with defaults.',
     orgLoadFailedRetry: 'Try again',
     signalsAndTitle: 'Verification uses AND logic — every configured signal must match for a check-in to count as verified.',
 
@@ -83,14 +84,18 @@ export const wsAdmin = {
     // ── Settings › Notifications ─────────────────────────────────────────────
     notifPageTitle: 'What this workspace sends',
     /**
-     * The screen's main ambiguity is no longer "who owns each switch" - each
-     * screen now shows only its own half - but "where did the other two go".
-     * An admin who remembers four switches and a pair of reminder times needs
-     * to be told they moved rather than broke, and told where, so the second
-     * half of this names the member's screen explicitly.
+     * This screen is now one half of a split, and the hint's main job is to
+     * name the OTHER half. An admin who remembers four switches and a pair of
+     * reminder times needs to be told those moved rather than broke, and told
+     * exactly where - otherwise the first assumption is that reminders were
+     * removed from the product, and the second is to file a bug.
+     *
+     * "Cannot be switched off from here" is stated rather than implied. An
+     * admin who believes they still hold the reminder schedule will promise a
+     * member they can stop a nudge, and then cannot.
      */
     notifPageHint:
-      'These are the notices this workspace sends on your behalf. Switching one off stops it for everybody here — the in-app notification and the push both, so nothing is recorded either, and members cannot mute either of them. Daily check-in reminders and check-in session nudges are not set here: each member chooses those for themselves in their own notification settings.',
+      'This screen covers what the ORGANISATION sends. Switching one off stops it for everybody here — the in-app notification and the push both, so nothing is recorded either, and members cannot mute what is left on. A member’s own check-in reminders and check-in session nudges are not here at all: each person sets those in their own notification settings, and they cannot be switched on or off from this screen.',
 
     // The same tri-state withholding as the org form, and for the same reason:
     // the switchboard's initial state is "everything on", so saving it after a
@@ -105,33 +110,32 @@ export const wsAdmin = {
      * category added to that catalogue without copy here a compile error, which
      * is the point: an unlabelled switch is worse than no switch.
      *
-     * Two of the four are no longer rendered: the switchboard filters on
-     * `workspaceSwitchable`, and `reminders` / `presence` are the member's.
-     * Their copy stays because the `satisfies` above is a total record and
-     * because the flag is a product decision that may be revisited - the text
-     * has been kept true to what the switch would do, not left describing a
-     * screen it no longer appears on.
+     * Two entries left, and that is now the whole catalogue this screen is
+     * responsible for. `reminders` and `presence` were here as unrendered copy
+     * for switches the workspace no longer owns; they are gone rather than kept
+     * disabled, because a string nothing renders is a string nobody updates, and
+     * both of those had already drifted into describing a vote no admin can cast.
+     * The member's half of the split has its own copy under
+     * `meSettings.settings.notifications`, written for the person being nudged.
      */
     notifCategories: {
-      reminders: {
-        label: 'Daily check-in reminders',
-        hint: 'The scheduled nudge to anyone who has not checked in or out yet. Each member sets this for themselves.',
-      },
       /**
        * One switch over both halves of an approval - the request reaching an
        * approver and the answer reaching whoever filed it. These were two
        * categories and two near-identical rows.
        *
-       * The hint has to carry BOTH consequences, because one switch now has
-       * two audiences: switching it off stops approvers being told a request is
-       * waiting AND stops employees being told the outcome of their own. The
-       * second is the severe one and is stated in full - it is not "fewer
-       * pushes", it is no notification and no in-app record, so a person whose
-       * leave was rejected has to go and look to find out.
+       * The hint has to carry BOTH consequences, because one switch now has two
+       * audiences and an admin will almost certainly only be thinking about the
+       * first. Switching it off silences the inbox side AND the outcome side at
+       * once: approvers stop being told a request is waiting, and every employee
+       * stops being told what was decided about a request they filed. The second
+       * is the severe one and is spelled out rather than summarised - it is not
+       * "fewer pushes", it is no notification and no in-app record at all, so
+       * somebody whose leave was rejected finds out only by going to look.
        */
       approvals: {
         label: 'Approvals',
-        hint: 'Covers both halves: it tells approvers a leave request, regularization or document is waiting for them, and tells the person who filed it what was decided. Switched off, neither side is told at all — approvers must watch the queue themselves, and nobody learns their leave was approved or rejected without going to look. Members can never mute this one.',
+        hint: 'Covers both halves of an approval, and switching it off silences both audiences at once. Approvers stop being told that a leave request, regularization or document is waiting for them — they must watch the queue themselves. And every employee stops being told the outcome of their own request: no notification, no in-app record, so someone whose leave was approved or rejected only finds out by going to look. Members can never mute this one.',
       },
       announcements: {
         label: 'Announcements',
@@ -143,16 +147,6 @@ export const wsAdmin = {
          * learns it before relying on it.
          */
         hint: 'Workspace-wide notices posted from this Settings screen. Switched off, a notice is still posted and still readable in each member’s announcements list — it just arrives silently, with no notification and no push. Members can never mute this one.',
-      },
-      presence: {
-        label: 'Check-in session updates',
-        /**
-         * Unrendered here, and this one could not have stayed as it was: the
-         * hint described the every-workspace vote, which no admin can now cast.
-         * Left describing what the notification IS rather than what switching
-         * it would do, since the workspace no longer has a switch to describe.
-         */
-        hint: 'The 5-hour and 10-hour nudges and the auto-checkout notice during someone’s own working session. A check-in session belongs to no workspace, so each member sets this on their own account. Sessions auto-check-out either way.',
       },
     } as const satisfies Record<NotificationCategory, { label: string; hint: string }>,
 
@@ -180,17 +174,6 @@ export const wsAdmin = {
       always_on_announcement:
         'Always on. An announcement is the one notice that cannot afford to be missed — a closure, an office day, a policy change.',
     } as const satisfies Record<string, string>,
-
-    /**
-     * Fallback text for a category this workspace cannot switch off.
-     *
-     * Unreachable, now for the opposite reason it used to be. It was unreachable
-     * because every category was `workspaceSwitchable`; two no longer are, and
-     * they are filtered off the screen rather than shown locked. Kept alongside
-     * `notifLockedReasons` above, on the same terms.
-     */
-    notifLockedAccountScope:
-      'This category cannot be switched off for this workspace.',
 
     notifInvalidCategories:
       'notificationCategoriesOff must be an array of switchable notification category keys',

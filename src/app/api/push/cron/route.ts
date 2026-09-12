@@ -1,10 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getOpenEventsForCron, updatePushRemindersSent, autoCheckoutEvent } from '@/lib/db/queries/events'
-import { notifyPresence } from '@/lib/notify'
-import { presenceSilencedUserIds } from '@/lib/db/queries/notification-prefs'
+import {
+  getOpenEventsForCron,
+  updatePushRemindersSent,
+  autoCheckoutEvent,
+  isEventOpen,
+} from '@/lib/db/queries/events'
+import { getPresenceLadderPrefs } from '@/lib/db/queries/presence-prefs'
+import {
+  DEFAULT_PRESENCE_PREFS,
+  LADDER_WINDOW_H,
+  normaliseLadderKey,
+  resolveLadder,
+  type MemberPresencePrefs,
+} from '@/lib/presence-ladder'
+import { sendPushToUser } from '@/lib/push'
 import { notificationHref } from '@/lib/client/notification-href'
 import { presenceLadder } from '@/locales/en/notifications'
 import { runReminderPass, type ReminderPassResult } from '@/lib/reminders'
+
+/**
+ * `sendPushToUser` is imported and called DIRECTLY here, and that is the second
+ * sanctioned exception to invariant 24, alongside `src/lib/reminders.ts`.
+ *
+ * Two properties of the ladder are the argument, and neither is convenience.
+ * First, it is PUSH-ONLY BY DESIGN: it writes no `notifications` row, because a
+ * nudge to go home is worthless an hour later and a bell full of "still checked
+ * in?" from last Tuesday is a bell nobody opens - which costs them the approval
+ * notices that do matter. `notify()` cannot express "no feed row"; writing the
+ * row unconditionally is the whole point of step 3 of its contract. Second, the
+ * ladder resolves its schedule from ONE bulk read per batch (see below), where
+ * `notify()` resolves preferences per call - 500 events would be 500 lookups.
+ *
+ * The preference check `notify()` exists to centralise is not being skipped, it
+ * has moved: having a rung set at all IS the opt-in, so a member with no row
+ * generates no rungs and this loop sends them nothing. There is no switch left
+ * to forget to consult.
+ */
 
 /**
  * Destinations are built through the shared resolver rather than written as
@@ -20,24 +51,6 @@ const EXTEND_URL = notificationHref(
   'me',
 )
 
-/**
- * The presence ladder, in full.
- *
- * It used to be a bare `[4, 8, 12, 16, 18, 20, 22]` sharing one string, which
- * had two problems. Auto-checkout lands at 12h, so every rung past it was
- * unreachable code; and seven identical pushes are a nag, which is how somebody
- * revokes notification permission and loses their approval notices with it.
- *
- * Two rungs now, each with its own copy and its own destination. `key` is the
- * dedupe token written into `push_reminders_sent` and must never be reused for
- * a different meaning - a claimed key is claimed forever on that row.
- */
-const LADDER: { hours: number; key: string; title: string; body: string; url: string }[] = [
-  { hours: 5, key: '5h', ...presenceLadder.fiveHour, url: CHECKIN_URL },
-  // The last chance to act, so it opens the picker rather than the home screen.
-  { hours: 10, key: '10h', ...presenceLadder.tenHour, url: EXTEND_URL },
-]
-
 export async function POST(request: NextRequest) {
   const auth = request.headers.get('authorization')
   if (!process.env.CRON_SECRET || auth !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -50,23 +63,32 @@ export async function POST(request: NextRequest) {
   // then be measured against a later clock.
   const events = await getOpenEventsForCron(new Date(now))
 
-  // Who is silenced for `presence`, resolved ONCE for the whole batch.
-  //
-  // `notifyPresence()` will resolve for itself when this is omitted, which is
-  // correct but wrong here: this loop runs up to CRON_EVENT_LIMIT (500) times
-  // every thirty minutes, so a per-event lookup is 500 round trips to answer a
-  // question about a handful of rows. Same argument, and the same shape, as the
-  // one bulk `mutedUserIdsFor()` read per workspace in `lib/reminders.ts`.
-  //
-  // Silence covers both reasons at once - the member's own account-level mute,
-  // and every workspace they belong to having switched the category off. A
-  // failure here must not take the run down: an empty set means everybody hears
-  // their ladder, which is the pre-existing behaviour and the safe direction.
-  let silenced = new Set<string>()
+  /**
+   * Every member's ladder, resolved ONCE for the whole batch.
+   *
+   * This loop runs up to CRON_EVENT_LIMIT (500) times every thirty minutes, so a
+   * per-event lookup is 500 round trips to answer a question about a handful of
+   * rows. Same shape as the one bulk preference read per workspace in
+   * `lib/reminders.ts`.
+   *
+   * ON FAILURE THE SAFE DIRECTION IS NOW THE OPPOSITE OF WHAT IT USED TO BE, and
+   * this paragraph is here because a future reader will otherwise "fix" it back.
+   * The old code read a set of SILENCED user ids, so an empty set on failure
+   * meant everybody heard their ladder - fail-open, and correct then, because
+   * the ladder was hardcoded and on for everyone by default. The ladder is now
+   * OPT-IN: an empty map means every member falls back to
+   * DEFAULT_PRESENCE_PREFS, whose three rungs are all null, so a failed lookup
+   * sends NOTHING. Silence is the default state of this feature, and a database
+   * hiccup must not be able to promote a member into a schedule they never set.
+   *
+   * Auto-checkout is unaffected either way: it runs off the event's own
+   * `scheduled_checkout_at`, written at check-in time, not off this map.
+   */
+  let ladderPrefs = new Map<string, MemberPresencePrefs>()
   try {
-    silenced = await presenceSilencedUserIds(events.map((e) => e.user_id))
+    ladderPrefs = await getPresenceLadderPrefs(events.map((e) => e.user_id))
   } catch (err) {
-    console.error('[cron] presence preference lookup failed; sending unfiltered:', err)
+    console.error('[cron] presence ladder lookup failed; sending no ladder pushes:', err)
   }
 
   for (const event of events) {
@@ -92,44 +114,120 @@ export async function POST(request: NextRequest) {
         await updatePushRemindersSent(event.id, reminders)
       }
 
+      /**
+       * The claimed set, read through `normaliseLadderKey`.
+       *
+       * Sessions that were already open when this deployed hold the keys the old
+       * hardcoded ladder wrote - `'5h'` and `'10h'`. Without the shim this would
+       * find no `'half'` or `'full'` claimed and re-nudge somebody who was
+       * nudged hours ago under the other names, which is the worst possible
+       * first impression of a feature whose whole purpose is to nag less.
+       *
+       * Only the READ is normalised. Nothing rewrites `reminders`, and `claim()`
+       * keeps appending modern keys to the array exactly as it found it: a
+       * claimed key is claimed forever on that row, so normalising on read is
+       * sufficient to answer "was this already sent", and rewriting the column
+       * would be a write against live sessions for no behavioural gain.
+       */
+      const claimedKeys = new Set(reminders.map(normaliseLadderKey))
+
       const checkinMs = new Date(
         event.checkin_at.includes('T') ? event.checkin_at : event.checkin_at.replace(' ', 'T') + 'Z'
       ).getTime()
       const hoursElapsed = (now - checkinMs) / 3_600_000
 
-      // 1. Ladder notifications — fire once per rung
-      for (const step of LADDER) {
-        if (hoursElapsed >= step.hours && !reminders.includes(step.key)) {
-          await notifyPresence(event.user_id, {
-            title: step.title,
-            body: step.body,
-            tag: `presence-${step.key}`,
-            data: { url: step.url },
-          }, silenced)
+      // 1. The member's own ladder. Absent prefs mean the defaults, whose rungs
+      //    are all null - so `resolveLadder` returns an empty list and a member
+      //    who has never opened the settings screen is silent, by construction
+      //    rather than by a filter this loop has to remember to apply.
+      const prefs = ladderPrefs.get(event.user_id) ?? DEFAULT_PRESENCE_PREFS
+      const rungs = resolveLadder(prefs, { checkin: CHECKIN_URL, extend: EXTEND_URL })
+
+      for (const step of rungs) {
+        if (claimedKeys.has(step.key)) continue
+        if (hoursElapsed < step.hours) continue
+
+        /**
+         * THE STALENESS CEILING - the fix for a reported bug, not a nicety.
+         *
+         * GitHub Actions cron is best-effort: it runs late, and during an outage
+         * it does not run at all. Without this, an event first seen thirteen
+         * hours old has every rung due at once, so the half-day push, the
+         * full-day push and the auto-checkout notice land within seconds of each
+         * other. Members reported exactly that as "I got my 5-hour notification
+         * after I had already checked out", which is precisely what it looked
+         * like from the phone. A rung delivered hours after its hour is not a
+         * nudge about anything; the moment it was about has passed.
+         *
+         * BURNING THE RUNG RATHER THAN MERELY SKIPPING IT IS THE DELIBERATE
+         * PART. A skipped rung stays unclaimed, so the next tick re-evaluates it,
+         * finds it still stale, skips it again - forever, for the life of the
+         * session, on every tick. Claiming it records the truth that this rung's
+         * moment is over and takes it permanently out of consideration. The row's
+         * state stays honest: `push_reminders_sent` means "this rung has been
+         * dealt with", which is what every reader of it already assumes.
+         */
+        if (hoursElapsed >= step.hours + LADDER_WINDOW_H) {
           await claim(step.key)
+          continue
         }
+
+        // The batch was read in one query and this loop has been awaiting pushes
+        // ever since, so a member may have checked out in between. Re-read
+        // immediately before sending rather than once per event - the window
+        // spans the gap between rungs too.
+        if (!(await isEventOpen(event.id))) break
+
+        await sendPushToUser(event.user_id, {
+          title: step.title,
+          body: step.body,
+          tag: `presence-${step.key}`,
+          data: { url: step.url },
+        })
+        await claim(step.key)
       }
 
       // 2. Auto-checkout — fires when the scheduled time has passed.
       //
-      // Nothing warns beforehand any more: the 10h rung above is the last chance
-      // to act, and it says so. A separate ≤60-minute warning carrying `Extend
-      // 4h` / `Checkout Now` actions meant two pushes about the same deadline,
-      // the second of which usually arrived while the phone was in a pocket.
+      // Nothing warns beforehand any more: the full-day rung above is the last
+      // chance to act, and it says so. A separate ≤60-minute warning carrying
+      // `Extend 4h` / `Checkout Now` actions meant two pushes about the same
+      // deadline, the second of which usually arrived while the phone was in a
+      // pocket.
       if (event.scheduled_checkout_at) {
         const checkoutMs = new Date(event.scheduled_checkout_at).getTime()
 
-        if (now >= checkoutMs && !reminders.includes('autocheckedout')) {
-          // The checkout happens FIRST and unconditionally. Silencing the
-          // category suppresses the message, never the mechanic - a workspace
-          // switching off session pushes must not leave sessions open forever.
-          await autoCheckoutEvent(event.id, new Date(now).toISOString())
-          await notifyPresence(event.user_id, {
-            title: presenceLadder.autoCheckout.title,
-            body: presenceLadder.autoCheckout.body,
-            tag: 'presence-autocheckedout',
-            data: { url: CHECKIN_URL },
-          }, silenced)
+        if (now >= checkoutMs && !claimedKeys.has('autocheckedout')) {
+          /**
+           * The mechanic runs FIRST and UNCONDITIONALLY. A session must close
+           * whether or not anybody is told: an open `presence_events` row is what
+           * the day's attendance is computed from, and invariant 4 means it can
+           * never be repaired by editing it afterwards.
+           *
+           * The push is likewise NOT suppressible by any preference, and is not
+           * one of the configurable rungs above. It reports a FACT that has
+           * already changed the member's attendance record - their day is now
+           * closed, at a time they did not choose to close it - and a member is
+           * entitled to be told that. It is also not subject to the staleness
+           * ceiling for the same reason: unlike a nudge, it does not go stale,
+           * because what it reports is still true whenever it arrives.
+           *
+           * It IS conditional on the write having done something. The UPDATE
+           * carries `AND checkout_at IS NULL`, so a manual checkout that landed
+           * first changes no rows - and announcing "we closed your session" to
+           * somebody who closed it themselves is announcing a thing that did not
+           * happen. The key is claimed either way: this event is resolved, and
+           * leaving it unclaimed would re-run this branch on every future tick.
+           */
+          const closed = await autoCheckoutEvent(event.id, new Date(now).toISOString())
+          if (closed) {
+            await sendPushToUser(event.user_id, {
+              title: presenceLadder.autoCheckout.title,
+              body: presenceLadder.autoCheckout.body,
+              tag: 'presence-autocheckedout',
+              data: { url: CHECKIN_URL },
+            })
+          }
           await claim('autocheckedout')
         }
       }

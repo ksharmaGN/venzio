@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Button, Card, Chip, Field, Input, Skeleton, Toggle } from '@/components/ui'
+import { Button, Card, Skeleton, Toggle } from '@/components/ui'
 import { en } from '@/locales/en'
 import { wsAdmin } from '@/locales/en/ws-settings'
-import { wsReminders } from '@/locales/en/ws-reminders'
 import {
   ALL_CATEGORIES,
   CATEGORY_DEFS,
@@ -14,7 +13,6 @@ import {
 
 const t = en.wsSettings
 const s = wsAdmin.settings
-const r = wsReminders.settings
 
 /**
  * What this workspace broadcasts on everybody's behalf: Approvals and
@@ -35,90 +33,13 @@ const r = wsReminders.settings
  * one means rewriting every seeded grid in `system-roles.json` (invariant 12)
  * for a distinction nobody has asked for.
  */
-
-interface ReminderFieldProps {
-  label: string
-  hint: string
-  id: string
-  value: string
-  onChange: (next: string) => void
-  disabled: boolean
-}
-
-/**
- * One reminder time. `<input type="time">` yields '' when cleared, and ''
- * means the reminder is off - so the state below is stated explicitly rather
- * than left to be inferred from an empty box.
- *
- * **Deliberately not rendered.** The reminder times came off this screen with
- * the reminder switch: a daily nudge is the member's to configure, and leaving
- * an admin the schedule for a notification only the member can silence was the
- * half-and-half arrangement this change removed. The component is kept rather
- * than deleted because the decision is a product one and reversing it is
- * putting the JSX back - the state, the load and the PATCH below are all still
- * wired (see the save comment). It draws an unused-symbol warning from ESLint,
- * which is the accepted cost of that.
- *
- * Moved here verbatim from `OrgTab`, inline styles included, so the diff reads
- * as a move rather than a rewrite. Those three inline style objects predate
- * invariant 15 and are the only ones left in this file - everything below was
- * written against `globals.css`. Registered in `docs/known-gaps.md`.
- */
-function ReminderField({ label, hint, id, value, onChange, disabled }: ReminderFieldProps) {
-  const on = value !== ''
-  return (
-    <Field label={label} htmlFor={id} hint={hint} style={{ flex: '1 1 200px', minWidth: '200px' }}>
-      <Input
-        id={id}
-        type="time"
-        value={value}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value)}
-      />
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-        <Chip tone={on ? 'verified' : 'leave'}>{on ? r.onBadge(value) : r.offBadge}</Chip>
-        {on && !disabled && (
-          <button
-            type="button"
-            aria-label={r.clearAria(label)}
-            onClick={() => onChange('')}
-            style={{
-              background: 'none',
-              border: 'none',
-              padding: 0,
-              font: 'inherit',
-              fontSize: '12px',
-              color: 'var(--brand)',
-              cursor: 'pointer',
-            }}
-          >
-            {r.clearButton}
-          </button>
-        )}
-      </div>
-    </Field>
-  )
-}
-
 export default function NotificationsTab({ slug, canWrite }: { slug: string; canWrite: boolean }) {
-  /**
-   * The workspace's reminder times. No longer edited on this screen - see
-   * `ReminderField` - but still loaded and still sent back on save, because
-   * the PATCH below carries both fields on every save. Dropping them from
-   * state would make `checkinReminderAt` default to `''`, and `''` is what an
-   * emptied time input sends: the first Save a workspace pressed would null
-   * out times it had set and had no way to see. Held and round-tripped
-   * unchanged, so this screen can only alter the categories it shows.
-   */
-  const [checkinReminderAt, setCheckinReminderAt] = useState('')
-  const [checkoutReminderAt, setCheckoutReminderAt] = useState('')
   /** The DISABLED set, mirroring the column. Empty means everything is on. */
   const [off, setOff] = useState<Set<NotificationCategory>>(new Set())
   /**
    * Same tri-state as Org details, for the same reason: the state above is a
-   * set of defaults ("nothing off, no reminders"), not this workspace's
-   * configuration. Painting the form on a failed load would let one Save wipe
-   * the reminder times and switch every category back on.
+   * default ("nothing off"), not this workspace's configuration. Painting the
+   * form on a failed load would let one Save switch every category back on.
    */
   const [load, setLoad] = useState<'loading' | 'ready' | 'error'>('loading')
   const [reloadKey, setReloadKey] = useState(0)
@@ -137,8 +58,6 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
       })
       .then((data) => {
         if (cancelled) return
-        setCheckinReminderAt(data.checkin_reminder_at ?? '')
-        setCheckoutReminderAt(data.checkout_reminder_at ?? '')
         setOff(
           new Set(
             Array.isArray(data.notification_categories_off)
@@ -172,15 +91,14 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          // Sent exactly as loaded. No control on this screen changes them any
-          // more; they are here so the PATCH restates the workspace's own
-          // values rather than omitting fields the route would read as a
-          // clear. See the state declaration above.
-          checkinReminderAt: checkinReminderAt || null,
-          checkoutReminderAt: checkoutReminderAt || null,
+          // The only field this screen sends. The workspace reminder columns
+          // are vestigial - a reminder time is the member's now, set per
+          // workspace on `/me/settings` - so there is nothing left to restate
+          // on save and nothing a PATCH that omits them can clear.
+          //
           // `serialiseCategoriesOff()` drops anything not switchable, so this
-          // cannot smuggle `reminders` or `presence` back into the column even
-          // if a stale value arrived in the GET.
+          // cannot smuggle a member-scoped category into the column even if a
+          // stale value arrived in the GET.
           notificationCategoriesOff: [...off],
         }),
       })
@@ -190,8 +108,11 @@ export default function NotificationsTab({ slug, canWrite }: { slug: string; can
     }
   }
 
-  // Two rows, matching the two switches that land. A skeleton promising five
-  // and resolving to two is a layout jump, not a loading state.
+  // Two rows, matching the two switches that land - `approvals` and
+  // `announcements` are the only `workspaceSwitchable` categories left. A
+  // skeleton promising more than resolves is a layout jump, not a loading
+  // state, so this count is checked against the filter below whenever the
+  // catalogue changes.
   if (load === 'loading') {
     return (
       <Card className="fx-spring">
